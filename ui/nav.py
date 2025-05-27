@@ -1,10 +1,39 @@
 import dearpygui.dearpygui as dpg
+import os
 
 def nav_click(sender, app_data, user_data):
     dpg.set_value("main_text", f"Selected: {user_data}")
 
-def create_nav_panel():
-    with dpg.child_window(width=100, height=-1, border=False):
-        dpg.add_button(label="A", width=80, callback=nav_click, user_data="Home")
-        dpg.add_button(label="B", width=80, callback=nav_click, user_data="Settings")
-        dpg.add_button(label="C", width=80, callback=nav_click, user_data="Files")
+def create_nav_panel(parent):
+    BTN_SIZE = 45  # Size of each button
+    BTN_PADDING = 10  # Padding around buttons
+
+    buttons = [
+        ("home.png", "Home"),
+        ("config.png", "Configuration"),
+        ("trainer.png", "Trainer"),
+        ("settings.png", "Settings"),
+    ]
+    
+    # Create a vertical group within the parent container
+    grp = dpg.add_group(parent=parent, tag="nav_group", horizontal=False, width=BTN_SIZE)
+    print(os.getcwd())
+    for filename, user_data in buttons:
+        path = os.path.join("./assets/icons", filename)
+        image_id = dpg.load_image(path)
+        if image_id is None:
+            # handle failure to load image
+            raise RuntimeError(f"Failed to load image: {path}")
+        with dpg.texture_registry():
+            width, height, channels, data = dpg.load_image(path)
+            texture_id = dpg.add_static_texture(width, height, data)
+        
+        dpg.add_image_button(
+            texture_tag=texture_id,       
+            height=BTN_SIZE,
+            callback=nav_click,
+            user_data=user_data,
+            parent=grp,
+            frame_padding=BTN_PADDING,
+        )
+
