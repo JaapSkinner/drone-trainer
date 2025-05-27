@@ -1,3 +1,4 @@
 cache/*
 app/__pycache__/*
-
+ui/__pycache__/*
+ui/panels/__pycache__/*
