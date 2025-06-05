@@ -1,13 +1,15 @@
 import dearpygui.dearpygui as dpg
+from ui.themes import create_base_panel_theme
+import os
 
-def create_base_panel(parent, tag, width=300):
-    with dpg.child_window(parent=parent, tag=tag, border=False, width=width, autosize_y=True) as panel:
-        with dpg.theme() as panel_theme:
-            with dpg.theme_component(dpg.mvAll):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 10, 10)
-                dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 6, 6)
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (30, 30, 30, 255))
-        dpg.bind_item_theme(panel, panel_theme)
+def create_base_panel(parent, tag):
+    with dpg.child_window(parent=parent, tag=tag, border=False, width=300, autosize_y=True) as panel:
+        # Load font (only once)
+        if not dpg.does_item_exist("panel_font"):
+            with dpg.font_registry():
+                dpg.add_font(os.path.join("assets", "fonts", "Roboto-VariableFont_wdth,wght.ttf"), 18, tag="panel_font")
+        dpg.bind_item_font(panel, "panel_font")
+        base_panel_theme = create_base_panel_theme()
+        dpg.bind_item_theme(panel, base_panel_theme)
+
     return panel
-
-
