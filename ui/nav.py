@@ -1,8 +1,22 @@
 import dearpygui.dearpygui as dpg
+from ui.panels.panel_registry import panel_tags
 import os
 
+# def create_button_theme():
+#     with dpg.theme() as theme:
+#         with dpg.theme_component(dpg.mvButton):
+#             dpg.add_theme_color(dpg.mvThemeCol_Button, (30, 30, 30, 255))
+#             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (50, 50, 50, 255))
+#             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (70, 70, 70, 255))
+#     return theme
+
+# button_theme = create_button_theme()
+
 def nav_click(sender, app_data, user_data):
-    dpg.set_value("main_text", f"Selected: {user_data}")
+    for tag in panel_tags.values():
+        dpg.hide_item(tag)
+    dpg.show_item(panel_tags[user_data])
+
 
 def create_nav_panel(parent):
     BTN_SIZE = 45  # Size of each button
@@ -28,7 +42,7 @@ def create_nav_panel(parent):
             width, height, channels, data = dpg.load_image(path)
             texture_id = dpg.add_static_texture(width, height, data)
         
-        dpg.add_image_button(
+        btn = dpg.add_image_button(
             texture_tag=texture_id,       
             height=BTN_SIZE,
             callback=nav_click,
@@ -36,4 +50,5 @@ def create_nav_panel(parent):
             parent=grp,
             frame_padding=BTN_PADDING,
         )
+        # dpg.bind_item_theme(btn, button_theme)
 
