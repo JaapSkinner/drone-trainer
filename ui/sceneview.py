@@ -1,6 +1,9 @@
 import dearpygui.dearpygui as dpg
 import math
+from stl import mesh
+import numpy as np
 from ui.input_handler import add_input_handler, handler_registry_id
+import os
 
 # Interaction state
 zoom_level = 1.0
@@ -91,6 +94,7 @@ def draw_scene():
 
     draw_grid()
     draw_axes()
+    draw_stl(os.path.join("assets", "models", "drone.stl"), "sceneview_node")
 
 def draw_grid():
     spacing = 20
@@ -109,3 +113,8 @@ def draw_axes():
     dpg.draw_arrow(p1=(length, 0.0, 0.0), p2=origin, color=(255, 0, 0, 255), thickness=2, parent="sceneview_node")
     dpg.draw_arrow(p1=(0.0, length, 0.0), p2=origin, color=(0, 255, 0, 255), thickness=2, parent="sceneview_node")
     dpg.draw_arrow(p1=origin, p2=(0.0, 0.0, length), color=(0, 0, 255, 255), thickness=2, parent="sceneview_node")
+
+def draw_stl(filename, parent_node):
+    your_mesh = mesh.Mesh.from_file(filename)
+    for tri in your_mesh.vectors.astype(np.float32):
+        dpg.draw_triangle(tuple(tri[0]), tuple(tri[2]), tuple(tri[1]), color=(0, 0, 0, 255),fill=[155,155,155] , parent=parent_node)
