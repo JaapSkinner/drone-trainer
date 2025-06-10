@@ -3,7 +3,7 @@ from ui.layout import create_main_window
 from ui.input_handler import init_input_handlers
 
 dpg.create_context()
-init_input_handlers()  # <- here
+init_input_handlers()
 create_main_window()
 dpg.create_viewport(title='DTRG Drone Trainer', width=1024, height=800)
 
