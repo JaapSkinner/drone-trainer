@@ -8,7 +8,7 @@ from OpenGL.GLU import *
 import pygame
 
 from main_window import MainWindow
-from vicon_connection import ViconConnection
+from services.vicon_connection import ViconConnection
 
 
 

@@ -1,4 +1,4 @@
-from crazyflie_connection import CrazyflieConnection
+from services.crazyflie_connection import CrazyflieConnection
 import time
 import random
 # Example usage:

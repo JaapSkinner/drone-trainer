@@ -1,9 +1,9 @@
 import pygame
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QDockWidget,QSplitter, QVBoxLayout, QPushButton, QMainWindow, QWidget,QScrollArea, QOpenGLWidget, QApplication, QFormLayout,QComboBox,QGroupBox,QLineEdit,QLabel
-from gl_widget import GLWidget
-from vicon_connection import ViconConnection
-from structs import PositionData
+from ui.gl_widget.gl_widget import GLWidget
+from services.vicon_connection import ViconConnection
+from models.structs import PositionData
 class MainWindow(QMainWindow):
     def __init__(self, vicon:ViconConnection, parent=None):
         super(MainWindow, self).__init__(parent)
