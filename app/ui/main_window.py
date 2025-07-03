@@ -2,9 +2,9 @@ import pygame
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QPushButton, QWidget
 
-from ui.gl_widget.gl_widget import GLWidget
-from ui.dock.dock_manager import create_dock
-from models.structs import PositionData
+from app.ui.gl_widget.gl_widget import GLWidget
+from app.ui.dock.dock_manager import create_dock
+from app.models.structs import PositionData
 
 class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):

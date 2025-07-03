@@ -1,8 +1,8 @@
 from PyQt5.QtWidgets import QDockWidget
 from PyQt5.QtCore import Qt
 
-from ui.dock.panels.object_panel import ObjectPanel
-from ui.dock.panels.vicon_panel import ViconPanel
+from app.ui.dock.panels.object_panel import ObjectPanel
+from app.ui.dock.panels.vicon_panel import ViconPanel
 
 class DockManager(QDockWidget):
     def __init__(self, parent=None):

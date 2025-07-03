@@ -3,7 +3,7 @@ from PyQt5.QtCore import QTimer, Qt
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
-from ui.gl_widget.scene_object import SceneObject
+from app.ui.gl_widget.scene_object import SceneObject
 import numpy as np
 
 class GLWidget(QOpenGLWidget):
