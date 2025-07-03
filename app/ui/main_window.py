@@ -14,15 +14,12 @@ class MainWindow(QMainWindow):
         self.vicon = vicon
         self.initUI()
 
-        pygame.init()
-        pygame.joystick.init()
-        self.controller = pygame.joystick.Joystick(0)
-        self.controller.init()
-        self.controller_object = 0
-        
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_controller)
-        self.timer.start(16)
+        # Setup JoystickService
+        self.joystick_service = JoystickService(self.glWidget)
+        self.joystick_service.joystick_updated.connect(self.on_joystick_update)
+        self.joystick_service.start()
+
+        self.vicon.position_updated.connect(self.update_vicon_position)
 
         self.vicon.position_updated.connect(self.update_vicon_position)
 
@@ -83,3 +80,8 @@ class MainWindow(QMainWindow):
                 obj.y_rot = pos_data.y_rot
                 obj.z_rot = pos_data.z_rot
         self.object_panel.refresh()
+
+    @pyqtSlot(object)
+    def on_joystick_update(self, obj):
+        self.object_panel.refresh()
+        self.glWidget.update()
