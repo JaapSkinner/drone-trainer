@@ -1,6 +1,6 @@
 import functools
 import traceback
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from enum import Enum, auto
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
@@ -15,7 +15,11 @@ class DebugLevel(Enum):
     STOP = 2
     HALT = 3
 
-class ServiceBase(QObject, ABC):
+# Combine QObject's metaclass and ABCMeta
+class MetaService(type(QObject), ABCMeta):
+    pass
+
+class ServiceBase(QObject, metaclass=MetaService):  
     status_changed = pyqtSignal(int)
     error_occurred = pyqtSignal(str)
 
