@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication
 from OpenGL.GLUT import glutInit
-from ui.main_window import MainWindow
+from app.ui.main_window import MainWindow
 from app.services.vicon_connection import ViconConnection
 
 def main():
