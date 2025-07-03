@@ -1,4 +1,3 @@
-import pygame
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QPushButton, QWidget
 
