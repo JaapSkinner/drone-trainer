@@ -1,7 +1,7 @@
 import pyvicon_datastream as pv
 from pyvicon_datastream import tools
 import math
-from PyQt5.QtCore import QObject, pyqtSignal,QTimer
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from multiprocessing import Process, Queue, TimeoutError as MPTimeoutError
 from models.structs import PositionData
 class ViconConnection(QObject):
