@@ -2,6 +2,7 @@ import pygame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from services.service_base import ServiceBase,DebugLevel  # your base service
 from models.structs import PositionData
+from PyQt5.QtCore import QTimer
 
 class JoystickService(ServiceBase):
     joystick_updated = pyqtSignal(object)  # emits the updated object state or index
@@ -10,19 +11,19 @@ class JoystickService(ServiceBase):
         super().__init__(debug_level=debug_level or DebugLevel.LOG)
         self.gl_widget = gl_widget
         self.update_interval = update_interval_ms
-        self.controller = None
-        self.controller_object = -1
+        self.joystick = None
+        self.joystick_object = 0
         self.timer = None
 
     def on_start(self):
         pygame.init()
         pygame.joystick.init()
         if pygame.joystick.get_count() > 0:
-            self.controller = pygame.joystick.Joystick(0)
-            self.controller.init()
+            self.joystick = pygame.joystick.Joystick(0)
+            self.joystick.init()
         else:
-            self.controller = None
-        from PyQt5.QtCore import QTimer
+            self.joystick = None
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
@@ -34,20 +35,20 @@ class JoystickService(ServiceBase):
         pygame.quit()
 
     def update(self):
-        if not self.controller:
+        if not self.joystick:
             return
         pygame.event.pump()
 
         def deadzone(val): return val if abs(val) > 0.1 else 0
 
-        lx = deadzone(self.controller.get_axis(0))
-        ly = deadzone(self.controller.get_axis(1))
-        rx = deadzone(self.controller.get_axis(3))
-        ry = deadzone(self.controller.get_axis(4))
-        lb = self.controller.get_button(4)
-        rb = self.controller.get_button(5)
+        lx = deadzone(self.joystick.get_axis(0))
+        ly = deadzone(self.joystick.get_axis(1))
+        rx = deadzone(self.joystick.get_axis(3))
+        ry = deadzone(self.joystick.get_axis(4))
+        lb = self.joystick.get_button(4)
+        rb = self.joystick.get_button(5)
 
-        i = self.controller_object
+        i = self.joystick_object
         if i != -1:
             obj = self.gl_widget.objects[i]
             obj.x_vel = lx * 0.1
@@ -61,5 +62,6 @@ class JoystickService(ServiceBase):
 
             self.joystick_updated.emit(obj)  # notify main window or UI
 
-    def set_controlled_object(self, index):
-        self.controller_object = index
+    @pyqtSlot(int)
+    def set_controlled_object_slot(self, index):
+        self.joystick_object = index
