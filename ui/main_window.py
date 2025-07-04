@@ -37,6 +37,9 @@ class MainWindow(QMainWindow):
         # NavBar on far left
         self.navbar = SideNavbar()
         main_layout.addWidget(self.navbar)
+        # NavBar on far left
+        self.navbar = SideNavbar()
+        main_layout.addWidget(self.navbar)
 
         # Dockand GLWidget on the right
         self.glWidget = GLWidget(self)
