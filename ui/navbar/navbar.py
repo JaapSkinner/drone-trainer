@@ -19,6 +19,7 @@ class SideNavbar(QWidget):
         title_layout = QHBoxLayout(title_frame)
         title_layout.setContentsMargins(8, 8, 8, 8)
         title_layout.setSpacing(8)
+        title_frame.setObjectName("NavbarTitle")
 
         # Icon (placeholder circle)
         icon = QLabel()
@@ -30,7 +31,7 @@ class SideNavbar(QWidget):
 
         # Title text
         title_label = QLabel("DRONE TRAINER ")
-        title_label.setObjectName("NavbarTitle")
+        title_label.setObjectName("NavbarTitleText")
 
         title_layout.addWidget(icon)
         title_layout.addWidget(title_label)
@@ -49,6 +50,7 @@ class SideNavbar(QWidget):
             self.buttons[key] = btn
             self.button_group.addButton(btn)
             btn.clicked.connect(lambda _, k=key: self.panel_selected.emit(k))
+            btn.setCursor(Qt.PointingHandCursor)
 
         layout.addStretch()
 
@@ -59,6 +61,7 @@ class SideNavbar(QWidget):
         self.buttons["settings"] = settings_btn
         self.button_group.addButton(settings_btn)
         settings_btn.clicked.connect(lambda _, k="settings": self.panel_selected.emit(k))
+        settings_btn.setCursor(Qt.PointingHandCursor)
         
         # Profile block
         profile_frame = QFrame()

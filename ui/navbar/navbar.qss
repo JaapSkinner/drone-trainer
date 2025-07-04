@@ -1,24 +1,22 @@
 QPushButton {
-    padding: 10px 15px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    background-color: white;
-    border: 1px solid #ccc;
+    color: white;
+    padding: 14px 20px;
+    border-radius: 10px;
+    margin-bottom: 1px;
+    background-color: transparent;
+    border: none;
+    text-align: left;
+    font-size: 15px;
 }
 
 QPushButton:hover {
-    background-color: #e0e0e0;
+    background-color: #616974;
 }
 
 QPushButton:checked {
-    background-color: #c0c0c0;
     font-weight: bold;
 }
 
-QWidget {
-    background-color:rgb(255, 255, 255); /* light grey */
-    padding: 10px;
-}
 
 QWidget#SideNavbar {
     background-color: #3b434b;
@@ -28,6 +26,7 @@ QWidget#SideNavbar {
     border: 1px solid #ccc;
     border-radius: 10px;
     background-color: #f5f5f5;
+    padding: 12px 8px;
 }
 
 #ProfileBlock:hover {
@@ -44,7 +43,11 @@ QFrame {
     margin: 0;
 }
 
-QLabel#NavbarTitle {
+QFrame#NavbarTitle {
+    margin-bottom: 30px;
+}
+
+QLabel#NavbarTitleText {
     color: white;
     font-weight: bold;
     font-size: 14px;
