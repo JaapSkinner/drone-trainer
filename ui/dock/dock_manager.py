@@ -23,6 +23,9 @@ class DockManager(QDockWidget):
             self.current_widget.setParent(None)
         self.setWidget(widget)
         self.current_widget = widget
+        
+    def set_active_panel(self, panel_name):
+        pass
 
 def create_dock(parent, gl_widget, control_callback, vicon):
     dock = DockManager(parent)
@@ -33,3 +36,5 @@ def create_dock(parent, gl_widget, control_callback, vicon):
     dock.set_content(dock.object_panel)
 
     return dock
+
+
