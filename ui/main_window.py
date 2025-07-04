@@ -6,6 +6,7 @@ from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import create_dock
 from models.structs import PositionData
 from ui.navbar.navbar import SideNavbar
+from ui.style import load_stylesheet
 
 class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):
@@ -20,6 +21,7 @@ class MainWindow(QMainWindow):
         self.joystick_service.start()
         
         self.vicon.position_updated.connect(self.update_vicon_position)
+        self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
 
 
     def initUI(self):
@@ -49,11 +51,12 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(0, False)  # Prevent dock collapsing
         splitter.setCollapsible(1, False)  # Prevent GL collapsing
         self.glWidget.setMinimumWidth(200)
-        self.dock.setMinimumWidth(150)
+        self.dock.setMinimumWidth(250)
         
 
         # Optional: connect nav signal
         self.navbar.panel_selected.connect(self.dock.set_active_panel)
+        
 
 
 

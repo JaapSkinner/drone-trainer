@@ -1,0 +1,4 @@
+QSplitter::handle {
+    background-color: #ccc; /* subtle splitter handle */
+    width: 10px;
+}
