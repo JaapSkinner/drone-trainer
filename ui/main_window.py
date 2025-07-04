@@ -5,6 +5,7 @@ from services.joystick_service import JoystickService
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import create_dock
 from models.structs import PositionData
+from ui.navbar.navbar import SideNavbar
 
 class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):
@@ -31,6 +32,9 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         self.setCentralWidget(central_widget)
 
+        # NavBar on far left
+        self.navbar = SideNavbar()
+        main_layout.addWidget(self.navbar)
 
         # Dockand GLWidget on the right
         self.glWidget = GLWidget(self)
