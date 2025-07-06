@@ -124,9 +124,9 @@ class GLWidget(QOpenGLWidget):
         if self.mouse_left_button_down:
             dx = event.x() - self.mouse_last_x
             dy = event.y() - self.mouse_last_y
-            self.camera_angle_y += dx * 0.5
-            self.camera_angle_x -= dy * 0.5
-            self.camera_angle_x = max(-90, min(90, self.camera_angle_x))
+            self.camera_angle_y -= dx * 0.5
+            self.camera_angle_x += dy * 0.5
+            self.camera_angle_x = max(-90.0, min(90.0, self.camera_angle_x))
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
             self.update()
