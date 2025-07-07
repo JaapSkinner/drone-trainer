@@ -47,18 +47,15 @@ class GLWidget(QOpenGLWidget):
         glEnable(GL_LIGHTING)
         glEnable(GL_COLOR_MATERIAL)
         glEnable(GL_LIGHT0)
-        glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
         glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
         glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0, 1.0, 1.0, 1.0])
         glShadeModel(GL_SMOOTH)
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
         gluPerspective(45.0, self.width() / self.height(), 0.1, 100.0)
-
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         gluLookAt(
@@ -68,14 +65,13 @@ class GLWidget(QOpenGLWidget):
             0.0, 0.0, 0.0,
             0.0, 1.0, 0.0
         )
+        glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
 
         self.draw_grid()
         self.draw_axes()
 
         for obj in self.objects:
             obj.draw()
-
-
 
         self.draw_mesh(self.quad)  # Draw quadcopter model at origin
 
@@ -216,12 +212,22 @@ class GLWidget(QOpenGLWidget):
             glEnable(GL_CULL_FACE)
             glCullFace(GL_BACK)
             glFrontFace(GL_CCW)
-            glBegin(GL_TRIANGLES)
-            for i in range(len(mesh.triangles)):
-                normal = mesh.triangle_normals[i]
-                tris = mesh.triangles[i]
-                for j, vertex in enumerate(tris):
+
+            mesh_poly_list = []
+            if len(mesh.polys[0]) == 3:  # Check if the mesh is triangular
+                glBegin(GL_TRIANGLES)
+            elif len(mesh.polys[0]) == 4:  # Check if the mesh is quadrilateral
+                glBegin(GL_QUADS)
+
+            for i in range(len(mesh.polys)):
+                poly = mesh.polys[i]
+                for j, vertex in enumerate(poly):
                     # Gouraud shading is cheated here using triangle normal instead of vertex normals
+                    if mesh.vertex_normals:
+                        normal = mesh.vertex_normals[i][j]
+                    else:
+                        normal = mesh.face_normals[i]
+
                     glNormal3f(*normal)
 
                     glColor4f(*mesh.colour[i] if isinstance(mesh.colour, list) else mesh.colour)
