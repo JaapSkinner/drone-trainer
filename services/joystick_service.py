@@ -1,6 +1,6 @@
 import pygame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
-from services.service_base import ServiceBase,DebugLevel  # your base service
+from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
 from models.structs import PositionData
 from PyQt5.QtCore import QTimer
 
@@ -21,8 +21,12 @@ class JoystickService(ServiceBase):
         if pygame.joystick.get_count() > 0:
             self.joystick = pygame.joystick.Joystick(0)
             self.joystick.init()
+            self.status_label = f"Joystick: {self.joystick.get_name()}"
+            self.status = ServiceLevel.RUNNING
         else:
             self.joystick = None
+            self.status_label = "Joystick: Not Found"
+            self.status = ServiceLevel.STOPPED
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.safe(self.update))
@@ -35,8 +39,27 @@ class JoystickService(ServiceBase):
         pygame.quit()
 
     def update(self):
-        if not self.joystick:
+        if not self.joystick or not self.joystick.get_init():
+            # No joystick connected or joystick was disconnected, check for new connection
+            pygame.joystick.quit()
+            pygame.joystick.init()
+            if pygame.joystick.get_count() > 0:
+                self.joystick = pygame.joystick.Joystick(0)
+                self.joystick.init()
+                self.status_label = f"{self.joystick.get_name()}"
+                self.status = ServiceLevel.RUNNING
+            else:
+                self.joystick = None
+                self.status_label = "Not Found"
+                self.status = ServiceLevel.STOPPED
             return
+        elif self.joystick.get_id() >= pygame.joystick.get_count():
+            # Joystick was disconnected
+            self.joystick = None
+            self.status_label = "Disconnected"
+            self.status = ServiceLevel.STOPPED
+            return
+        
         pygame.event.pump()
 
         def deadzone(val): return val if abs(val) > 0.1 else 0

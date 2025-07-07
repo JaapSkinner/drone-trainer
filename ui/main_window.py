@@ -2,25 +2,37 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget
 
 from services.joystick_service import JoystickService
+from services.status_service import StatusService
+
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
 from models.structs import PositionData
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
+from ui.status_panel.status_panel import StatusPanel
+
 
 class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):
-        
         super().__init__(parent)
         self.vicon = vicon
         self.initUI()
-
-        # Setup JoystickService
         self.joystick_service = JoystickService(self.glWidget)
+        
+        self.status_service = StatusService(
+            self.status_panel,
+            self.joystick_service,
+            None  # Placeholder for mavlink service
+        )
+        self.status_service.start()
+        
+        
         self.joystick_service.joystick_updated.connect(self.on_joystick_update)
         self.joystick_service.start()
-        
         self.vicon.position_updated.connect(self.update_vicon_position)
+        
+
+        
         self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
 
 
@@ -53,10 +65,19 @@ class MainWindow(QMainWindow):
         self.glWidget.setMinimumWidth(200)
         self.dock.setMinimumWidth(250)
         
-
-        # Optional: connect nav signal
         self.navbar.panel_selected.connect(self.dock.set_active_panel)
         
+        # === Overlay container ===
+        self.overlay = QWidget(central_widget)
+        self.overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.overlay.setStyleSheet("background: transparent;")
+        self.overlay.setGeometry(self.rect())
+        self.overlay.raise_()
+
+        # === Status panel inside overlay ===
+        self.status_panel = StatusPanel(self.overlay)
+        self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+        self.status_panel.show()
 
 
 
@@ -80,5 +101,9 @@ class MainWindow(QMainWindow):
     def set_controlled_object(self, index):
         if hasattr(self, 'joystick_service'):
             self.joystick_service.set_controlled_object_slot(index)
+
         
-        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.overlay.setGeometry(self.rect())
+        self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
