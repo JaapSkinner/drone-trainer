@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton
 from PyQt5.QtCore import pyqtSlot
 
 class ViconPanel(QWidget):
+    NavTag = "vicon"
     def __init__(self, vicon, on_connected_callback=None, parent=None):
         super().__init__(parent)
         self.vicon = vicon

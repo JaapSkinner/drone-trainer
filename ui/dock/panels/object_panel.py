@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGroupBox, QLabel, QLineEdit, QComboBox
 
 class ObjectPanel(QWidget):
+    NavTag = "live_data"
     def __init__(self, gl_widget, set_controlled_object_callback, parent=None):
         super().__init__(parent)
         self.gl_widget = gl_widget
