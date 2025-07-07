@@ -205,7 +205,7 @@ class GLWidget(QOpenGLWidget):
 
     def draw_mesh(self, mesh):
         # Use a display list for static geometry (cache by pos, scale, color)
-        cache_key = (tuple(mesh.pose[:3]), tuple(mesh.scale), tuple(mesh.colour))
+        cache_key = (tuple(mesh.pose), tuple(mesh.scale), tuple(mesh.colour))
         if cache_key not in self._quad_display_list_cache:
             display_list = glGenLists(1)
             glNewList(display_list, GL_COMPILE)
