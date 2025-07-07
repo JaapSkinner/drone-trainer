@@ -1,0 +1,146 @@
+# 3ds Max Wavefront OBJ Exporter v0.97b - (c)2007 guruware
+# File Created: 03.11.2018 21:14:31
+
+newmtl Black
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonBlackAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonBlackAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__8_Normal_Bump.png
+
+newmtl CrayonsBox
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonsBoxAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonsBoxAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonsBoxRough.png
+	map_bump -bm 0.3000 Map__4_Normal_Bump.png
+
+newmtl Blue
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonBlueAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonBlueAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__12_Normal_Bump.png
+
+newmtl Brown
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonBrownAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonBrownAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__16_Normal_Bump.png
+
+newmtl Green
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonGreenAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonGreenAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__20_Normal_Bump.png
+
+newmtl Red
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonRedAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonRedAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__26_Normal_Bump.png
+
+newmtl Violet
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonVioletAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonVioletAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__30_Normal_Bump.png
+
+newmtl Yellow
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonYellowAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonYellowAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__34_Normal_Bump.png
+
+newmtl Orange
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 1.0000 1.0000 1.0000
+	Kd 1.0000 1.0000 1.0000
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Ka N:\M n B\_MESH\C mesh\Crayons\CrayonOrangeAlbedo.png
+	map_Kd N:\M n B\_MESH\C mesh\Crayons\CrayonOrangeAlbedo.png
+	map_Ks N:\M n B\_MESH\C mesh\Crayons\CrayonRough.png
+	map_bump -bm 0.3000 Map__23_Normal_Bump.png
