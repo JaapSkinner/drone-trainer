@@ -44,6 +44,13 @@ class GLWidget(QOpenGLWidget):
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_LIGHTING)
+        glEnable(GL_COLOR_MATERIAL)
+        glEnable(GL_LIGHT0)
+        glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
+        glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0, 1.0, 1.0, 1.0])
+        glShadeModel(GL_SMOOTH)
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -70,13 +77,7 @@ class GLWidget(QOpenGLWidget):
 
 
 
-        self.draw_quad(pos=(self.objects[0].x_pos, self.objects[1].y_pos, self.objects[2].z_pos),scale=(0.05, 0.05, 0.05))  # Draw quadcopter model at origin
-        self.draw_quad(pos=(0.0, 2.0, 0.0), scale=(0.05, 0.05, 0.05), color=(1.0, 1.0, 0.6))  # Draw quadcopter at new position
-
-        # three more drones in unique positions and colors, and slightly different scales
-        self.draw_quad(pos=(2.0, 2.0, 0.0), scale=(0.05, 0.05, 0.05), color=(1.0, 0.6, 1.0))  # Pink quadcopter
-        self.draw_quad(pos=(-2.0, 2.0, 0.0), scale=(0.07, 0.07, 0.07), color=(0.6, 1.0, 0.6))  # Light green quadcopter
-        self.draw_quad(pos=(0.0, 2.0, 2.0), scale=(0.03, 0.03, 0.03), color=(0.6, 0.6, 1.0))  # Light blue quadcopter
+        self.draw_mesh(self.quad)  # Draw quadcopter model at origin
 
         # Draw dashed line between the first and second objects
         start = np.array([self.objects[0].x_pos, self.objects[0].y_pos, self.objects[0].z_pos])
@@ -203,23 +204,28 @@ class GLWidget(QOpenGLWidget):
 
         glLineWidth(1.0)  # Reset line width
 
-    def draw_quad(self, pos=(0.0,0.0,0.0), scale=(1.0,1.0,1.0), color=(0.6, 1.0, 1.0)):
+    def draw_mesh(self, mesh):
         # Use a display list for static geometry (cache by pos, scale, color)
-        cache_key = (tuple(pos), tuple(scale), tuple(color))
+        cache_key = (tuple(mesh.pose[:3]), tuple(mesh.scale), tuple(mesh.colour))
         if cache_key not in self._quad_display_list_cache:
             display_list = glGenLists(1)
             glNewList(display_list, GL_COMPILE)
             glEnable(GL_CULL_FACE)
             glCullFace(GL_BACK)
             glFrontFace(GL_CCW)
-            glColor3f(*color)
             glBegin(GL_TRIANGLES)
-            for i in range(len(self.quad.triangles)):
-                normal = self.quad.triangle_normals[i]
-                tris = self.quad.triangles[i]
-                glNormal3f(*normal)
-                for vertex in tris:
-                    v = [pos[0] + vertex[0] * scale[0], pos[1] + vertex[1] * scale[1], pos[2] + vertex[2] * scale[2]]
+            for i in range(len(mesh.triangles)):
+                normal = mesh.triangle_normals[i]
+                tris = mesh.triangles[i]
+                for j, vertex in enumerate(tris):
+                    # Gouraud shading is cheated here using triangle normal instead of vertex normals
+                    glNormal3f(*normal)
+
+                    glColor4f(*mesh.colour[i] if isinstance(mesh.colour, list) else mesh.colour)
+                    v = [mesh.pose[0] + vertex[0] * mesh.scale[0],
+                         mesh.pose[1] + vertex[1] * mesh.scale[1],
+                         mesh.pose[2] + vertex[2] * mesh.scale[2]]
+                    v = matrix_rotate(v, mesh.pose[3:6])  # Apply rotation
                     glVertex3f(*v)
             glEnd()
             glDisable(GL_CULL_FACE)
@@ -244,3 +250,13 @@ class GLWidget(QOpenGLWidget):
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
+
+def matrix_rotate(vector, angles):
+    """Rotate a vector by given angles in degrees."""
+    x, y, z = np.radians(angles)
+    rotation_matrix = np.array([
+        [np.cos(y) * np.cos(z), -np.cos(y) * np.sin(z), np.sin(y)],
+        [np.cos(x) * np.sin(z) + np.sin(x) * np.sin(y) * np.cos(z), np.cos(x) * np.cos(z) - np.sin(x) * np.sin(y) * np.sin(z), -np.sin(x) * np.cos(y)],
+        [np.sin(x) * np.sin(z) - np.cos(x) * np.sin(y) * np.cos(z), np.sin(x) * np.cos(z) + np.cos(x) * np.sin(y) * np.sin(z), np.cos(x) * np.cos(y)]
+    ])
+    return vector @ rotation_matrix.T
