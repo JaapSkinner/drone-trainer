@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import QWidget,QLabel, QFrame, QHBoxLayout,QVBoxLayout, QPushButton, QSizePolicy, QButtonGroup
-from PyQt5.QtCore import pyqtSignal,Qt
+from PyQt5.QtCore import pyqtSignal,Qt, QSize
+from PyQt5.QtGui import QIcon
 from ui.style import load_stylesheet
 
 class SideNavbar(QWidget):
@@ -42,22 +43,30 @@ class SideNavbar(QWidget):
         self.button_group = QButtonGroup(self)
         self.button_group.setExclusive(True)  # Only one checked
 
-        for name in ["Home", "Trainer", "Leaderboard","Config", "Vicon", "Live Data"]:
+
+        for name in ["Home", "Trainer", "Leaderboard", "Config", "Vicon", "Live Data"]:
             key = name.lower().replace(" ", "_")
+            name = " " + name
             btn = QPushButton(name)
             btn.setCheckable(True)
+            icon_path = f"ui/assets/icons/{key}.png"
+            btn.setIcon(QIcon(icon_path))
+            btn.setIconSize(QSize(22, 22))
+            btn.setCursor(Qt.PointingHandCursor)
             layout.addWidget(btn)
             self.buttons[key] = btn
             self.button_group.addButton(btn)
             btn.clicked.connect(lambda _, k=key: self.panel_selected.emit(k))
-            btn.setCursor(Qt.PointingHandCursor)
 
         layout.addStretch()
 
         # Settings button at bottom
-        settings_btn = QPushButton("Settings")
+        settings_btn = QPushButton(" Settings")
         settings_btn.setCheckable(True)
         layout.addWidget(settings_btn)
+        icon_path = f"ui/assets/icons/settings.png"
+        settings_btn.setIcon(QIcon(icon_path))
+        settings_btn.setIconSize(QSize(22, 22))
         self.buttons["settings"] = settings_btn
         self.button_group.addButton(settings_btn)
         settings_btn.clicked.connect(lambda _, k="settings": self.panel_selected.emit(k))
