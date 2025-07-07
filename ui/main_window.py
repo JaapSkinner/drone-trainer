@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget
 
 from services.joystick_service import JoystickService
 from ui.gl_widget.gl_widget import GLWidget
-from ui.dock.dock_manager import create_dock
+from ui.dock.dock_manager import DockManager
 from models.structs import PositionData
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
@@ -40,8 +40,8 @@ class MainWindow(QMainWindow):
 
         # Dockand GLWidget on the right
         self.glWidget = GLWidget(self)
-        self.dock = create_dock(self, self.glWidget, self.set_controlled_object, self.vicon)
-        self.object_panel = self.dock.object_panel
+        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon)
+        self.object_panel = self.dock.panels[5]
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)

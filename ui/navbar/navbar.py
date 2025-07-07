@@ -42,7 +42,7 @@ class SideNavbar(QWidget):
         self.button_group = QButtonGroup(self)
         self.button_group.setExclusive(True)  # Only one checked
 
-        for name in ["Home", "Config", "Trainer","Socials", "Live Data"]:
+        for name in ["Home", "Trainer", "Leaderboard","Config", "Vicon", "Live Data"]:
             key = name.lower().replace(" ", "_")
             btn = QPushButton(name)
             btn.setCheckable(True)
