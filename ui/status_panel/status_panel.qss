@@ -1,0 +1,8 @@
+QWidget#StatusPanel {
+    background-color: rgba(255, 255, 255, 200);  /* white with semi-transparency */
+    border-radius: 8px;
+    padding: 0px;
+    color: black;
+    font-size: 12px;
+    border: 1px solid #ccc;
+}

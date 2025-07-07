@@ -4,9 +4,10 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum, auto
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
-class ServiceStatus(Enum):
+class ServiceLevel(Enum):
     STOPPED = auto()
     RUNNING = auto()
+    WARNING = auto()
     ERROR = auto()
     
 class DebugLevel(Enum):
@@ -20,7 +21,7 @@ class MetaService(type(QObject), ABCMeta):
     pass
 
 class ServiceBase(QObject, metaclass=MetaService):  
-    status_changed = pyqtSignal(int)
+    status_changed = pyqtSignal(int, str)  # emit both enum and label
     error_occurred = pyqtSignal(str)
 
     def __init__(self, debug_level=DebugLevel.LOG):
@@ -33,24 +34,32 @@ class ServiceBase(QObject, metaclass=MetaService):
         self.moveToThread(self._thread)
         self._thread.started.connect(self._on_start)
         self._thread.finished.connect(self._on_stop)
-        self._status = ServiceStatus.STOPPED
+        
+        self._status_level = ServiceLevel.STOPPED
+        self._status_label = ""
+
 
         # Bind error signal to handler
         self.error_occurred.connect(self._handle_error)
 
     @property
     def status(self):
-        return self._status
+        return self._status_level
 
     @property
     def debug_level(self):
         return self._debug_level
     
     @status.setter
-    def status(self, val):
-        self._status = val
-        self.status_changed.emit(val)
-    
+    def status(self, level):
+        self._status_level = level
+        self._emit_status_change()
+
+    def set_status(self, level: ServiceLevel, label: str = ""):
+        self._status_level = level
+        self._status_label = label
+        self._emit_status_change()
+        
     @debug_level.setter
     def debug_level(self, level):
         if isinstance(level, DebugLevel):
@@ -58,6 +67,9 @@ class ServiceBase(QObject, metaclass=MetaService):
         else:
             raise ValueError("debug_level must be a DebugLevel enum value")
 
+    def _emit_status_change(self):
+        self.status_changed.emit(self._status_level.value, self._status_label)
+    
     def start(self):
         if not self._thread.isRunning():
             self._thread.start()
@@ -69,12 +81,12 @@ class ServiceBase(QObject, metaclass=MetaService):
 
     @pyqtSlot()
     def _on_start(self):
-        self.status = ServiceStatus.RUNNING
+        self.status = ServiceLevel.RUNNING
         self.on_start()
 
     @pyqtSlot()
     def _on_stop(self):
-        self.status = ServiceStatus.STOPPED
+        self.status = ServiceLevel.STOPPED
         self.on_stop()
 
     @abstractmethod
@@ -112,11 +124,11 @@ class ServiceBase(QObject, metaclass=MetaService):
             return
         elif self._debug_level == DebugLevel.STOP:
             # log and stop service thread
-            self.status = ServiceStatus.ERROR
+            self.status = ServiceLevel.ERROR
             self.stop()
         elif self._debug_level == DebugLevel.HALT:
             # log, stop service thread and exit entire program
-            self.status = ServiceStatus.ERROR
+            self.status = ServiceLevel.ERROR
             self.stop()
             import sys
             sys.exit(1)
