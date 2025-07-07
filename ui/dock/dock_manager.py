@@ -7,7 +7,7 @@ from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
 from ui.dock.panels.config_panel import ConfigPanel
-from ui.dock.panels.vicon_panel import ViconPanel
+# Line 10 removed as it is redundant.
 from ui.dock.panels.settings_panel import SettingsPanel
 
 class DockManager(QDockWidget):
