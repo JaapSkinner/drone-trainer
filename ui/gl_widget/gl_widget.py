@@ -5,7 +5,7 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 from ui.gl_widget.scene_object import SceneObject
 import numpy as np
-from models.cad_model import CadModel
+from models.cad_mesh import CadMesh
 import time
 
 class GLWidget(QOpenGLWidget):
@@ -27,7 +27,7 @@ class GLWidget(QOpenGLWidget):
         self.objects.append(SceneObject(1.5, 0.0, 0.5, 0.0, 0.0, 0.0, (0.0, 0.0, 1.0), 0.5, name="mug" ,transparency=0.5, tracked=True))
         self.objects.append(SceneObject(3.0, 0.0, 1.5, 0.0, 0.0, 0.0, (0.0, 1.0, 0.0), 0.25, name="Green Cube",length=3.0))  # Green rectangle
 
-        self.quad = CadModel("cad_files/basic_quadcopter.stl")
+        self.quad = CadMesh("cad_files/basic_quadcopter.stl")
 
         # Camera parameters
         self.camera_distance = 10.0
@@ -123,6 +123,8 @@ class GLWidget(QOpenGLWidget):
         glEnd()
 
     def draw_axes(self):
+        # disable lighting for axes
+        glDisable(GL_LIGHTING)
         glLineWidth(2.0)
         glBegin(GL_LINES)
         glColor3f(1.0, 0.0, 0.0)
@@ -135,6 +137,7 @@ class GLWidget(QOpenGLWidget):
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, 1)
         glEnd()
+        glEnable(GL_LIGHTING)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
@@ -222,10 +225,16 @@ class GLWidget(QOpenGLWidget):
                     glNormal3f(*normal)
 
                     glColor4f(*mesh.colour[i] if isinstance(mesh.colour, list) else mesh.colour)
-                    v = [mesh.pose[0] + vertex[0] * mesh.scale[0],
-                         mesh.pose[1] + vertex[1] * mesh.scale[1],
-                         mesh.pose[2] + vertex[2] * mesh.scale[2]]
-                    v = matrix_rotate(v, mesh.pose[3:6])  # Apply rotation
+
+                    # Rotation must be applied before translation
+                    v = [vertex[0] * mesh.scale[0],
+                         vertex[1] * mesh.scale[1],
+                         vertex[2] * mesh.scale[2]]
+
+                    v = matrix_rotate(v, mesh.pose[3:6])
+
+                    v = np.array(v) + np.array(mesh.pose[:3])  # Apply translation
+                      # Apply rotation
                     glVertex3f(*v)
             glEnd()
             glDisable(GL_CULL_FACE)
@@ -254,7 +263,7 @@ class GLWidget(QOpenGLWidget):
 def matrix_rotate(vector, angles):
     """Rotate a vector by given angles in degrees."""
     x, y, z = np.radians(angles)
-    rotation_matrix = np.array([
+    rotation_matrix = np.array([ # Rotation occurs in z then y then x order
         [np.cos(y) * np.cos(z), -np.cos(y) * np.sin(z), np.sin(y)],
         [np.cos(x) * np.sin(z) + np.sin(x) * np.sin(y) * np.cos(z), np.cos(x) * np.cos(z) - np.sin(x) * np.sin(y) * np.sin(z), -np.sin(x) * np.cos(y)],
         [np.sin(x) * np.sin(z) - np.cos(x) * np.sin(y) * np.cos(z), np.sin(x) * np.cos(z) + np.cos(x) * np.sin(y) * np.sin(z), np.cos(x) * np.cos(y)]

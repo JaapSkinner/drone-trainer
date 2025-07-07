@@ -1,7 +1,7 @@
 import struct
 
 
-class CadModel:
+class CadMesh:
     """A class for importing and representing a 3D CAD model made of triangle facets. Supports reading from binary STL files.
     Attributes:
         name (str): The name of the model, derived from the filename.
@@ -18,7 +18,7 @@ class CadModel:
         self.filename = filename
 
         if pose is None:
-            pose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # Default pose (Angles in DEG) (x, y, z, x_rot, y_rot, z_rot)
+            pose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # Default pose (Angles in DEG) (x, y, z, x_rot, y_rot, z_rot) Rotation occurs in z then y then x order
 
         if scale is None:
             scale = (0.05, 0.05, 0.05)  # Default scale (sx, sy, sz)
