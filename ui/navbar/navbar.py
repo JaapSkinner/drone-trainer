@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget,QLabel, QFrame, QHBoxLayout,QVBoxLayout, QPushButton, QSizePolicy, QButtonGroup
+from PyQt5.QtWidgets import QWidget,QLabel,QMessageBox, QFrame, QHBoxLayout,QVBoxLayout, QPushButton, QSizePolicy, QButtonGroup
 from PyQt5.QtCore import pyqtSignal,Qt, QSize
 from PyQt5.QtGui import QIcon
 from ui.style import load_stylesheet
@@ -77,6 +77,7 @@ class SideNavbar(QWidget):
         profile_layout = QHBoxLayout(profile_frame)
         profile_layout.setContentsMargins(8, 4, 8, 4)
         profile_layout.setSpacing(8)
+        profile_frame.mouseReleaseEvent = lambda event: self.coming_soon()
 
         # Profile image
         avatar = QLabel()
@@ -103,3 +104,12 @@ class SideNavbar(QWidget):
     def set_active(self, key):
         for k, btn in self.buttons.items():
             btn.setChecked(k == key)
+    
+    
+    def coming_soon(self):
+        msg = QMessageBox()
+        msg.setWindowTitle("Coming Soon")
+        msg.setText("This feature is not yet implemented.")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
