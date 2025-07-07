@@ -70,7 +70,7 @@ class GLWidget(QOpenGLWidget):
 
 
 
-        self.draw_quad(scale=(0.05, 0.05, 0.05))  # Draw quadcopter model at origin
+        self.draw_quad(pos=(self.objects[0].x_pos, self.objects[1].y_pos, self.objects[2].z_pos),scale=(0.05, 0.05, 0.05))  # Draw quadcopter model at origin
         self.draw_quad(pos=(0.0, 2.0, 0.0), scale=(0.05, 0.05, 0.05), color=(1.0, 1.0, 0.6))  # Draw quadcopter at new position
 
         # three more drones in unique positions and colors, and slightly different scales
