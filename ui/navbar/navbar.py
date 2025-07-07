@@ -22,13 +22,11 @@ class SideNavbar(QWidget):
         title_layout.setSpacing(8)
         title_frame.setObjectName("NavbarTitle")
 
-        # Icon (placeholder circle)
+        # Icon (PNG)
         icon = QLabel()
         icon.setFixedSize(24, 24)
-        icon.setStyleSheet("""
-            background-color: #4caf50;
-            border-radius: 12px;
-        """)
+        icon.setScaledContents(True)
+        icon.setPixmap(QIcon("ui/assets/icons/dtrg.png").pixmap(24, 24))
 
         # Title text
         title_label = QLabel("DRONE TRAINER ")
