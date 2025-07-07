@@ -9,13 +9,26 @@ class CadModel:
         triangle_normals (list): A list of normal vectors for each triangle facet in the model.
         triangles (list): A list of triangle facets, where each facet is a tuple containing the normal vector and a list of three vertices.
     """
-    def __init__(self, filename, name=None):
+    def __init__(self, filename, name=None, pose=None, scale=None, colour=None):
         # Remove the file extension from the filename for the name attribute, and handle both absolute and relative paths.
         if not name:
             name = filename.split('/')[-1].rsplit('.', 1)[0] if '/' in filename else filename.rsplit('.', 1)[0]
 
         self.name = name
         self.filename = filename
+
+        if pose is None:
+            pose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # Default pose (Angles in DEG) (x, y, z, x_rot, y_rot, z_rot)
+
+        if scale is None:
+            scale = (0.05, 0.05, 0.05)  # Default scale (sx, sy, sz)
+
+        if colour is None:
+            colour = (1.0, 0.7, 0.7, 1.0)  # Default colour(0 - 1) (r, g, b, a)
+
+        self.pose = pose
+        self.scale = scale
+
         self.triangle_normals = []
         self.triangles = []
 
@@ -23,6 +36,9 @@ class CadModel:
             normals, triangles = self.read_stl_binary()
             self.triangle_normals = normals
             self.triangles = triangles
+
+        # each triangle needs a colour, so we use the base colour for all triangles
+        self.colour = [colour] * len(self.triangles) if self.triangles else [colour]
 
 
     def read_stl_binary(self):
