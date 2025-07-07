@@ -1,7 +1,7 @@
 import struct
 
 
-class cadModel():
+class CadModel:
     """A class for importing and representing a 3D CAD model made of triangle facets. Supports reading from binary STL files.
     Attributes:
         name (str): The name of the model, derived from the filename.

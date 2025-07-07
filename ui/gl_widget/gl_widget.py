@@ -5,6 +5,8 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 from ui.gl_widget.scene_object import SceneObject
 import numpy as np
+from models.cad_model import CadModel
+import time
 
 class GLWidget(QOpenGLWidget):
     def __init__(self, parent=None):
@@ -15,12 +17,17 @@ class GLWidget(QOpenGLWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(16)  # Update approximately every 16 milliseconds (about 60 FPS)
 
+        self.prev_time = time.time()
+        self.fps = 0.0
+
         self.objects = []
 
         # Initialize some objects
         self.objects.append(SceneObject(0.0, 0.0, 0.5, 0.0, 0.0, 0.0, (1.0, 0.0, 0.0), 0.5, name="Red Cube"))
         self.objects.append(SceneObject(1.5, 0.0, 0.5, 0.0, 0.0, 0.0, (0.0, 0.0, 1.0), 0.5, name="mug" ,transparency=0.5, tracked=True))
         self.objects.append(SceneObject(3.0, 0.0, 1.5, 0.0, 0.0, 0.0, (0.0, 1.0, 0.0), 0.25, name="Green Cube",length=3.0))  # Green rectangle
+
+        self.quad = CadModel("cad_files/basic_quadcopter.stl")
 
         # Camera parameters
         self.camera_distance = 10.0
@@ -29,6 +36,8 @@ class GLWidget(QOpenGLWidget):
         self.mouse_last_x = 0
         self.mouse_last_y = 0
         self.mouse_left_button_down = False
+
+        self._quad_display_list_cache = {}
 
     def initializeGL(self):
         glClearColor(1.0, 1.0, 1.0, 1.0)
@@ -58,7 +67,17 @@ class GLWidget(QOpenGLWidget):
 
         for obj in self.objects:
             obj.draw()
-        
+
+
+
+        self.draw_quad(scale=(0.05, 0.05, 0.05))  # Draw quadcopter model at origin
+        self.draw_quad(pos=(0.0, 2.0, 0.0), scale=(0.05, 0.05, 0.05), color=(1.0, 1.0, 0.6))  # Draw quadcopter at new position
+
+        # three more drones in unique positions and colors, and slightly different scales
+        self.draw_quad(pos=(2.0, 2.0, 0.0), scale=(0.05, 0.05, 0.05), color=(1.0, 0.6, 1.0))  # Pink quadcopter
+        self.draw_quad(pos=(-2.0, 2.0, 0.0), scale=(0.07, 0.07, 0.07), color=(0.6, 1.0, 0.6))  # Light green quadcopter
+        self.draw_quad(pos=(0.0, 2.0, 2.0), scale=(0.03, 0.03, 0.03), color=(0.6, 0.6, 1.0))  # Light blue quadcopter
+
         # Draw dashed line between the first and second objects
         start = np.array([self.objects[0].x_pos, self.objects[0].y_pos, self.objects[0].z_pos])
         end = np.array([self.objects[1].x_pos, self.objects[1].y_pos, self.objects[1].z_pos])
@@ -82,6 +101,15 @@ class GLWidget(QOpenGLWidget):
         start_arrow_2 = np.array([green_rect.x_pos + half_length, green_rect.y_pos, green_rect.z_pos])
         end_arrow_2 = start_arrow_2 + np.array([0.0, 0.5, 0.0])
         self.draw_arrow(start_arrow_2, end_arrow_2, (0.0, 0.0, 1.0)) 
+
+        # FPS calculation (instantaneous)
+        current_time = time.time()
+        delta = current_time - self.prev_time
+        if delta > 0:
+            self.fps = 1.0 / delta
+        self.prev_time = current_time
+        # Draw FPS counter in the top-left corner
+        self.draw_fps_counter()
 
     def draw_grid(self):
         glColor3f(0.68, 0.68, 0.68)
@@ -174,3 +202,45 @@ class GLWidget(QOpenGLWidget):
         glEnd()
 
         glLineWidth(1.0)  # Reset line width
+
+    def draw_quad(self, pos=(0.0,0.0,0.0), scale=(1.0,1.0,1.0), color=(0.6, 1.0, 1.0)):
+        # Use a display list for static geometry (cache by pos, scale, color)
+        cache_key = (tuple(pos), tuple(scale), tuple(color))
+        if cache_key not in self._quad_display_list_cache:
+            display_list = glGenLists(1)
+            glNewList(display_list, GL_COMPILE)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_BACK)
+            glFrontFace(GL_CCW)
+            glColor3f(*color)
+            glBegin(GL_TRIANGLES)
+            for i in range(len(self.quad.triangles)):
+                normal = self.quad.triangle_normals[i]
+                tris = self.quad.triangles[i]
+                glNormal3f(*normal)
+                for vertex in tris:
+                    v = [pos[0] + vertex[0] * scale[0], pos[1] + vertex[1] * scale[1], pos[2] + vertex[2] * scale[2]]
+                    glVertex3f(*v)
+            glEnd()
+            glDisable(GL_CULL_FACE)
+            glEndList()
+            self._quad_display_list_cache[cache_key] = display_list
+        glCallList(self._quad_display_list_cache[cache_key])
+
+    def draw_fps_counter(self):
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, self.width(), 0, self.height(), -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glColor3f(0.0, 0.0, 0.0)
+        glRasterPos2f(10, self.height() - 20)
+        fps_text = f"FPS: {self.fps:.1f}"
+        for ch in fps_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(ch))
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
