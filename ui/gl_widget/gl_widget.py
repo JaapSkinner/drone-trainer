@@ -38,6 +38,8 @@ class GLWidget(QOpenGLWidget):
         self.mouse_left_button_down = False
 
         self._quad_display_list_cache = {}
+        
+        self.debug_count = 0  # Counter for debug text
 
     def initializeGL(self):
         glClearColor(1.0, 1.0, 1.0, 1.0)
@@ -106,7 +108,11 @@ class GLWidget(QOpenGLWidget):
             self.fps = 1.0 / delta
         self.prev_time = current_time
         # Draw FPS counter in the top-left corner
-        self.draw_fps_counter()
+        self.debug_count = 0  # Reset debug count for FPS display
+        self.draw_debug_text("FPS", self.fps)
+        self.draw_debug_text("Cam X", self.camera_angle_x)
+        self.draw_debug_text("Cam Y", self.camera_angle_y)        
+        
 
     def draw_grid(self):
         glColor3f(0.68, 0.68, 0.68)
@@ -246,8 +252,10 @@ class GLWidget(QOpenGLWidget):
             glEndList()
             self._quad_display_list_cache[cache_key] = display_list
         glCallList(self._quad_display_list_cache[cache_key])
-
-    def draw_fps_counter(self):
+        
+    def draw_debug_text(self, text, val, x=0, y=0, colour=(0.0, 0.0, 0.0)):
+        """Draw debug text at specified position."""
+        self.debug_count += 1
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
@@ -255,9 +263,9 @@ class GLWidget(QOpenGLWidget):
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
-        glColor3f(0.0, 0.0, 0.0)
-        glRasterPos2f(10, self.height() - 20)
-        fps_text = f"FPS: {self.fps:.1f}"
+        glColor3f(*colour)
+        glRasterPos2f(10 + x, self.height() - 20 - y - self.debug_count*20)
+        fps_text = f"{text}: {val:.1f}"
         for ch in fps_text:
             glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(ch))
         glPopMatrix()
