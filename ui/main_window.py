@@ -1,43 +1,85 @@
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QPushButton, QWidget
+from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget
 
 from services.joystick_service import JoystickService
+from services.status_service import StatusService
+
 from ui.gl_widget.gl_widget import GLWidget
-from ui.dock.dock_manager import create_dock
+from ui.dock.dock_manager import DockManager
 from models.structs import PositionData
+from ui.navbar.navbar import SideNavbar
+from ui.style import load_stylesheet
+from ui.status_panel.status_panel import StatusPanel
+
 
 class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):
-        
         super().__init__(parent)
         self.vicon = vicon
         self.initUI()
-
-        # Setup JoystickService
         self.joystick_service = JoystickService(self.glWidget)
+        
+        self.status_service = StatusService(
+            self.status_panel,
+            self.joystick_service,
+            None  # Placeholder for mavlink service
+        )
+        self.status_service.start()
+        
+        
         self.joystick_service.joystick_updated.connect(self.on_joystick_update)
         self.joystick_service.start()
-
         self.vicon.position_updated.connect(self.update_vicon_position)
+        
+
+        
+        self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
 
 
     def initUI(self):
         self.setWindowTitle('Collaborative Control Interface')
-        self.setGeometry(50, 50, 800, 600)
+        self.setGeometry(50, 50, 1200, 800)
 
+        # Top-level horizontal layout
         central_widget = QWidget(self)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         self.setCentralWidget(central_widget)
 
+        # NavBar on far left
+        self.navbar = SideNavbar()
+        main_layout.addWidget(self.navbar)
+
+        # Dockand GLWidget on the right
         self.glWidget = GLWidget(self)
-        layout.addWidget(self.glWidget)
+        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon)
+        self.object_panel = self.dock.panels[5]
+        
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(self.dock)
+        splitter.addWidget(self.glWidget)
+        splitter.setStretchFactor(1, 1)  # let GLWidget expand
+        main_layout.addWidget(splitter)
+        splitter.setCollapsible(0, False)  # Prevent dock collapsing
+        splitter.setCollapsible(1, False)  # Prevent GL collapsing
+        self.glWidget.setMinimumWidth(200)
+        self.dock.setMinimumWidth(250)
+        
+        self.navbar.panel_selected.connect(self.dock.set_active_panel)
+        
+        # === Overlay container ===
+        self.overlay = QWidget(central_widget)
+        self.overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.overlay.setStyleSheet("background: transparent;")
+        self.overlay.setGeometry(self.rect())
+        self.overlay.raise_()
 
-        layout.addWidget(QPushButton('Connect to Drone', self))
+        # === Status panel inside overlay ===
+        self.status_panel = StatusPanel(self.overlay)
+        self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+        self.status_panel.show()
 
-        self.dock = create_dock(self, self.glWidget, self.set_controlled_object, self.vicon)
 
-        self.object_panel = self.dock.object_panel
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
 
     @pyqtSlot(PositionData)
     def update_vicon_position(self, pos_data: PositionData):
@@ -59,5 +101,9 @@ class MainWindow(QMainWindow):
     def set_controlled_object(self, index):
         if hasattr(self, 'joystick_service'):
             self.joystick_service.set_controlled_object_slot(index)
+
         
-        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.overlay.setGeometry(self.rect())
+        self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)

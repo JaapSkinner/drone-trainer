@@ -5,6 +5,8 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 from ui.gl_widget.scene_object import SceneObject
 import numpy as np
+from models.cad_mesh import CadMesh
+import time
 
 class GLWidget(QOpenGLWidget):
     def __init__(self, parent=None):
@@ -15,12 +17,17 @@ class GLWidget(QOpenGLWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(16)  # Update approximately every 16 milliseconds (about 60 FPS)
 
+        self.prev_time = time.time()
+        self.fps = 0.0
+
         self.objects = []
 
         # Initialize some objects
         self.objects.append(SceneObject(0.0, 0.0, 0.5, 0.0, 0.0, 0.0, (1.0, 0.0, 0.0), 0.5, name="Red Cube"))
         self.objects.append(SceneObject(1.5, 0.0, 0.5, 0.0, 0.0, 0.0, (0.0, 0.0, 1.0), 0.5, name="mug" ,transparency=0.5, tracked=True))
         self.objects.append(SceneObject(3.0, 0.0, 1.5, 0.0, 0.0, 0.0, (0.0, 1.0, 0.0), 0.25, name="Green Cube",length=3.0))  # Green rectangle
+
+        self.quad = CadMesh("cad_files/basic_quadcopter.stl")
 
         # Camera parameters
         self.camera_distance = 10.0
@@ -30,19 +37,25 @@ class GLWidget(QOpenGLWidget):
         self.mouse_last_y = 0
         self.mouse_left_button_down = False
 
+        self._quad_display_list_cache = {}
+
     def initializeGL(self):
         glClearColor(1.0, 1.0, 1.0, 1.0)
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_LIGHTING)
+        glEnable(GL_COLOR_MATERIAL)
+        glEnable(GL_LIGHT0)
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
+        glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0, 1.0, 1.0, 1.0])
+        glShadeModel(GL_SMOOTH)
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
         gluPerspective(45.0, self.width() / self.height(), 0.1, 100.0)
-
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         gluLookAt(
@@ -52,13 +65,16 @@ class GLWidget(QOpenGLWidget):
             0.0, 0.0, 0.0,
             0.0, 1.0, 0.0
         )
+        glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
 
         self.draw_grid()
         self.draw_axes()
 
         for obj in self.objects:
             obj.draw()
-        
+
+        self.draw_mesh(self.quad)  # Draw quadcopter model at origin
+
         # Draw dashed line between the first and second objects
         start = np.array([self.objects[0].x_pos, self.objects[0].y_pos, self.objects[0].z_pos])
         end = np.array([self.objects[1].x_pos, self.objects[1].y_pos, self.objects[1].z_pos])
@@ -83,6 +99,15 @@ class GLWidget(QOpenGLWidget):
         end_arrow_2 = start_arrow_2 + np.array([0.0, 0.5, 0.0])
         self.draw_arrow(start_arrow_2, end_arrow_2, (0.0, 0.0, 1.0)) 
 
+        # FPS calculation (instantaneous)
+        current_time = time.time()
+        delta = current_time - self.prev_time
+        if delta > 0:
+            self.fps = 1.0 / delta
+        self.prev_time = current_time
+        # Draw FPS counter in the top-left corner
+        self.draw_fps_counter()
+
     def draw_grid(self):
         glColor3f(0.68, 0.68, 0.68)
         glBegin(GL_LINES)
@@ -94,6 +119,8 @@ class GLWidget(QOpenGLWidget):
         glEnd()
 
     def draw_axes(self):
+        # disable lighting for axes
+        glDisable(GL_LIGHTING)
         glLineWidth(2.0)
         glBegin(GL_LINES)
         glColor3f(1.0, 0.0, 0.0)
@@ -106,6 +133,7 @@ class GLWidget(QOpenGLWidget):
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, 1)
         glEnd()
+        glEnable(GL_LIGHTING)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
@@ -129,8 +157,7 @@ class GLWidget(QOpenGLWidget):
             self.camera_angle_x = max(-90.0, min(90.0, self.camera_angle_x))
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
-            self.update()
-    
+
     def draw_dashed_line(self, start, end, color, dash_length=0.1):
         glColor3f(*color)
         glLineWidth(4.0)  # Set line width to 3.0 for thicker lines
@@ -174,3 +201,76 @@ class GLWidget(QOpenGLWidget):
         glEnd()
 
         glLineWidth(1.0)  # Reset line width
+
+    def draw_mesh(self, mesh):
+        # Use a display list for static geometry (cache by pos, scale, color)
+        cache_key = (tuple(mesh.pose), tuple(mesh.scale), tuple(mesh.colour))
+        if cache_key not in self._quad_display_list_cache:
+            display_list = glGenLists(1)
+            glNewList(display_list, GL_COMPILE)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_BACK)
+            glFrontFace(GL_CCW)
+
+            mesh_poly_list = []
+            if len(mesh.polys[0]) == 3:  # Check if the mesh is triangular
+                glBegin(GL_TRIANGLES)
+            elif len(mesh.polys[0]) == 4:  # Check if the mesh is quadrilateral
+                glBegin(GL_QUADS)
+
+            for i in range(len(mesh.polys)):
+                poly = mesh.polys[i]
+                for j, vertex in enumerate(poly):
+                    # Gouraud shading is cheated here using triangle normal instead of vertex normals
+                    if mesh.vertex_normals:
+                        normal = mesh.vertex_normals[i][j]
+                    else:
+                        normal = mesh.face_normals[i]
+
+                    glNormal3f(*normal)
+
+                    glColor4f(*mesh.colour[i] if isinstance(mesh.colour, list) else mesh.colour)
+
+                    # Rotation must be applied before translation
+                    v = [vertex[0] * mesh.scale[0],
+                         vertex[1] * mesh.scale[1],
+                         vertex[2] * mesh.scale[2]]
+
+                    v = matrix_rotate(v, mesh.pose[3:6])
+
+                    v = np.array(v) + np.array(mesh.pose[:3])  # Apply translation
+                      # Apply rotation
+                    glVertex3f(*v)
+            glEnd()
+            glDisable(GL_CULL_FACE)
+            glEndList()
+            self._quad_display_list_cache[cache_key] = display_list
+        glCallList(self._quad_display_list_cache[cache_key])
+
+    def draw_fps_counter(self):
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, self.width(), 0, self.height(), -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glColor3f(0.0, 0.0, 0.0)
+        glRasterPos2f(10, self.height() - 20)
+        fps_text = f"FPS: {self.fps:.1f}"
+        for ch in fps_text:
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(ch))
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+
+def matrix_rotate(vector, angles):
+    """Rotate a vector by given angles in degrees."""
+    x, y, z = np.radians(angles)
+    rotation_matrix = np.array([ # Rotation occurs in z then y then x order
+        [np.cos(y) * np.cos(z), -np.cos(y) * np.sin(z), np.sin(y)],
+        [np.cos(x) * np.sin(z) + np.sin(x) * np.sin(y) * np.cos(z), np.cos(x) * np.cos(z) - np.sin(x) * np.sin(y) * np.sin(z), -np.sin(x) * np.cos(y)],
+        [np.sin(x) * np.sin(z) - np.cos(x) * np.sin(y) * np.cos(z), np.sin(x) * np.cos(z) + np.cos(x) * np.sin(y) * np.sin(z), np.cos(x) * np.cos(y)]
+    ])
+    return vector @ rotation_matrix.T
