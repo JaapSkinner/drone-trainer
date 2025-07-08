@@ -41,16 +41,21 @@ class ObjectPanel(QWidget):
             group_box = QGroupBox(f"Object {i} - {obj.name}")
             form_layout = QFormLayout()
 
-            x = QLineEdit(f"{obj.x_pos:.4f}")
-            y = QLineEdit(f"{obj.y_pos:.4f}")
-            z = QLineEdit(f"{obj.z_pos:.4f}")
-            xr = QLineEdit(f"{obj.x_rot:.4f}")
-            yr = QLineEdit(f"{obj.y_rot:.4f}")
-            zr = QLineEdit(f"{obj.z_rot:.4f}")
-            color = QLineEdit(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
-            size = QLineEdit(f"{obj.size:.4f}")
-            length = QLineEdit(f"{obj.length:.4f}")
-            trans = QLineEdit(f"{obj.transparency:.4f}")
+            x = QLineEdit(f"{obj.pose[0]:.4f}")
+            y = QLineEdit(f"{obj.pose[1]:.4f}")
+            z = QLineEdit(f"{obj.pose[2]:.4f}")
+            xr = QLineEdit(f"{obj.pose[4]:.4f}")
+            yr = QLineEdit(f"{obj.pose[5]:.4f}")
+            zr = QLineEdit(f"{obj.pose[6]:.4f}")
+            color = QLineEdit(f"({obj.colour[0]:.4f}, {obj.colour[1]:.4f}, {obj.colour[2]:.4f})")
+            if hasattr(obj, 'dimensions'):
+                size = QLineEdit(f"{obj.dimensions[0]:.4f}")
+                length = QLineEdit(f"{obj.dimensions[1]:.4f}")
+            else:
+                size = QLineEdit(f"-1")
+                length = QLineEdit(f"-1")
+
+            trans = QLineEdit(f"{obj.colour[3]:.4f}")
 
             self._connect(x, i, 'x_pos')
             self._connect(y, i, 'y_pos')

@@ -1,8 +1,13 @@
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
 import struct
 import numpy as np
 
+from models.scene_object import SceneObject
 
-class CadMesh:
+
+class CadMesh(SceneObject):
     """A class for importing and representing a 3D CAD model made of triangle facets. Supports reading from binary STL files.
     Attributes:
         name (str): The name of the model, derived from the filename.
@@ -12,22 +17,23 @@ class CadMesh:
     """
     def __init__(self, filename, name=None, pose=None, scale=None, colour=None):
         # Remove the file extension from the filename for the name attribute, and handle both absolute and relative paths.
+        super().__init__(pose, name)
         if not name:
             name = filename.split('/')[-1].rsplit('.', 1)[0] if '/' in filename else filename.rsplit('.', 1)[0]
 
         self.name = name
         self.filename = filename
 
-        if pose is None:
-            pose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)  # Default pose (Angles in DEG) (x, y, z, x_rot, y_rot, z_rot) Rotation occurs in z then y then x order
-
         if scale is None:
             scale = (0.05, 0.05, 0.05)  # Default scale (sx, sy, sz)
+        elif isinstance(scale, (int, float)):
+            scale = (scale, scale, scale)
 
         if colour is None:
-            colour = (0.7, 0.7, 0.7, 1.0)  # Default colour(0 - 1) (r, g, b, a)
+            colour = (0.5, 0.5, 0.5, 1.0)  # Default colour(0 - 1) (r, g, b, a)
+        elif len(colour) == 3:
+            colour = (*colour, 1.0)
 
-        self.pose = pose
         self.scale = scale
 
         self.face_normals = []
@@ -35,6 +41,8 @@ class CadMesh:
         self.polys = []
 
         self.textures = None  # Placeholder for texture, if needed later
+        self._quad_display_list_cache = {}
+
 
         if filename.lower().endswith('.stl'):
             normals, triangles = self.read_stl_binary()
@@ -46,8 +54,9 @@ class CadMesh:
             self.vertex_normals = normals
             self.polys = quads
 
-        # each triangle needs a colour, so we use the base colour for all triangles
-        self.colour = [colour] * len(self.polys) if self.polys else [colour]
+        # each poly needs a colour, so we use the base colour for all polys
+        self.colour = colour
+        self.colour_list = [colour] * len(self.polys) if self.polys else [colour]
 
 
     def read_stl_binary(self):
@@ -87,11 +96,6 @@ class CadMesh:
 
             Note: Does not handle texture coordinates or materials.
         """
-
-
-        triangle_normals = []
-        triangles = []
-
         points = []
         normals = []
         textures = []
@@ -121,4 +125,55 @@ class CadMesh:
 
         except IOError as e:
             print(f"Error reading OBJ file: {e}")
-        return triangle_normals, triangles
+        return [], []
+
+    def _draw(self):
+        # Use a display list for static geometry (cache by pos, scale, color)
+        cache_key = (tuple(self.pose), tuple(self.scale), tuple(self.colour_list))
+        if cache_key not in self._quad_display_list_cache:
+            display_list = glGenLists(1)
+            glNewList(display_list, GL_COMPILE)
+            glEnable(GL_CULL_FACE)
+            glCullFace(GL_BACK)
+            glFrontFace(GL_CCW)
+
+            # if len(self.polys[0]) == 3:  # Check if the mesh is triangular
+            #     glBegin(GL_TRIANGLES)
+            # elif len(self.polys[0]) == 4:  # Check if the mesh is quadrilateral
+            #     glBegin(GL_QUADS)
+
+
+
+            for i in range(len(self.polys)):
+                poly = self.polys[i]
+                glBegin(GL_POLYGON)
+                for j, vertex in enumerate(poly):
+                    # Gouraud shading is cheated here using triangle normal instead of vertex normals
+                    if self.vertex_normals:
+                        normal = self.vertex_normals[i][j]
+                    else:
+                        normal = self.face_normals[i]
+
+                    glNormal3f(*normal)
+
+                    glColor4f(*self.colour_list[i] if isinstance(self.colour_list, list) else self.colour_list)
+
+                    v = [vertex[0] * self.scale[0],
+                        vertex[1] * self.scale[1],
+                        vertex[2] * self.scale[2]]
+
+                    # make v a 4d vector for quaternion multiplication
+                    v = np.array(v)
+                    if len(v) == 3:
+                        v = np.append(v, 1.0)
+                    v @= self.quat_to_matrix(self.pose[3:])
+                    v = v[:3]
+
+                    v = np.array(v) + np.array(self.pose[:3])  # Apply translation
+                    glVertex3f(*v)
+                glEnd()
+            # glEnd()
+            glDisable(GL_CULL_FACE)
+            glEndList()
+            self._quad_display_list_cache[cache_key] = display_list
+        glCallList(self._quad_display_list_cache[cache_key])
