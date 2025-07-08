@@ -22,6 +22,24 @@ class SceneObject:
         self.y_vel = 0.0
         self.z_vel = 0.0
 
+    def set_position(self, x, y, z):
+        """Set the position of the object."""
+        self.x_pos = x
+        self.y_pos = y
+        self.z_pos = z
+        
+    def set_rotation(self, x_rot, y_rot, z_rot):
+        """Set the rotation of the object."""
+        self.x_rot = x_rot
+        self.y_rot = y_rot
+        self.z_rot = z_rot
+        
+    def set_velocity(self, x_vel, y_vel, z_vel):
+        """Set the velocity of the object."""
+        self.x_vel = x_vel
+        self.y_vel = y_vel
+        self.z_vel = z_vel     
+
     def draw(self):
         # Draw solid rectangle
         glPushMatrix()
