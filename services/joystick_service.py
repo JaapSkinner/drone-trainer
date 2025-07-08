@@ -72,9 +72,11 @@ class JoystickService(ServiceBase):
         # Adjust joystick axes based on camera angles
         lx = deadzone(self.joystick.get_axis(0)) * np.cos(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.sin(np.radians(cam_angle_y))
         ly = - deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
-        rx = deadzone(self.joystick.get_axis(3)) #np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3))
-        ry = deadzone(self.joystick.get_axis(4)) #- np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4))
-            
+        rx = deadzone(self.joystick.get_axis(3))
+        # rx = np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3))
+        ry = deadzone(self.joystick.get_axis(4)) 
+        # ry = - np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4))
+        rz = deadzone(((self.joystick.get_axis(5) + 1) / 2) - ((self.joystick.get_axis(2) + 1) / 2))  # RT - LT, normalized to [-1, 1]
         lb = self.joystick.get_button(4)
         rb = self.joystick.get_button(5)
 
@@ -88,9 +90,9 @@ class JoystickService(ServiceBase):
             obj.set_position(obj.x_pos + obj.x_vel, 
                              obj.y_pos + obj.y_vel, 
                              obj.z_pos + obj.z_vel)
-            obj.set_rotation(obj.x_rot + ry * 2.0, 
-                             obj.y_rot, 
-                             obj.z_rot - rx * 2.0)
+            obj.set_rotation(ry * 0.03, 
+                             -rz * 0.03, 
+                             -rx * 0.03)
             
 
             self.joystick_updated.emit(obj)  # notify main window or UI
