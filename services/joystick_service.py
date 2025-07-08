@@ -1,3 +1,4 @@
+import numpy as np
 import pygame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
@@ -64,24 +65,35 @@ class JoystickService(ServiceBase):
 
         def deadzone(val): return val if abs(val) > 0.1 else 0
 
-        lx = deadzone(self.joystick.get_axis(0))
-        ly = deadzone(self.joystick.get_axis(1))
+        # read camera angles from gl_widget and rotate joystick axes accordingly
+        cam_angle_x = self.gl_widget.camera_angle_x
+        cam_angle_y = self.gl_widget.camera_angle_y
+        
+        # Adjust joystick axes based on camera angles
+        lx = deadzone(self.joystick.get_axis(0)) * np.cos(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.sin(np.radians(cam_angle_y))
+        ly = - deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
         rx = deadzone(self.joystick.get_axis(3))
-        ry = deadzone(self.joystick.get_axis(4))
+        # rx = np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3))
+        ry = deadzone(self.joystick.get_axis(4)) 
+        # ry = - np.sin(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(3)) + np.cos(np.radians(cam_angle_y)) * deadzone(self.joystick.get_axis(4))
+        rz = deadzone(((self.joystick.get_axis(5) + 1) / 2) - ((self.joystick.get_axis(2) + 1) / 2))  # RT - LT, normalized to [-1, 1]
         lb = self.joystick.get_button(4)
         rb = self.joystick.get_button(5)
+
 
         i = self.joystick_object
         if i != -1:
             obj = self.gl_widget.objects[i]
-            obj.x_vel = lx * 0.1
-            obj.z_vel = ly * 0.1
-            obj.y_vel = (rb - lb) * 0.1
-            obj.x_pos += obj.x_vel
-            obj.z_pos += obj.z_vel
-            obj.y_pos += obj.y_vel
-            obj.x_rot += ry * 2.0
-            obj.z_rot -= rx * 2.0
+            obj.set_velocity(lx * 0.1,
+                            (rb - lb) * 0.1, 
+                            ly * 0.1)
+            obj.set_position(obj.x_pos + obj.x_vel, 
+                             obj.y_pos + obj.y_vel, 
+                             obj.z_pos + obj.z_vel)
+            obj.set_rotation(ry * 0.03, 
+                             -rz * 0.03, 
+                             -rx * 0.03)
+            
 
             self.joystick_updated.emit(obj)  # notify main window or UI
 
