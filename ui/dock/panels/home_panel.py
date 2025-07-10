@@ -15,7 +15,7 @@ class HomePanel(QWidget):
         logo = QLabel()
         pixmap = QPixmap("ui/assets/dtrg_full.png")
         # Set a large default width, will be resized dynamically
-        logo.setPixmap(pixmap.scaled(240, 80, Qt.KeepAspectRatio | Qt.SmoothTransformation))
+        logo.setPixmap(pixmap.scaled(290, 80, Qt.KeepAspectRatio | Qt.SmoothTransformation))
         logo.setAlignment(Qt.AlignCenter)
         layout.addWidget(logo)
         logo.setMinimumHeight(80)
@@ -23,13 +23,9 @@ class HomePanel(QWidget):
         logo.setStyleSheet("padding: 8px 0px;")
         layout.addSpacing(16)
 
-        # Make logo responsive to panel resize
-        def resize_logo():
-            w = max(160, self.width() - 32)
-            logo.setPixmap(pixmap.scaled(w, 120, Qt.KeepAspectRatio | Qt.SmoothTransformation))
         # Welcome text
         welcome = QLabel("<b>Welcome to Drone Trainer!</b>")
-        welcome.setFont(QFont("Arial", 14))
+        welcome.setFont(QFont("NotoSan", 14))
         welcome.setAlignment(Qt.AlignCenter)
         layout.addWidget(welcome)
 
