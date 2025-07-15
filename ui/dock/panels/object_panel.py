@@ -110,13 +110,13 @@ class ObjectPanel(QWidget):
     def refresh(self):
         for i, obj in enumerate(self.gl_widget.objects):
             fields = self.input_fields[i]
-            fields['x_pos'].setText(f"{obj.x_pos:.4f}")
-            fields['y_pos'].setText(f"{obj.y_pos:.4f}")
-            fields['z_pos'].setText(f"{obj.z_pos:.4f}")
-            fields['x_rot'].setText(f"{obj.x_rot:.4f}")
-            fields['y_rot'].setText(f"{obj.y_rot:.4f}")
-            fields['z_rot'].setText(f"{obj.z_rot:.4f}")
-            fields['color'].setText(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
-            fields['size'].setText(f"{obj.size:.4f}")
-            fields['length'].setText(f"{obj.length:.4f}")
-            fields['transparency'].setText(f"{obj.transparency:.4f}")
+            fields['x_pos'].setText(f"{obj.pose[0]:.4f}")
+            fields['y_pos'].setText(f"{obj.pose[1]:.4f}")
+            fields['z_pos'].setText(f"{obj.pose[2]:.4f}")
+            fields['x_rot'].setText(f"{obj.pose[3]:.4f}")
+            fields['y_rot'].setText(f"{obj.pose[4]:.4f}")
+            fields['z_rot'].setText(f"{obj.pose[5]:.4f}")
+            # fields['color'].setText(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
+            # fields['size'].setText(f"{obj.size:.4f}")
+            # fields['length'].setText(f"{obj.length:.4f}")
+            # fields['transparency'].setText(f"{obj.transparency:.4f}")
