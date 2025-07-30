@@ -4,16 +4,25 @@ from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import OpenGL.GLUT as GLUT
+
 from models.scene_object import SceneObject
 import numpy as np
 from models.cad_mesh import CadMesh
 from models.rect_prism import RectPrism
+from models.grid import Grid
+from models.axes import Axes
+from models.debug_text import DebugText
 import time
 
 class GLWidget(QOpenGLWidget):
-    def __init__(self, parent=None):
+    def __init__(self, object_service=None, parent=None):
         super().__init__(parent)
         self.setMinimumSize(800, 600)
+
+        if object_service is None:
+            raise ValueError("ObjectService must be provided to GLWidget")
+        else:
+            self.object_service = object_service
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -22,7 +31,8 @@ class GLWidget(QOpenGLWidget):
         self.prev_time = time.time()
         self.fps = 0.0
 
-        self.objects = []
+        grid = Grid(name="Grid", colour=(0.68, 0.68, 0.68, 1.0))
+        axes = Axes(name="Axes")
 
         red_cube = RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0))
         green_cube = RectPrism(name="Green Cube", colour=(0.0, 1.0, 0.0))
@@ -33,13 +43,12 @@ class GLWidget(QOpenGLWidget):
 
         quad = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5))
 
-        self.objects.append(red_cube)
-        self.objects.append(green_cube)
-        self.objects.append(blue_cube)
-        self.objects.append(quad)
+        self.object_service.add_object(grid)
+        self.object_service.add_object(red_cube)
+        self.object_service.add_object(green_cube)
+        self.object_service.add_object(blue_cube)
+        self.object_service.add_object(quad)
 
-        # Sort objects by alpha value (transparency). Transparent objects should be drawn last.
-        self.objects.sort(key=lambda obj: obj.colour[3], reverse=True)
         # Camera parameters
         self.camera_distance = 10.0
         self.camera_angle_x = 30.0
@@ -78,11 +87,19 @@ class GLWidget(QOpenGLWidget):
         )
         glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
 
-        self.draw_grid()
-        self.draw_axes()
+        current_time = time.time()
+        delta = current_time - self.prev_time
+        if delta > 0:
+            self.fps = 1.0 / delta
+        self.prev_time = current_time
 
-        for obj in self.objects:
-            obj.draw()
+        window_dimensions = (self.width(), self.height())
+
+        self.object_service.update_debug_text("FPS", self.fps, dimensions=window_dimensions)
+        self.object_service.update_debug_text("Cam X", self.camera_angle_x, dimensions=window_dimensions)
+        self.object_service.update_debug_text("Cam Y", self.camera_angle_y, dimensions=window_dimensions)
+
+        self.object_service.draw_objects()
 
         # Draw dashed line between the first and second objects
         # start = np.array([self.objects[0].x_pos, self.objects[0].y_pos, self.objects[0].z_pos])
@@ -108,45 +125,6 @@ class GLWidget(QOpenGLWidget):
         # end_arrow_2 = start_arrow_2 + np.array([0.0, 0.5, 0.0])
         # self.draw_arrow(start_arrow_2, end_arrow_2, (0.0, 0.0, 1.0))
 
-        # FPS calculation (instantaneous)
-        current_time = time.time()
-        delta = current_time - self.prev_time
-        if delta > 0:
-            self.fps = 1.0 / delta
-        self.prev_time = current_time
-        # Draw FPS counter in the top-left corner
-        self.debug_count = 0  # Reset debug count for FPS display
-        self.draw_debug_text("FPS", self.fps)
-        self.draw_debug_text("Cam X", self.camera_angle_x)
-        self.draw_debug_text("Cam Y", self.camera_angle_y)
-
-
-    def draw_grid(self):
-        glColor3f(0.68, 0.68, 0.68)
-        glBegin(GL_LINES)
-        for i in range(-10, 11):
-            glVertex3f(i, 0, -10)
-            glVertex3f(i, 0, 10)
-            glVertex3f(-10, 0, i)
-            glVertex3f(10, 0, i)
-        glEnd()
-
-    def draw_axes(self):
-        # disable lighting for axes
-        glDisable(GL_LIGHTING)
-        glLineWidth(2.0)
-        glBegin(GL_LINES)
-        glColor3f(1.0, 0.0, 0.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(1, 0, 0)
-        glColor3f(0.0, 1.0, 0.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 1, 0)
-        glColor3f(0.0, 0.0, 1.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 0, 1)
-        glEnd()
-        glEnable(GL_LIGHTING)
 
     def resizeGL(self, width, height):
         glViewport(0, 0, width, height)
@@ -215,22 +193,4 @@ class GLWidget(QOpenGLWidget):
 
         glLineWidth(1.0)  # Reset line width
 
-    def draw_debug_text(self, text, val, x=0, y=0, colour=(0.0, 0.0, 0.0)):
-        """Draw debug text at specified position."""
-        self.debug_count += 1
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        glOrtho(0, self.width(), 0, self.height(), -1, 1)
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-        glColor3f(*colour)
-        glRasterPos2f(10 + x, self.height() - 20 - y - self.debug_count*20)
-        fps_text = f"{text}: {val:.1f}"
-        for ch in fps_text:
-            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(ch))
-        glPopMatrix()
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
+

@@ -11,7 +11,7 @@ from ui.dock.panels.config_panel import ConfigPanel
 from ui.dock.panels.settings_panel import SettingsPanel
 
 class DockManager(QDockWidget):
-    def __init__(self, parent=None, gl_widget=None, control_callback=None, vicon=None):
+    def __init__(self, parent=None, gl_widget=None, control_callback=None, vicon=None, object_service=None):
         super().__init__(parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
@@ -26,7 +26,7 @@ class DockManager(QDockWidget):
             LeaderboardPanel(self),
             ConfigPanel(self),
             ViconPanel(self, vicon),
-            ObjectPanel(gl_widget,control_callback,self),
+            ObjectPanel(gl_widget,control_callback,self, object_service=object_service),
             SettingsPanel(self)
         ]
         for panel in self.panels:

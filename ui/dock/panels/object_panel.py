@@ -2,11 +2,12 @@ from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGro
 
 class ObjectPanel(QWidget):
     NavTag = "live_data"
-    def __init__(self, gl_widget, set_controlled_object_callback, parent=None):
+    def __init__(self, gl_widget, set_controlled_object_callback, parent=None, object_service=None):
         super().__init__(parent)
         self.gl_widget = gl_widget
         self.set_controlled_object = set_controlled_object_callback
         self.input_fields = []
+        self.object_service = object_service
 
         layout = QVBoxLayout(self)
         self.combo_box = QComboBox()
@@ -35,7 +36,7 @@ class ObjectPanel(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        for i, obj in enumerate(self.gl_widget.objects):
+        for i, obj in enumerate(self.object_service.get_objects()):
             self.combo_box.addItem(obj.name, i)
 
             group_box = QGroupBox(f"Object {i} - {obj.name}")

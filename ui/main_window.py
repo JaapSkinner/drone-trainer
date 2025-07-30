@@ -2,6 +2,7 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget
 
 from services.joystick_service import JoystickService
+from services.object_service import ObjectService
 from services.status_service import StatusService
 
 from ui.gl_widget.gl_widget import GLWidget
@@ -16,9 +17,11 @@ class MainWindow(QMainWindow):
     def __init__(self, vicon, parent=None):
         super().__init__(parent)
         self.vicon = vicon
+        self.object_service = ObjectService(debug_level=None)  # Use default debug level
         self.initUI()
         self.joystick_service = JoystickService(self.glWidget)
-        
+
+
         self.status_service = StatusService(
             self.status_panel,
             self.joystick_service,
@@ -50,9 +53,9 @@ class MainWindow(QMainWindow):
         self.navbar = SideNavbar()
         main_layout.addWidget(self.navbar)
 
-        # Dockand GLWidget on the right
-        self.glWidget = GLWidget(self)
-        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon)
+        # Dock and GLWidget on the right
+        self.glWidget = GLWidget(object_service=self.object_service)
+        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon, self.object_service)
         self.object_panel = self.dock.panels[5]
         
         splitter = QSplitter(Qt.Horizontal)
