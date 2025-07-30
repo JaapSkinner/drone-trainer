@@ -10,7 +10,7 @@ class SceneObject(ABC):
         self.pose = pose if pose else (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0) # Default pose: position, quaternion (x, y, z, qw, qx, qy, qz)
         self.name = name if name else "Unnamed Object"
         self.tracked = False
-        self.vicon_id = None  # Vicon ID for tracking, if applicable
+        self.tracking_id = None  # Vicon ID for tracking, if applicable
         self.rendered = rendered
         self.shaded = shaded  # Whether the object should be shaded
 
@@ -27,8 +27,8 @@ class SceneObject(ABC):
         """Set whether the object is tracked. If tracked is True, vicon_id must be provided."""
         if isinstance(tracked, bool):
             if tracked and vicon_id is not None:
-                self.vicon_id = vicon_id
-            elif tracked and vicon_id is None and self.vicon_id is None:
+                self.tracking_id = vicon_id
+            elif tracked and vicon_id is None and self.tracking_id is None:
                 raise ValueError("Vicon ID must be provided if tracked is True")
             self.tracked = tracked
         else:

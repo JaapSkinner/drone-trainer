@@ -10,7 +10,7 @@ class RectPrism(SceneObject):
     def __init__(self, pose=None, name=None, dimensions=(1.0, 1.0, 1.0), colour=None, edge_colour=(0.0, 0.0, 0.0)):
         super().__init__(pose, name)
         if name is None:
-            name = "Unnamed Rectangular Prism"
+            self.name = "Unnamed Rectangular Prism"
 
         if isinstance(dimensions, (int, float)):
             dimensions = (dimensions, dimensions, dimensions)
