@@ -29,7 +29,7 @@ class DebugText(SceneObject):
         self.dimensions = None
         self.set_dimensions(dimensions)
 
-        if len(colour) == 3:
+        if colour is not None and len(colour) == 3:
             colour = (*colour, 1.0)
 
         self.colour = colour if colour else (0.0, 0.0, 0.0, 1.0)  # Default color (0 - 1) (r, g, b, a)
@@ -53,7 +53,7 @@ class DebugText(SceneObject):
         if new_dimensions is None:
             new_dimensions = (800, 600)
         if isinstance(new_dimensions, (int, float)):
-            dimensions = (new_dimensions, new_dimensions)
+            new_dimensions = (new_dimensions, new_dimensions)
         if len(new_dimensions) != 2:
             raise ValueError("Dimensions must be a tuple of length 2 (width, height)")
         self.dimensions = new_dimensions

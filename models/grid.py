@@ -12,7 +12,7 @@ class Grid(SceneObject):
         if name is None:
             self.name = "Unnamed Grid"
 
-        if len(colour) == 3:
+        if colour is not None and len(colour) == 3:
             colour = (*colour, 1.0)
 
         self.colour = colour if colour else (0.68, 0.68, 0.68, 1.0)  # Default color (0 - 1) (r, g, b, a)

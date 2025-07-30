@@ -12,7 +12,6 @@ class ObjectService(ServiceBase):
     def __init__(self, debug_level=None):
         if debug_level is None:
             debug_level = DebugLevel.LOG
-        # print(instanceof(debug_level))
         print(f"ObjectService initialized with debug level: {debug_level}")
         print(f"instance of DebugLevel: {isinstance(debug_level, DebugLevel)}")
         super().__init__(debug_level=debug_level)

@@ -83,7 +83,7 @@ class JoystickService(ServiceBase):
 
         i = self.joystick_object
         if i != -1:
-            obj = self.gl_widget.objects[i]
+            obj = self.object_service.get_object_by_index(i)
             obj.set_pose_delta([lx * 0.1,
                             (rb - lb) * 0.1, 
                             ly * 0.1, 0,0,0,0])

@@ -15,14 +15,11 @@ from models.debug_text import DebugText
 import time
 
 class GLWidget(QOpenGLWidget):
-    def __init__(self, object_service=None, parent=None):
+    def __init__(self, object_service, parent=None):
         super().__init__(parent)
         self.setMinimumSize(800, 600)
 
-        if object_service is None:
-            raise ValueError("ObjectService must be provided to GLWidget")
-        else:
-            self.object_service = object_service
+        self.object_service = object_service
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)

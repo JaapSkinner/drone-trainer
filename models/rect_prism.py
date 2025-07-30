@@ -17,7 +17,7 @@ class RectPrism(SceneObject):
 
         self.dimensions = dimensions
 
-        if len(colour) == 3:
+        if colour is not None and len(colour) == 3:
             colour = (*colour, 1.0)
 
         if len(edge_colour) == 3:

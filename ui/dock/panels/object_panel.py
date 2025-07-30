@@ -109,7 +109,7 @@ class ObjectPanel(QWidget):
             self.set_controlled_object(obj_index)
 
     def refresh(self):
-        for i, obj in enumerate(self.gl_widget.objects):
+        for i, obj in enumerate(self.object_service.get_objects()):
             fields = self.input_fields[i]
             fields['x_pos'].setText(f"{obj.pose[0]:.4f}")
             fields['y_pos'].setText(f"{obj.pose[1]:.4f}")
