@@ -52,9 +52,17 @@ class ObjectService(ServiceBase):
             self.objects.append(obj)
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Object {obj.name} added.")
 
+            def sort_colour_check(obj):
+                # Check if the object has a 'colour' attribute
+                if hasattr(obj, 'colour') and isinstance(obj.colour, tuple) and len(obj.colour) >= 4:
+                    # If it does, use the 4th element (alpha) as the primary sort key
+                    return obj.colour[3]
+                else:
+                    return 999
 
             # Sort objects by their colour's alpha channel (4th element in the tuple)
-            self.objects.sort(key=lambda obj: obj.colour[3], reverse=True)
+            self.objects.sort(key=sort_colour_check, reverse=True)
+
         else:
             self.status_changed.emit(ServiceLevel.WARNING.value, f"Object {obj.name} already exists.")
 
