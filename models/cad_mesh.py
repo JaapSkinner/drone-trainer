@@ -9,11 +9,13 @@ from models.scene_object import SceneObject
 
 class CadMesh(SceneObject):
     """A class for importing and representing a 3D CAD model made of triangle facets. Supports reading from binary STL files.
-    Attributes:
+    Inputs:
+        filename (str): The full path to the file. (stored in '/cad_files') Supports STL and OBJ files.
         name (str): The name of the model, derived from the filename.
-        filename (str): The full path to the file. (stored in '/cad_files')
-        triangle_normals (list): A list of normal vectors for each triangle facet in the model.
-        triangles (list): A list of triangle facets, where each facet is a tuple containing the normal vector and a list of three vertices.
+        pose (7-tuple): Quaternion pose to offset the cad mesh.
+        scale (float): scaling factor (scale=1 means object is its default size defined by its mesh).
+        colour (rgba tuple): Default colour for the mesh.
+        shaded (bool): Whether the mesh is shaded.
     """
     def __init__(self, filename, name=None, pose=None, scale=None, colour=None, shaded=True):
         # Remove the file extension from the filename for the name attribute, and handle both absolute and relative paths.
