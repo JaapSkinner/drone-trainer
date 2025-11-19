@@ -4,12 +4,13 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
 from models.debug_text import DebugText
 from models.scene_object import SceneObject
+from services.joystick_service import JoystickService
 from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
 from models.structs import PositionData
 from PyQt5.QtCore import QTimer
 
 class ObjectService(ServiceBase):
-    def __init__(self, debug_level=None):
+    def __init__(self, joystick_service: JoystickService = None, debug_level=None):
         if debug_level is None:
             debug_level = DebugLevel.LOG
         print(f"ObjectService initialized with debug level: {debug_level}")
@@ -18,6 +19,7 @@ class ObjectService(ServiceBase):
 
         self.objects: list[SceneObject] = []
         self.controlled_object = None
+        self.joystick_service = joystick_service
 
         self.debug_count = 0
 
@@ -26,6 +28,10 @@ class ObjectService(ServiceBase):
 
     def on_stop(self):
         pass
+
+    def load_input_service(self, joystick_service: JoystickService):
+        self.joystick_service = joystick_service
+        self.set_controlled_object(obj=self.controlled_object)
 
     def update_debug_text(self, name: str, value: float, dimensions: tuple = None):
         """Update or create a debug text object."""
@@ -91,9 +97,12 @@ class ObjectService(ServiceBase):
                 self.status_changed.emit(ServiceLevel.WARNING.value, "No object provided or found by name.")
                 return
 
-
         if isinstance(obj, SceneObject):
             self.controlled_object = obj
+
+            if self.joystick_service:
+                self.joystick_service.set_controlled_object(obj)
+
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Controlled object set to {obj.name}.")
 
 

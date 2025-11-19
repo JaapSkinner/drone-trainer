@@ -2,10 +2,9 @@ from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGro
 
 class ObjectPanel(QWidget):
     NavTag = "live_data"
-    def __init__(self, gl_widget, set_controlled_object_callback, parent=None, object_service=None):
+    def __init__(self, gl_widget, parent=None, object_service = None):
         super().__init__(parent)
         self.gl_widget = gl_widget
-        self.set_controlled_object = set_controlled_object_callback
         self.input_fields = []
         self.object_service = object_service
 
@@ -37,7 +36,7 @@ class ObjectPanel(QWidget):
                 child.widget().deleteLater()
 
         for i, obj in enumerate(self.object_service.get_objects()):
-            self.combo_box.addItem(obj.name, i)
+            self.combo_box.addItem(obj.name, obj)
 
             group_box = QGroupBox(f"Object {i} - {obj.name}")
             form_layout = QFormLayout()
@@ -104,11 +103,14 @@ class ObjectPanel(QWidget):
             pass
 
     def on_object_selected(self, index):
-        obj_index = self.combo_box.itemData(index)
-        if obj_index is not None:
-            self.set_controlled_object(obj_index)
+        obj = self.combo_box.itemData(index)
+        if obj is not None:
+            self.object_service.set_controlled_object(obj=obj)
 
     def refresh(self):
+        # TODO: implement this with new object service features
+        return
+
         for i, obj in enumerate(self.object_service.get_objects()):
             fields = self.input_fields[i]
             fields['x_pos'].setText(f"{obj.pose[0]:.4f}")

@@ -14,12 +14,17 @@ from ui.status_panel.status_panel import StatusPanel
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, vicon, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.vicon = vicon
-        self.object_service = ObjectService(debug_level=None)  # Use default debug level
+        # self.vicon = vicon
+
+        self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
+
+        self.glWidget = None
         self.initUI()
+
         self.joystick_service = JoystickService(self.glWidget)
+        self.object_service.load_input_service(self.joystick_service)
 
 
         self.status_service = StatusService(
@@ -32,7 +37,7 @@ class MainWindow(QMainWindow):
         
         self.joystick_service.joystick_updated.connect(self.on_joystick_update)
         self.joystick_service.start()
-        self.vicon.position_updated.connect(self.update_vicon_position)
+        # self.vicon.position_updated.connect(self.update_vicon_position)
         
 
         
@@ -55,8 +60,8 @@ class MainWindow(QMainWindow):
 
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
-        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon, self.object_service)
-        self.object_panel = self.dock.panels[5]
+        self.dock = DockManager(self.glWidget, self, self.object_service)
+        self.object_panel = self.dock.panels[4]
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -100,10 +105,6 @@ class MainWindow(QMainWindow):
     def on_joystick_update(self, obj):
         self.object_panel.refresh()
         self.glWidget.update()
-
-    def set_controlled_object(self, index):
-        if hasattr(self, 'joystick_service'):
-            self.joystick_service.set_controlled_object_slot(index)
 
         
     def resizeEvent(self, event):
