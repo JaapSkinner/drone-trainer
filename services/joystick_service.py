@@ -84,14 +84,13 @@ class JoystickService(ServiceBase):
         obj = self.joystick_object
         if obj != None:
             obj.set_pose_delta([lx * 0.1,
-                            (rb - lb) * 0.1, 
-                            ly * 0.1, 0,0,0,0])
+                                (rb - lb) * 0.1,
+                                ly * 0.1, 0,0,0,0])
             obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                             obj.pose[1]+ obj.pose_delta[1],
-                             obj.pose[2] + obj.pose_delta[2], 1, ry * 0.03,-rz * 0.03,-rx * 0.03])
-            # obj.set_rotation(ry * 0.03,
-            #                  -rz * 0.03,
-            #                  -rx * 0.03)
+                          obj.pose[1] + obj.pose_delta[1],
+                          obj.pose[2] + obj.pose_delta[2],
+                          1, ry * 0.03,-rz * 0.03,-rx * 0.03])
+
             
 
             self.joystick_updated.emit(obj)  # notify main window or UI
