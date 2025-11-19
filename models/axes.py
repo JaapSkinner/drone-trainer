@@ -14,7 +14,8 @@ class Axes(SceneObject):
 
 
     def _draw(self):
-        glLineWidth(2.0)
+        current_thickness = glGetFloatv(GL_LINE_WIDTH)
+        glLineWidth(3.0)
         glBegin(GL_LINES)
         glColor3f(1.0, 0.0, 0.0)
         glVertex3f(0, 0, 0)
@@ -26,3 +27,4 @@ class Axes(SceneObject):
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, 1)
         glEnd()
+        glLineWidth(current_thickness)
