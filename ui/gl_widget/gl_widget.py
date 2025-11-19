@@ -41,6 +41,7 @@ class GLWidget(QOpenGLWidget):
         quad = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5))
 
         self.object_service.add_object(grid)
+        self.object_service.add_object(axes)
         self.object_service.add_object(red_cube)
         self.object_service.add_object(green_cube)
         self.object_service.add_object(blue_cube)
