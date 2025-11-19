@@ -15,9 +15,9 @@ class CadMesh(SceneObject):
         triangle_normals (list): A list of normal vectors for each triangle facet in the model.
         triangles (list): A list of triangle facets, where each facet is a tuple containing the normal vector and a list of three vertices.
     """
-    def __init__(self, filename, name=None, pose=None, scale=None, colour=None):
+    def __init__(self, filename, name=None, pose=None, scale=None, colour=None, shaded=True):
         # Remove the file extension from the filename for the name attribute, and handle both absolute and relative paths.
-        super().__init__(pose, name)
+        super().__init__(pose, name, shaded=shaded)
         if not name:
             name = filename.split('/')[-1].rsplit('.', 1)[0] if '/' in filename else filename.rsplit('.', 1)[0]
 
