@@ -47,7 +47,7 @@ class ObjectPanel(QWidget):
             xr = QLineEdit(f"{obj.pose[4]:.4f}")
             yr = QLineEdit(f"{obj.pose[5]:.4f}")
             zr = QLineEdit(f"{obj.pose[6]:.4f}")
-            color = QLineEdit(f"({obj.colour[0]:.4f}, {obj.colour[1]:.4f}, {obj.colour[2]:.4f})")
+            # color = QLineEdit(f"({obj.colour[0]:.4f}, {obj.colour[1]:.4f}, {obj.colour[2]:.4f})")
             if hasattr(obj, 'dimensions'):
                 size = QLineEdit(f"{obj.dimensions[0]:.4f}")
                 length = QLineEdit(f"{obj.dimensions[1]:.4f}")
@@ -55,7 +55,7 @@ class ObjectPanel(QWidget):
                 size = QLineEdit(f"-1")
                 length = QLineEdit(f"-1")
 
-            trans = QLineEdit(f"{obj.colour[3]:.4f}")
+            # trans = QLineEdit(f"{obj.colour[3]:.4f}")
 
             self._connect(x, i, 'x_pos')
             self._connect(y, i, 'y_pos')
@@ -63,10 +63,10 @@ class ObjectPanel(QWidget):
             self._connect(xr, i, 'x_rot')
             self._connect(yr, i, 'y_rot')
             self._connect(zr, i, 'z_rot')
-            self._connect(color, i, 'color')
+            # self._connect(color, i, 'color')
             self._connect(size, i, 'size')
             self._connect(length, i, 'length')
-            self._connect(trans, i, 'transparency')
+            # self._connect(trans, i, 'transparency')
 
             form_layout.addRow(QLabel("X Pos"), x)
             form_layout.addRow(QLabel("Y Pos"), y)
@@ -74,10 +74,10 @@ class ObjectPanel(QWidget):
             form_layout.addRow(QLabel("X Rot"), xr)
             form_layout.addRow(QLabel("Y Rot"), yr)
             form_layout.addRow(QLabel("Z Rot"), zr)
-            form_layout.addRow(QLabel("Color"), color)
+            # form_layout.addRow(QLabel("Color"), color)
             form_layout.addRow(QLabel("Size"), size)
             form_layout.addRow(QLabel("Length"), length)
-            form_layout.addRow(QLabel("Transparency"), trans)
+            # form_layout.addRow(QLabel("Transparency"), trans)
 
             group_box.setLayout(form_layout)
             self.scroll_layout.addWidget(group_box)
@@ -85,8 +85,8 @@ class ObjectPanel(QWidget):
             self.input_fields.append({
                 'x_pos': x, 'y_pos': y, 'z_pos': z,
                 'x_rot': xr, 'y_rot': yr, 'z_rot': zr,
-                'color': color, 'size': size,
-                'length': length, 'transparency': trans
+                # 'color': color, 'size': size,
+                # 'length': length, 'transparency': trans
             })
 
     def _connect(self, line_edit, index, attr):
