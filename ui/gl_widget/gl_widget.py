@@ -36,7 +36,7 @@ class GLWidget(QOpenGLWidget):
         green_cube.set_pose((2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
 
         blue_cube = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5))
-        blue_cube.set_pose((0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0))
+        blue_cube.set_pose((0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0))
 
         quad = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5))
 
