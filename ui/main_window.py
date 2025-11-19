@@ -1,5 +1,6 @@
 from PyQt5.QtCore import QTimer, Qt, pyqtSlot
-from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget
+from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication
+from PyQt5.QtGui import QFontDatabase, QFont
 
 from services.joystick_service import JoystickService
 from services.object_service import ObjectService
@@ -16,6 +17,15 @@ from ui.status_panel.status_panel import StatusPanel
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Load and set global font
+        font_id = QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
+        if font_id != -1:
+            family = QFontDatabase.applicationFontFamilies(font_id)[0]
+            QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
+            self.setFont(QFont(family, 11))
+            QApplication.setFont(QFont(family, 11))
+
+
         # self.vicon = vicon
 
         self.object_service = ObjectService(None, debug_level=None)  # Use default debug level

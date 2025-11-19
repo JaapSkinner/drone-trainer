@@ -1,0 +1,16 @@
+QPushButton.home-panel-btn {
+    color: #fff;
+    background-color: #3b434b;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 0px;
+    margin: 4px 0 0 0;
+    font-size: 15px;
+    font-weight: 500;
+}
+QPushButton.home-panel-btn:hover {
+    background-color: #616974;
+}
+QPushButton.home-panel-btn:pressed {
+    background-color: #2d333a;
+}
