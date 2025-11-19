@@ -19,11 +19,10 @@ class CadMesh(SceneObject):
     """
     def __init__(self, filename, name=None, pose=None, scale=None, colour=None, shaded=True):
         # Remove the file extension from the filename for the name attribute, and handle both absolute and relative paths.
-        super().__init__(pose, name, shaded=shaded)
         if not name:
             name = filename.split('/')[-1].rsplit('.', 1)[0] if '/' in filename else filename.rsplit('.', 1)[0]
+        super().__init__(pose, name, shaded=shaded)
 
-        self.name = name
         self.filename = filename
 
         if scale is None:
