@@ -150,7 +150,7 @@ class CadMesh(SceneObject):
                 glBegin(GL_POLYGON)
                 for j, vertex in enumerate(poly):
                     # Gouraud shading is cheated here using triangle normal instead of vertex normals
-                    if self.vertex_normals:
+                    if self.vertex_normals and i < len(self.vertex_normals) and j < len(self.vertex_normals[i]):
                         normal = self.vertex_normals[i][j]
                     else:
                         normal = self.face_normals[i]
