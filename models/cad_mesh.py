@@ -173,7 +173,6 @@ class CadMesh(SceneObject):
                     v = np.array(v) + np.array(self.pose[:3])  # Apply translation
                     glVertex3f(*v)
                 glEnd()
-            # glEnd()
             glDisable(GL_CULL_FACE)
             glEndList()
             self._quad_display_list_cache[cache_key] = display_list
