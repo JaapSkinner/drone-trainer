@@ -38,7 +38,7 @@ class SceneObject(ABC):
     def set_pose(self, pose):
         """Set the pose of the object."""
         if len(pose) == 7:
-            self.pose = pose
+            self.pose = tuple(pose)
         else:
             raise ValueError("Pose must be of length 7")
 
