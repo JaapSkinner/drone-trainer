@@ -7,8 +7,8 @@ from models.scene_object import SceneObject
 
 
 class Axes(SceneObject):
-    def __init__(self, pose=None, name=None):
-        super().__init__(pose, name, shaded=False)
+    def __init__(self, pose=None, name=None, controllable=False):
+        super().__init__(pose, name, shaded=False, controllable=controllable)
         if name is None:
             self.name = "Unnamed Axes"
 

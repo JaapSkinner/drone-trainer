@@ -7,8 +7,8 @@ from models.scene_object import SceneObject
 
 
 class Grid(SceneObject):
-    def __init__(self, pose=None, name=None, colour=None):
-        super().__init__(pose, name, shaded=False)
+    def __init__(self, pose=None, name=None, colour=None, controllable=False):
+        super().__init__(pose, name, shaded=False, controllable=False)
         if name is None:
             self.name = "Unnamed Grid"
 

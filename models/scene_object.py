@@ -6,13 +6,14 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 class SceneObject(ABC):
-    def __init__(self, pose=None, name=None, rendered=True, shaded=True):
+    def __init__(self, pose=None, name=None, rendered=True, shaded=True, controllable=True):
         self.pose = pose if pose else (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0) # Default pose: position, quaternion (x, y, z, qw, qx, qy, qz)
         self.name = name if name else "Unnamed Object"
         self.tracked = False
         self.tracking_id = None  # Vicon ID for tracking, if applicable
         self.rendered = rendered
         self.shaded = shaded  # Whether the object should be shaded
+        self.controllable = controllable
 
         self.pose_delta = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # (dx, dy, dz, dqw, dqx, dqy, dqz)
 

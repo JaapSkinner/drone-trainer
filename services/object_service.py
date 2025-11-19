@@ -98,10 +98,14 @@ class ObjectService(ServiceBase):
                 return
 
         if isinstance(obj, SceneObject):
-            self.controlled_object = obj
+            self.controlled_object = obj if obj.controllable else None
+
 
             if self.joystick_service:
                 self.joystick_service.set_controlled_object(obj)
+
+            if not obj.controllable:
+                self.status_changed.emit(ServiceLevel.WARNING.value, "Object is not controllable.")
 
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Controlled object set to {obj.name}.")
 
