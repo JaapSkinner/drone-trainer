@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service)
         self.object_panel = self.dock.panels[4]
-        self.config_panel = self.dock.panels[0]  # Config panel is first
+        self.config_panel = self.dock.panels[3]  # Config panel is at index 3
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
