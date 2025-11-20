@@ -61,6 +61,20 @@ class InputService(ServiceBase):
         
         self.controlled_object = None
         self.timer = None
+    
+    @staticmethod
+    def _apply_deadzone(value, threshold=0.1):
+        """
+        Apply deadzone to input value to filter out small unintentional movements.
+        
+        Args:
+            value: Input value to filter
+            threshold: Deadzone threshold (default 0.1)
+            
+        Returns:
+            Filtered value (0 if within deadzone, otherwise original value)
+        """
+        return value if abs(value) > threshold else 0
 
     def on_start(self):
         """Initialize the input service based on input type"""
@@ -182,18 +196,16 @@ class InputService(ServiceBase):
         
         pygame.event.pump()
 
-        def deadzone(val): return val if abs(val) > 0.1 else 0
-
         # read camera angles from gl_widget and rotate joystick axes accordingly
         cam_angle_x = self.gl_widget.camera_angle_x
         cam_angle_y = self.gl_widget.camera_angle_y
         
         # Adjust joystick axes based on camera angles
-        lx = deadzone(self.joystick.get_axis(0)) * np.cos(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.sin(np.radians(cam_angle_y))
-        ly = -(deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y))) + deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
-        rx = deadzone(self.joystick.get_axis(3))
-        ry = deadzone(self.joystick.get_axis(4)) 
-        rz = deadzone(((self.joystick.get_axis(5) + 1) / 2) - ((self.joystick.get_axis(2) + 1) / 2))  # RT - LT, normalized to [-1, 1]
+        lx = self._apply_deadzone(self.joystick.get_axis(0)) * np.cos(np.radians(cam_angle_y)) + self._apply_deadzone(self.joystick.get_axis(1)) * np.sin(np.radians(cam_angle_y))
+        ly = -(self._apply_deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y))) + self._apply_deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
+        rx = self._apply_deadzone(self.joystick.get_axis(3))
+        ry = self._apply_deadzone(self.joystick.get_axis(4)) 
+        rz = self._apply_deadzone(((self.joystick.get_axis(5) + 1) / 2) - ((self.joystick.get_axis(2) + 1) / 2))  # RT - LT, normalized to [-1, 1]
         lb = self.joystick.get_button(4)
         rb = self.joystick.get_button(5)
 
