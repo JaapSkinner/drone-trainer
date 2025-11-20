@@ -7,10 +7,7 @@ class StatusService(ServiceBase):
         super().__init__(debug_level)
         self.status_panel = status_panel
         self.joystick_service = joystick_service
-
-        self.timer = QTimer()
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.safe(self.update))
+        self.timer = None
 
     def on_start(self):
         self.timer = QTimer()
