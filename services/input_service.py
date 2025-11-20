@@ -166,17 +166,17 @@ class InputService(ServiceBase):
             if pygame.joystick.get_count() > 0:
                 self.joystick = pygame.joystick.Joystick(0)
                 self.joystick.init()
-                self.status_label = f"{self.joystick.get_name()}"
+                self.status_label = f"{self.input_type.value}: {self.joystick.get_name()}"
                 self.status = ServiceLevel.RUNNING
             else:
                 self.joystick = None
-                self.status_label = "Not Found"
+                self.status_label = f"{self.input_type.value}: Not Found"
                 self.status = ServiceLevel.STOPPED
             return
         elif self.joystick.get_id() >= pygame.joystick.get_count():
             # Joystick was disconnected
             self.joystick = None
-            self.status_label = "Disconnected"
+            self.status_label = f"{self.input_type.value}: Disconnected"
             self.status = ServiceLevel.STOPPED
             return
         
@@ -190,7 +190,7 @@ class InputService(ServiceBase):
         
         # Adjust joystick axes based on camera angles
         lx = deadzone(self.joystick.get_axis(0)) * np.cos(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.sin(np.radians(cam_angle_y))
-        ly = - deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y)) + deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
+        ly = -(deadzone(self.joystick.get_axis(0)) * np.sin(np.radians(cam_angle_y))) + deadzone(self.joystick.get_axis(1)) * np.cos(np.radians(cam_angle_y))
         rx = deadzone(self.joystick.get_axis(3))
         ry = deadzone(self.joystick.get_axis(4)) 
         rz = deadzone(((self.joystick.get_axis(5) + 1) / 2) - ((self.joystick.get_axis(2) + 1) / 2))  # RT - LT, normalized to [-1, 1]
