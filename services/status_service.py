@@ -3,10 +3,10 @@ from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from time import time
 
 class StatusService(ServiceBase):
-    def __init__(self, status_panel, joystick_service, mavlink_service, debug_level=DebugLevel.LOG):
+    def __init__(self, status_panel, input_service, mavlink_service, debug_level=DebugLevel.LOG):
         super().__init__(debug_level)
         self.status_panel = status_panel
-        self.joystick_service = joystick_service
+        self.input_service = input_service
         self.timer = None
 
     def on_start(self):
@@ -22,6 +22,6 @@ class StatusService(ServiceBase):
             self.timer = None
 
     def update(self):
-        # Joystick
-        js = self.joystick_service
-        self.status_panel.handle_status_change(js.status.value, getattr(js, "status_label", ""), "joystick")
+        # Input Device
+        input_svc = self.input_service
+        self.status_panel.handle_status_change(input_svc.status.value, getattr(input_svc, "status_label", ""), "input")

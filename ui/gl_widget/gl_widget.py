@@ -18,8 +18,10 @@ class GLWidget(QOpenGLWidget):
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
         self.setMinimumSize(800, 600)
+        self.setFocusPolicy(Qt.StrongFocus)  # Enable keyboard focus
 
         self.object_service = object_service
+        self.input_service = None  # Will be set by MainWindow
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -190,5 +192,21 @@ class GLWidget(QOpenGLWidget):
         glEnd()
 
         glLineWidth(1.0)  # Reset line width
+
+    def keyPressEvent(self, event):
+        """Handle key press events and forward to input service"""
+        if self.input_service:
+            self.input_service.handle_key_press(event.key())
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        """Handle key release events and forward to input service"""
+        if self.input_service:
+            self.input_service.handle_key_release(event.key())
+        super().keyReleaseEvent(event)
+
+    def set_input_service(self, input_service):
+        """Set the input service for this widget"""
+        self.input_service = input_service
 
 

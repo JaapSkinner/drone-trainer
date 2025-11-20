@@ -2,7 +2,7 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSlot
 from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication
 from PyQt5.QtGui import QFontDatabase, QFont
 
-from services.joystick_service import JoystickService
+from services.input_service import InputService, InputType
 from services.object_service import ObjectService
 from services.status_service import StatusService
 
@@ -33,20 +33,27 @@ class MainWindow(QMainWindow):
         self.glWidget = None
         self.initUI()
 
-        self.joystick_service = JoystickService(self.glWidget)
-        self.object_service.load_input_service(self.joystick_service)
-
+        # Initialize input service with default settings
+        self.input_service = InputService(
+            self.glWidget,
+            input_type=InputType.CONTROLLER,
+            sensitivity=1.0
+        )
+        self.object_service.load_input_service(self.input_service)
+        
+        # Connect GL widget to input service for keyboard events
+        self.glWidget.set_input_service(self.input_service)
 
         self.status_service = StatusService(
             self.status_panel,
-            self.joystick_service,
+            self.input_service,
             None  # Placeholder for mavlink service
         )
         self.status_service.start()
         
         
-        self.joystick_service.joystick_updated.connect(self.on_joystick_update)
-        self.joystick_service.start()
+        self.input_service.input_updated.connect(self.on_input_update)
+        self.input_service.start()
         # self.vicon.position_updated.connect(self.update_vicon_position)
         
 
@@ -72,6 +79,7 @@ class MainWindow(QMainWindow):
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service)
         self.object_panel = self.dock.panels[4]
+        self.config_panel = self.dock.panels[0]  # Config panel is first
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -84,6 +92,10 @@ class MainWindow(QMainWindow):
         self.dock.setMinimumWidth(250)
         
         self.navbar.panel_selected.connect(self.dock.set_active_panel)
+        
+        # Connect config panel signals to input service
+        self.config_panel.input_type_changed.connect(self.on_input_type_changed)
+        self.config_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
@@ -112,9 +124,22 @@ class MainWindow(QMainWindow):
         self.object_panel.refresh()
 
     @pyqtSlot(object)
-    def on_joystick_update(self, obj):
+    def on_input_update(self, obj):
+        """Handle input device updates (replaces on_joystick_update)"""
         self.object_panel.refresh()
         self.glWidget.update()
+    
+    @pyqtSlot(object)
+    def on_input_type_changed(self, input_type):
+        """Handle input type change from config panel"""
+        if hasattr(self, 'input_service'):
+            self.input_service.set_input_type(input_type)
+    
+    @pyqtSlot(float)
+    def on_sensitivity_changed(self, sensitivity):
+        """Handle sensitivity change from config panel"""
+        if hasattr(self, 'input_service'):
+            self.input_service.set_sensitivity(sensitivity)
 
         
     def resizeEvent(self, event):
@@ -127,8 +152,8 @@ class MainWindow(QMainWindow):
         # Stop services to ensure timers are stopped in their own threads
         if hasattr(self, 'status_service'):
             self.status_service.stop()
-        if hasattr(self, 'joystick_service'):
-            self.joystick_service.stop()
+        if hasattr(self, 'input_service'):
+            self.input_service.stop()
         
         # Stop the GL widget timer
         if hasattr(self, 'glWidget') and self.glWidget and hasattr(self.glWidget, 'timer'):
