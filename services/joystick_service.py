@@ -36,6 +36,7 @@ class JoystickService(ServiceBase):
     def on_stop(self):
         if self.timer:
             self.timer.stop()
+            self.timer.deleteLater()
             self.timer = None
         pygame.quit()
 

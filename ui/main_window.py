@@ -121,3 +121,19 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())
         self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+
+    def closeEvent(self, event):
+        """Properly stop all services before closing the application."""
+        # Stop services to ensure timers are stopped in their own threads
+        if hasattr(self, 'status_service'):
+            self.status_service.stop()
+        if hasattr(self, 'joystick_service'):
+            self.joystick_service.stop()
+        
+        # Stop the GL widget timer
+        if hasattr(self, 'glWidget') and self.glWidget and hasattr(self.glWidget, 'timer'):
+            self.glWidget.timer.stop()
+        
+        # Accept the close event
+        super().closeEvent(event)
+        event.accept()
