@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplic
 from PyQt5.QtGui import QFontDatabase, QFont
 
 from services.joystick_service import JoystickService
+from services.object_service import ObjectService
 from services.status_service import StatusService
 
 from ui.gl_widget.gl_widget import GLWidget
@@ -14,7 +15,7 @@ from ui.status_panel.status_panel import StatusPanel
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, vicon, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         # Load and set global font
         font_id = QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
@@ -23,10 +24,19 @@ class MainWindow(QMainWindow):
             QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
             self.setFont(QFont(family, 11))
             QApplication.setFont(QFont(family, 11))
-        self.vicon = vicon
+
+
+        # self.vicon = vicon
+
+        self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
+
+        self.glWidget = None
         self.initUI()
+
         self.joystick_service = JoystickService(self.glWidget)
-        
+        self.object_service.load_input_service(self.joystick_service)
+
+
         self.status_service = StatusService(
             self.status_panel,
             self.joystick_service,
@@ -37,7 +47,7 @@ class MainWindow(QMainWindow):
         
         self.joystick_service.joystick_updated.connect(self.on_joystick_update)
         self.joystick_service.start()
-        self.vicon.position_updated.connect(self.update_vicon_position)
+        # self.vicon.position_updated.connect(self.update_vicon_position)
         
 
         
@@ -58,10 +68,10 @@ class MainWindow(QMainWindow):
         self.navbar = SideNavbar()
         main_layout.addWidget(self.navbar)
 
-        # Dockand GLWidget on the right
-        self.glWidget = GLWidget(self)
-        self.dock = DockManager(self, self.glWidget, self.set_controlled_object, self.vicon)
-        self.object_panel = self.dock.panels[5]
+        # Dock and GLWidget on the right
+        self.glWidget = GLWidget(object_service=self.object_service)
+        self.dock = DockManager(self.glWidget, self, self.object_service)
+        self.object_panel = self.dock.panels[4]
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -106,12 +116,24 @@ class MainWindow(QMainWindow):
         self.object_panel.refresh()
         self.glWidget.update()
 
-    def set_controlled_object(self, index):
-        if hasattr(self, 'joystick_service'):
-            self.joystick_service.set_controlled_object_slot(index)
-
         
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())
         self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+
+    def closeEvent(self, event):
+        """Properly stop all services before closing the application."""
+        # Stop services to ensure timers are stopped in their own threads
+        if hasattr(self, 'status_service'):
+            self.status_service.stop()
+        if hasattr(self, 'joystick_service'):
+            self.joystick_service.stop()
+        
+        # Stop the GL widget timer
+        if hasattr(self, 'glWidget') and self.glWidget and hasattr(self.glWidget, 'timer'):
+            self.glWidget.timer.stop()
+        
+        # Accept the close event
+        super().closeEvent(event)
+        event.accept()
