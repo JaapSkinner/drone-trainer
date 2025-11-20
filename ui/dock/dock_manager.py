@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import QDockWidget
 from PyQt5.QtCore import Qt
 
 from ui.dock.panels.object_panel import ObjectPanel
-from ui.dock.panels.vicon_panel import ViconPanel
+from ui.dock.panels.motion_capture_panel import MotionCapturePanel
 from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
