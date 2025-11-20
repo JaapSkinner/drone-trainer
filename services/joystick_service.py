@@ -13,7 +13,7 @@ class JoystickService(ServiceBase):
         self.gl_widget = gl_widget
         self.update_interval = update_interval_ms
         self.joystick = None
-        self.joystick_object = 0
+        self.joystick_object = None
         self.timer = None
 
     def on_start(self):
@@ -81,22 +81,19 @@ class JoystickService(ServiceBase):
         rb = self.joystick.get_button(5)
 
 
-        i = self.joystick_object
-        if i != -1:
-            obj = self.gl_widget.objects[i]
-            obj.set_velocity(lx * 0.1,
-                            (rb - lb) * 0.1, 
-                            ly * 0.1)
-            obj.set_position(obj.x_pos + obj.x_vel, 
-                             obj.y_pos + obj.y_vel, 
-                             obj.z_pos + obj.z_vel)
-            obj.set_rotation(ry * 0.03, 
-                             -rz * 0.03, 
-                             -rx * 0.03)
+        obj = self.joystick_object
+        if obj != None:
+            obj.set_pose_delta([lx * 0.1,
+                                (rb - lb) * 0.1,
+                                ly * 0.1, 0,0,0,0])
+            obj.set_pose([obj.pose[0] + obj.pose_delta[0],
+                          obj.pose[1] + obj.pose_delta[1],
+                          obj.pose[2] + obj.pose_delta[2],
+                          1, ry * 0.03,-rz * 0.03,-rx * 0.03])
+
             
 
             self.joystick_updated.emit(obj)  # notify main window or UI
 
-    @pyqtSlot(int)
-    def set_controlled_object_slot(self, index):
-        self.joystick_object = index
+    def set_controlled_object(self, obj):
+        self.joystick_object = obj

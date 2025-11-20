@@ -4,8 +4,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from OpenGL.GLUT import glutInit
 from ui.main_window import MainWindow
-from services.vicon_connection import ViconConnection
-
+# from services.vicon_connection import ViconConnection
 
 def main():
     glutInit(sys.argv)
@@ -17,8 +16,9 @@ def main():
     splash.show()
     app.processEvents()
 
-    vicon = ViconConnection('192.168.10.1', 'mug')
-    main_window = MainWindow(vicon)
+    # vicon = ViconConnection('192.168.10.1', 'mug')
+    main_window = MainWindow()
+
     main_window.show()
     main_window.raise_()
     main_window.activateWindow()

@@ -2,11 +2,11 @@ from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGro
 
 class ObjectPanel(QWidget):
     NavTag = "live_data"
-    def __init__(self, gl_widget, set_controlled_object_callback, parent=None):
+    def __init__(self, gl_widget, parent=None, object_service = None):
         super().__init__(parent)
         self.gl_widget = gl_widget
-        self.set_controlled_object = set_controlled_object_callback
         self.input_fields = []
+        self.object_service = object_service
 
         layout = QVBoxLayout(self)
         self.combo_box = QComboBox()
@@ -35,22 +35,27 @@ class ObjectPanel(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        for i, obj in enumerate(self.gl_widget.objects):
-            self.combo_box.addItem(obj.name, i)
+        for i, obj in enumerate(self.object_service.get_objects()):
+            self.combo_box.addItem(obj.name, obj)
 
             group_box = QGroupBox(f"Object {i} - {obj.name}")
             form_layout = QFormLayout()
 
-            x = QLineEdit(f"{obj.x_pos:.4f}")
-            y = QLineEdit(f"{obj.y_pos:.4f}")
-            z = QLineEdit(f"{obj.z_pos:.4f}")
-            xr = QLineEdit(f"{obj.x_rot:.4f}")
-            yr = QLineEdit(f"{obj.y_rot:.4f}")
-            zr = QLineEdit(f"{obj.z_rot:.4f}")
-            color = QLineEdit(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
-            size = QLineEdit(f"{obj.size:.4f}")
-            length = QLineEdit(f"{obj.length:.4f}")
-            trans = QLineEdit(f"{obj.transparency:.4f}")
+            x = QLineEdit(f"{obj.pose[0]:.4f}")
+            y = QLineEdit(f"{obj.pose[1]:.4f}")
+            z = QLineEdit(f"{obj.pose[2]:.4f}")
+            xr = QLineEdit(f"{obj.pose[4]:.4f}")
+            yr = QLineEdit(f"{obj.pose[5]:.4f}")
+            zr = QLineEdit(f"{obj.pose[6]:.4f}")
+            # color = QLineEdit(f"({obj.colour[0]:.4f}, {obj.colour[1]:.4f}, {obj.colour[2]:.4f})")
+            if hasattr(obj, 'dimensions'):
+                size = QLineEdit(f"{obj.dimensions[0]:.4f}")
+                length = QLineEdit(f"{obj.dimensions[1]:.4f}")
+            else:
+                size = QLineEdit(f"-1")
+                length = QLineEdit(f"-1")
+
+            # trans = QLineEdit(f"{obj.colour[3]:.4f}")
 
             self._connect(x, i, 'x_pos')
             self._connect(y, i, 'y_pos')
@@ -58,10 +63,10 @@ class ObjectPanel(QWidget):
             self._connect(xr, i, 'x_rot')
             self._connect(yr, i, 'y_rot')
             self._connect(zr, i, 'z_rot')
-            self._connect(color, i, 'color')
+            # self._connect(color, i, 'color')
             self._connect(size, i, 'size')
             self._connect(length, i, 'length')
-            self._connect(trans, i, 'transparency')
+            # self._connect(trans, i, 'transparency')
 
             form_layout.addRow(QLabel("X Pos"), x)
             form_layout.addRow(QLabel("Y Pos"), y)
@@ -69,10 +74,10 @@ class ObjectPanel(QWidget):
             form_layout.addRow(QLabel("X Rot"), xr)
             form_layout.addRow(QLabel("Y Rot"), yr)
             form_layout.addRow(QLabel("Z Rot"), zr)
-            form_layout.addRow(QLabel("Color"), color)
+            # form_layout.addRow(QLabel("Color"), color)
             form_layout.addRow(QLabel("Size"), size)
             form_layout.addRow(QLabel("Length"), length)
-            form_layout.addRow(QLabel("Transparency"), trans)
+            # form_layout.addRow(QLabel("Transparency"), trans)
 
             group_box.setLayout(form_layout)
             self.scroll_layout.addWidget(group_box)
@@ -80,8 +85,8 @@ class ObjectPanel(QWidget):
             self.input_fields.append({
                 'x_pos': x, 'y_pos': y, 'z_pos': z,
                 'x_rot': xr, 'y_rot': yr, 'z_rot': zr,
-                'color': color, 'size': size,
-                'length': length, 'transparency': trans
+                # 'color': color, 'size': size,
+                # 'length': length, 'transparency': trans
             })
 
     def _connect(self, line_edit, index, attr):
@@ -98,20 +103,23 @@ class ObjectPanel(QWidget):
             pass
 
     def on_object_selected(self, index):
-        obj_index = self.combo_box.itemData(index)
-        if obj_index is not None:
-            self.set_controlled_object(obj_index)
+        obj = self.combo_box.itemData(index)
+        if obj is not None:
+            self.object_service.set_controlled_object(obj=obj)
 
     def refresh(self):
-        for i, obj in enumerate(self.gl_widget.objects):
+        # TODO: implement this with new object service features
+        return
+
+        for i, obj in enumerate(self.object_service.get_objects()):
             fields = self.input_fields[i]
-            fields['x_pos'].setText(f"{obj.x_pos:.4f}")
-            fields['y_pos'].setText(f"{obj.y_pos:.4f}")
-            fields['z_pos'].setText(f"{obj.z_pos:.4f}")
-            fields['x_rot'].setText(f"{obj.x_rot:.4f}")
-            fields['y_rot'].setText(f"{obj.y_rot:.4f}")
-            fields['z_rot'].setText(f"{obj.z_rot:.4f}")
-            fields['color'].setText(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
-            fields['size'].setText(f"{obj.size:.4f}")
-            fields['length'].setText(f"{obj.length:.4f}")
-            fields['transparency'].setText(f"{obj.transparency:.4f}")
+            fields['x_pos'].setText(f"{obj.pose[0]:.4f}")
+            fields['y_pos'].setText(f"{obj.pose[1]:.4f}")
+            fields['z_pos'].setText(f"{obj.pose[2]:.4f}")
+            fields['x_rot'].setText(f"{obj.pose[3]:.4f}")
+            fields['y_rot'].setText(f"{obj.pose[4]:.4f}")
+            fields['z_rot'].setText(f"{obj.pose[5]:.4f}")
+            # fields['color'].setText(f"({obj.color[0]:.4f}, {obj.color[1]:.4f}, {obj.color[2]:.4f})")
+            # fields['size'].setText(f"{obj.size:.4f}")
+            # fields['length'].setText(f"{obj.length:.4f}")
+            # fields['transparency'].setText(f"{obj.transparency:.4f}")
