@@ -1,3 +1,16 @@
+"""
+DEPRECATED: This module has been replaced by input_service.py
+
+The JoystickService has been refactored into InputService to support
+multiple input types including controllers, WASD keyboard, and arrow keys.
+
+For new code, use:
+    from services.input_service import InputService, InputType
+    
+    service = InputService(gl_widget, input_type=InputType.CONTROLLER)
+
+This module is kept for backward compatibility but may be removed in future versions.
+"""
 import numpy as np
 import pygame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot

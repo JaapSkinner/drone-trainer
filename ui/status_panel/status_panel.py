@@ -19,11 +19,11 @@ class StatusPanel(QFrame):
 
         self.vicon_label = QLabel("Motion Capture (vicon) : Unknown")
         self.mavlink_label = QLabel("Mavlink: Unknown")
-        self.joystick_label = QLabel("Joystick: Unknown")
+        self.input_label = QLabel("Input Device: Unknown")
 
         layout.addWidget(self.vicon_label)
         layout.addWidget(self.mavlink_label)
-        layout.addWidget(self.joystick_label)
+        layout.addWidget(self.input_label)
         
     def handle_status_change(self, level: int, label: str, target=""):
         level_enum = ServiceLevel(level)
@@ -41,7 +41,8 @@ class StatusPanel(QFrame):
         label_map = {
             "vicon": (self.vicon_label, "Motion Capture (vicon)"),
             "mavlink": (self.mavlink_label, "Mavlink"),
-            "joystick": (self.joystick_label, "Joystick"),
+            "input": (self.input_label, "Input Device"),
+            "joystick": (self.input_label, "Input Device"),  # Legacy compatibility
         }
 
         if target in label_map:

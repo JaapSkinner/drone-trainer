@@ -4,13 +4,12 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
 from models.debug_text import DebugText
 from models.scene_object import SceneObject
-from services.joystick_service import JoystickService
 from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
 from models.structs import PositionData
 from PyQt5.QtCore import QTimer
 
 class ObjectService(ServiceBase):
-    def __init__(self, joystick_service: JoystickService = None, debug_level=None):
+    def __init__(self, input_service=None, debug_level=None):
         if debug_level is None:
             debug_level = DebugLevel.LOG
         print(f"ObjectService initialized with debug level: {debug_level}")
@@ -19,7 +18,7 @@ class ObjectService(ServiceBase):
 
         self.objects: list[SceneObject] = []
         self.controlled_object = None
-        self.joystick_service = joystick_service
+        self.input_service = input_service
 
         self.debug_count = 0
 
@@ -29,8 +28,8 @@ class ObjectService(ServiceBase):
     def on_stop(self):
         pass
 
-    def load_input_service(self, joystick_service: JoystickService):
-        self.joystick_service = joystick_service
+    def load_input_service(self, input_service):
+        self.input_service = input_service
         self.set_controlled_object(obj=self.controlled_object)
 
     def update_debug_text(self, name: str, value: float, dimensions: tuple = None):
@@ -109,8 +108,8 @@ class ObjectService(ServiceBase):
             self.controlled_object = obj if obj.controllable else None
 
 
-            if self.joystick_service:
-                self.joystick_service.set_controlled_object(obj)
+            if self.input_service:
+                self.input_service.set_controlled_object(obj)
 
             if not obj.controllable:
                 self.status_changed.emit(ServiceLevel.WARNING.value, "Object is not controllable.")
