@@ -197,7 +197,6 @@ class InputService(ServiceBase):
         pygame.event.pump()
 
         # read camera angles from gl_widget and rotate joystick axes accordingly
-        cam_angle_x = self.gl_widget.camera_angle_x
         cam_angle_y = self.gl_widget.camera_angle_y
         
         # Adjust joystick axes based on camera angles
