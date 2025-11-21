@@ -257,7 +257,6 @@ class InputService(ServiceBase):
             return
 
         # Read camera angles from gl_widget
-        cam_angle_x = self.gl_widget.camera_angle_x
         cam_angle_y = self.gl_widget.camera_angle_y
         
         # Calculate movement based on key states
