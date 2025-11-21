@@ -226,8 +226,7 @@ class InputService(ServiceBase):
         if self.controlled_object is None:
             return
 
-        # Read camera angles from gl_widget
-        cam_angle_x = self.gl_widget.camera_angle_x
+        # Read camera angle Y from gl_widget
         cam_angle_y = self.gl_widget.camera_angle_y
         
         # Calculate movement based on key states
