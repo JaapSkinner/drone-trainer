@@ -7,7 +7,7 @@ from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
 from ui.dock.panels.config_panel import ConfigPanel
-# Line 10 removed as it is redundant.
+from ui.dock.panels.command_panel import CommandPanel
 from ui.dock.panels.settings_panel import SettingsPanel
 
 class DockManager(QDockWidget):
@@ -27,7 +27,8 @@ class DockManager(QDockWidget):
             ConfigPanel(self),
             # ViconPanel(self, vicon),
             ObjectPanel(gl_widget, self, object_service=object_service),
-            SettingsPanel(self, object_service=object_service)
+            SettingsPanel(self, object_service=object_service),
+            CommandPanel(self, object_service=object_service)
         ]
         for panel in self.panels:
             if hasattr(panel, "NavTag"):

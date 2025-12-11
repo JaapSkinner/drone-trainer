@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         self.object_panel = self.dock.panels[4]
         self.config_panel = self.dock.panels[3]  # Config panel is at index 3
         self.settings_panel = self.dock.panels[5]  # Settings panel is at index 5
+        self.command_panel = self.dock.panels[6]  # Command panel is at index 6
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -108,6 +109,9 @@ class MainWindow(QMainWindow):
         
         # Populate settings panel with objects after they're created
         self.settings_panel.refresh_object_list()
+        
+        # Populate command panel with objects after they're created
+        self.command_panel.refresh_object_list()
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
