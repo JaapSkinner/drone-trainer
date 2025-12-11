@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QOpenGLWidget
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
@@ -17,6 +17,9 @@ import time
 class GLWidget(QOpenGLWidget):
     # Base zoom speed factor for mouse wheel zoom
     BASE_ZOOM_SPEED = 0.001
+    
+    # Signal emitted when camera is reset (for UI synchronization)
+    camera_reset = pyqtSignal()
 
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
@@ -255,11 +258,16 @@ class GLWidget(QOpenGLWidget):
         self.zoom_sensitivity = sensitivity
 
     def reset_camera(self):
-        """Reset camera to default position, zoom level, and clear object lock."""
+        """Reset camera to default position, zoom level, and clear object lock.
+        
+        Emits camera_reset signal for UI synchronization.
+        """
         self.camera_distance = 10.0
         self.camera_angle_x = 30.0
         self.camera_angle_y = 45.0
+        self.zoom_sensitivity = 1.0
         self.locked_object = None
+        self.camera_reset.emit()
         self.update()
 
     def set_locked_object(self, obj):

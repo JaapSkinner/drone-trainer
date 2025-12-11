@@ -133,9 +133,25 @@ class SettingsPanel(QWidget):
     
     def on_reset_camera_clicked(self):
         """Handle reset camera button click."""
-        # Reset lock object dropdown to None
+        # Reset UI controls to default values
         self.lock_object_combo.setCurrentIndex(0)
+        self.zoom_sensitivity_slider.setValue(100)  # Reset to 1.0x
         self.reset_camera_requested.emit()
+    
+    def reset_ui_to_defaults(self):
+        """Reset all UI controls to default values.
+        
+        Called when camera is reset externally to keep UI in sync.
+        """
+        self.lock_object_combo.blockSignals(True)
+        self.zoom_sensitivity_slider.blockSignals(True)
+        
+        self.lock_object_combo.setCurrentIndex(0)
+        self.zoom_sensitivity_slider.setValue(100)
+        self.zoom_sensitivity_label.setText("1.0x")
+        
+        self.lock_object_combo.blockSignals(False)
+        self.zoom_sensitivity_slider.blockSignals(False)
     
     def get_zoom_sensitivity(self):
         """Get the current zoom sensitivity value."""

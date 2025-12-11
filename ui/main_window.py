@@ -103,6 +103,9 @@ class MainWindow(QMainWindow):
         self.settings_panel.reset_camera_requested.connect(self.on_reset_camera_requested)
         self.settings_panel.lock_object_changed.connect(self.on_lock_object_changed)
         
+        # Connect GLWidget signals to settings panel for UI sync
+        self.glWidget.camera_reset.connect(self.settings_panel.reset_ui_to_defaults)
+        
         # Populate settings panel with objects after they're created
         self.settings_panel.refresh_object_list()
         
