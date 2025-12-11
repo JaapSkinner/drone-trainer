@@ -170,7 +170,6 @@ class GLWidget(QOpenGLWidget):
                                    min(self.camera_distance_max, self.camera_distance))
         self.update()
 
-
     def draw_dashed_line(self, start, end, color, dash_length=0.1):
         glColor3f(*color)
         glLineWidth(4.0)  # Set line width to 3.0 for thicker lines
