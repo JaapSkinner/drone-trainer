@@ -101,6 +101,10 @@ class MainWindow(QMainWindow):
         # Connect settings panel signals to viewport
         self.settings_panel.zoom_sensitivity_changed.connect(self.on_zoom_sensitivity_changed)
         self.settings_panel.reset_camera_requested.connect(self.on_reset_camera_requested)
+        self.settings_panel.lock_object_changed.connect(self.on_lock_object_changed)
+        
+        # Populate settings panel with objects after they're created
+        self.settings_panel.refresh_object_list()
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
@@ -157,6 +161,12 @@ class MainWindow(QMainWindow):
         """Handle reset camera request from settings panel"""
         if hasattr(self, 'glWidget') and self.glWidget:
             self.glWidget.reset_camera()
+    
+    @pyqtSlot(object)
+    def on_lock_object_changed(self, obj):
+        """Handle lock object change from settings panel"""
+        if hasattr(self, 'glWidget') and self.glWidget:
+            self.glWidget.set_locked_object(obj)
         
     def resizeEvent(self, event):
         super().resizeEvent(event)

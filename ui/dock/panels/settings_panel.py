@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider, 
-                             QGroupBox, QFormLayout, QPushButton)
+                             QGroupBox, QFormLayout, QPushButton, QComboBox)
 from PyQt5.QtCore import Qt, pyqtSignal
+from models.debug_text import DebugText
 
 
 class SettingsPanel(QWidget):
@@ -10,9 +11,11 @@ class SettingsPanel(QWidget):
     # Signals to notify when viewport settings change
     zoom_sensitivity_changed = pyqtSignal(float)
     reset_camera_requested = pyqtSignal()
+    lock_object_changed = pyqtSignal(object)  # Emits SceneObject or None
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, object_service=None):
         super().__init__(parent)
+        self.object_service = object_service
         self.init_ui()
     
     def init_ui(self):
@@ -28,6 +31,12 @@ class SettingsPanel(QWidget):
         # Viewport Settings Group
         viewport_group = QGroupBox("Viewport Controls")
         viewport_layout = QFormLayout()
+        
+        # Lock View dropdown
+        self.lock_object_combo = QComboBox()
+        self.lock_object_combo.addItem("None (Origin)", None)
+        self.lock_object_combo.currentIndexChanged.connect(self.on_lock_object_changed)
+        viewport_layout.addRow("Lock View To:", self.lock_object_combo)
         
         # Zoom Sensitivity Slider
         self.zoom_sensitivity_slider = QSlider(Qt.Horizontal)
@@ -63,6 +72,10 @@ class SettingsPanel(QWidget):
         • Left Click + Drag: Orbit camera<br>
         • Scroll Wheel: Zoom in/out<br>
         <br>
+        <b>Lock View:</b><br>
+        • Select an object to orbit around it<br>
+        • Camera follows object as it moves<br>
+        <br>
         <b>Zoom Limits:</b><br>
         • Minimum distance: 2 units<br>
         • Maximum distance: 50 units""")
@@ -73,6 +86,45 @@ class SettingsPanel(QWidget):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
     
+    def set_object_service(self, object_service):
+        """Set the object service and populate the lock object dropdown."""
+        self.object_service = object_service
+        self.refresh_object_list()
+    
+    def refresh_object_list(self):
+        """Refresh the lock object dropdown with current objects."""
+        if self.object_service is None:
+            return
+        
+        # Store current selection
+        current_obj = self.lock_object_combo.currentData()
+        
+        # Clear and repopulate
+        self.lock_object_combo.blockSignals(True)
+        self.lock_object_combo.clear()
+        self.lock_object_combo.addItem("None (Origin)", None)
+        
+        for obj in self.object_service.get_objects():
+            # Only include controllable objects, exclude debug/utility objects
+            is_controllable = getattr(obj, 'controllable', False)
+            is_debug_text = isinstance(obj, DebugText)
+            if is_controllable and not is_debug_text:
+                self.lock_object_combo.addItem(obj.name, obj)
+        
+        # Restore selection if still valid
+        if current_obj is not None:
+            for i in range(self.lock_object_combo.count()):
+                if self.lock_object_combo.itemData(i) == current_obj:
+                    self.lock_object_combo.setCurrentIndex(i)
+                    break
+        
+        self.lock_object_combo.blockSignals(False)
+    
+    def on_lock_object_changed(self, index):
+        """Handle lock object selection change."""
+        obj = self.lock_object_combo.currentData()
+        self.lock_object_changed.emit(obj)
+    
     def on_zoom_sensitivity_changed(self, value):
         """Handle zoom sensitivity slider change."""
         sensitivity = value / 100.0
@@ -81,6 +133,8 @@ class SettingsPanel(QWidget):
     
     def on_reset_camera_clicked(self):
         """Handle reset camera button click."""
+        # Reset lock object dropdown to None
+        self.lock_object_combo.setCurrentIndex(0)
         self.reset_camera_requested.emit()
     
     def get_zoom_sensitivity(self):

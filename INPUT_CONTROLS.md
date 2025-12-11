@@ -27,9 +27,24 @@ The drone trainer now supports multiple input methods for controlling objects in
 The 3D viewport supports mouse-based camera controls:
 
 ### Mouse Controls
-- **Left Click + Drag**: Orbit the camera around the center point
+- **Left Click + Drag**: Orbit the camera around the center point (or locked object)
 - **Scroll Wheel Up**: Zoom in (move camera closer)
 - **Scroll Wheel Down**: Zoom out (move camera further away)
+
+### Lock View to Object
+
+You can lock the camera view to follow a specific object:
+
+1. Open the **Settings Panel** from the navigation bar
+2. Use the **Lock View To** dropdown to select an object
+3. The camera will now orbit around and follow the selected object
+4. Zoom and orbit controls continue to work while locked
+5. Select "None (Origin)" to unlock and return to orbiting the scene origin
+
+When locked to an object:
+- The camera automatically follows the object as it moves
+- Orbit controls rotate around the object instead of the origin
+- Zoom controls adjust distance from the locked object
 
 ### Zoom Limits
 - **Minimum distance**: 2 units (closest zoom)
@@ -40,8 +55,9 @@ The 3D viewport supports mouse-based camera controls:
 To configure viewport controls:
 
 1. Open the **Settings Panel** from the navigation bar
-2. Adjust the **Zoom Sensitivity** slider (0.1x to 3.0x)
-3. Click **Reset Camera** to return to the default camera position
+2. Use **Lock View To** to select an object to follow (or "None" for origin)
+3. Adjust the **Zoom Sensitivity** slider (0.1x to 3.0x)
+4. Click **Reset Camera** to return to the default camera position and unlock
 
 ## Configuration
 
