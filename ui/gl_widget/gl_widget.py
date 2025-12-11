@@ -15,6 +15,9 @@ from models.debug_text import DebugText
 import time
 
 class GLWidget(QOpenGLWidget):
+    # Base zoom speed factor for mouse wheel zoom
+    BASE_ZOOM_SPEED = 0.001
+
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
         self.setMinimumSize(800, 600)
@@ -157,15 +160,16 @@ class GLWidget(QOpenGLWidget):
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming in/out."""
         delta = event.angleDelta().y()
-        zoom_factor = 0.001 * self.zoom_sensitivity
+        zoom_factor = self.BASE_ZOOM_SPEED * self.zoom_sensitivity
         
-        # Zoom in when scrolling up (positive delta), zoom out when scrolling down
+        # Proportional zoom: faster when far, slower when close for smooth control
         self.camera_distance -= delta * zoom_factor * self.camera_distance
         
         # Clamp to min/max zoom levels
         self.camera_distance = max(self.camera_distance_min, 
                                    min(self.camera_distance_max, self.camera_distance))
         self.update()
+
 
     def draw_dashed_line(self, start, end, color, dash_length=0.1):
         glColor3f(*color)
