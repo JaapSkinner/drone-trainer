@@ -27,7 +27,7 @@ class DockManager(QDockWidget):
             ConfigPanel(self),
             # ViconPanel(self, vicon),
             ObjectPanel(gl_widget, self, object_service=object_service),
-            SettingsPanel(self)
+            SettingsPanel(self, object_service=object_service)
         ]
         for panel in self.panels:
             if hasattr(panel, "NavTag"):

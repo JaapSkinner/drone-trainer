@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self.dock = DockManager(self.glWidget, self, self.object_service)
         self.object_panel = self.dock.panels[4]
         self.config_panel = self.dock.panels[3]  # Config panel is at index 3
+        self.settings_panel = self.dock.panels[5]  # Settings panel is at index 5
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -96,6 +97,17 @@ class MainWindow(QMainWindow):
         # Connect config panel signals to input service
         self.config_panel.input_type_changed.connect(self.on_input_type_changed)
         self.config_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
+        
+        # Connect settings panel signals to viewport
+        self.settings_panel.zoom_sensitivity_changed.connect(self.on_zoom_sensitivity_changed)
+        self.settings_panel.reset_camera_requested.connect(self.on_reset_camera_requested)
+        self.settings_panel.lock_object_changed.connect(self.on_lock_object_changed)
+        
+        # Connect GLWidget signals to settings panel for UI sync
+        self.glWidget.camera_reset.connect(self.settings_panel.reset_ui_to_defaults)
+        
+        # Populate settings panel with objects after they're created
+        self.settings_panel.refresh_object_list()
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
@@ -141,6 +153,23 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'input_service'):
             self.input_service.set_sensitivity(sensitivity)
 
+    @pyqtSlot(float)
+    def on_zoom_sensitivity_changed(self, sensitivity):
+        """Handle zoom sensitivity change from settings panel"""
+        if hasattr(self, 'glWidget') and self.glWidget:
+            self.glWidget.set_zoom_sensitivity(sensitivity)
+    
+    @pyqtSlot()
+    def on_reset_camera_requested(self):
+        """Handle reset camera request from settings panel"""
+        if hasattr(self, 'glWidget') and self.glWidget:
+            self.glWidget.reset_camera()
+    
+    @pyqtSlot(object)
+    def on_lock_object_changed(self, obj):
+        """Handle lock object change from settings panel"""
+        if hasattr(self, 'glWidget') and self.glWidget:
+            self.glWidget.set_locked_object(obj)
         
     def resizeEvent(self, event):
         super().resizeEvent(event)

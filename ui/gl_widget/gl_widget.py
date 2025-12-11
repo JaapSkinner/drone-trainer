@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QOpenGLWidget
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
@@ -15,6 +15,12 @@ from models.debug_text import DebugText
 import time
 
 class GLWidget(QOpenGLWidget):
+    # Base zoom speed factor for mouse wheel zoom
+    BASE_ZOOM_SPEED = 0.001
+    
+    # Signal emitted when camera is reset (for UI synchronization)
+    camera_reset = pyqtSignal()
+
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
         self.setMinimumSize(800, 600)
@@ -57,6 +63,14 @@ class GLWidget(QOpenGLWidget):
         self.mouse_last_y = 0
         self.mouse_left_button_down = False
 
+        # Zoom constraints
+        self.camera_distance_min = 2.0
+        self.camera_distance_max = 50.0
+        self.zoom_sensitivity = 1.0
+
+        # Object lock feature - camera follows and orbits around this object
+        self.locked_object = None
+
         self.debug_count = 0  # Counter for debug text
 
     def initializeGL(self):
@@ -78,11 +92,24 @@ class GLWidget(QOpenGLWidget):
         gluPerspective(45.0, self.width() / self.height(), 0.1, 100.0)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+        
+        # Get the target position (locked object or origin)
+        target_x, target_y, target_z = 0.0, 0.0, 0.0
+        if self.locked_object is not None:
+            # Validate pose exists and has expected structure
+            if hasattr(self.locked_object, 'pose') and len(self.locked_object.pose) >= 3:
+                target_x = self.locked_object.pose[0]
+                target_y = self.locked_object.pose[1]
+                target_z = self.locked_object.pose[2]
+        
+        # Calculate camera position relative to target
+        cam_x = target_x + self.camera_distance * np.sin(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x))
+        cam_y = target_y + self.camera_distance * np.sin(np.radians(self.camera_angle_x))
+        cam_z = target_z + self.camera_distance * np.cos(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x))
+        
         gluLookAt(
-            self.camera_distance * np.sin(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x)),
-            self.camera_distance * np.sin(np.radians(self.camera_angle_x)),
-            self.camera_distance * np.cos(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x)),
-            0.0, 0.0, 0.0,
+            cam_x, cam_y, cam_z,
+            target_x, target_y, target_z,
             0.0, 1.0, 0.0
         )
         glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
@@ -149,6 +176,19 @@ class GLWidget(QOpenGLWidget):
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
 
+    def wheelEvent(self, event):
+        """Handle mouse wheel events for zooming in/out."""
+        delta = event.angleDelta().y()
+        zoom_factor = self.BASE_ZOOM_SPEED * self.zoom_sensitivity
+        
+        # Proportional zoom: faster when far, slower when close for smooth control
+        self.camera_distance -= delta * zoom_factor * self.camera_distance
+        
+        # Clamp to min/max zoom levels
+        self.camera_distance = max(self.camera_distance_min, 
+                                   min(self.camera_distance_max, self.camera_distance))
+        self.update()
+
     def draw_dashed_line(self, start, end, color, dash_length=0.1):
         glColor3f(*color)
         glLineWidth(4.0)  # Set line width to 3.0 for thicker lines
@@ -208,5 +248,46 @@ class GLWidget(QOpenGLWidget):
     def set_input_service(self, input_service):
         """Set the input service for this widget"""
         self.input_service = input_service
+
+    def set_zoom_sensitivity(self, sensitivity):
+        """Set the zoom sensitivity for mouse wheel zoom.
+        
+        Args:
+            sensitivity: Zoom sensitivity multiplier (default 1.0)
+        """
+        self.zoom_sensitivity = sensitivity
+
+    def reset_camera(self):
+        """Reset camera to default position, zoom level, and clear object lock.
+        
+        Emits camera_reset signal for UI synchronization.
+        """
+        self.camera_distance = 10.0
+        self.camera_angle_x = 30.0
+        self.camera_angle_y = 45.0
+        self.zoom_sensitivity = 1.0
+        self.locked_object = None
+        self.camera_reset.emit()
+        self.update()
+
+    def set_locked_object(self, obj):
+        """Set the object to lock the camera view onto.
+        
+        When locked, the camera will orbit around this object and follow it
+        as it moves. Set to None to unlock and return to orbiting around origin.
+        
+        Args:
+            obj: SceneObject to lock onto, or None to unlock
+        """
+        self.locked_object = obj
+        self.update()
+
+    def get_locked_object(self):
+        """Get the currently locked object.
+        
+        Returns:
+            The locked SceneObject, or None if not locked
+        """
+        return self.locked_object
 
 
