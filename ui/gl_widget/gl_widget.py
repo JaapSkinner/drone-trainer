@@ -57,6 +57,11 @@ class GLWidget(QOpenGLWidget):
         self.mouse_last_y = 0
         self.mouse_left_button_down = False
 
+        # Zoom constraints
+        self.camera_distance_min = 2.0
+        self.camera_distance_max = 50.0
+        self.zoom_sensitivity = 1.0
+
         self.debug_count = 0  # Counter for debug text
 
     def initializeGL(self):
@@ -149,6 +154,19 @@ class GLWidget(QOpenGLWidget):
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
 
+    def wheelEvent(self, event):
+        """Handle mouse wheel events for zooming in/out."""
+        delta = event.angleDelta().y()
+        zoom_factor = 0.001 * self.zoom_sensitivity
+        
+        # Zoom in when scrolling up (positive delta), zoom out when scrolling down
+        self.camera_distance -= delta * zoom_factor * self.camera_distance
+        
+        # Clamp to min/max zoom levels
+        self.camera_distance = max(self.camera_distance_min, 
+                                   min(self.camera_distance_max, self.camera_distance))
+        self.update()
+
     def draw_dashed_line(self, start, end, color, dash_length=0.1):
         glColor3f(*color)
         glLineWidth(4.0)  # Set line width to 3.0 for thicker lines
@@ -208,5 +226,20 @@ class GLWidget(QOpenGLWidget):
     def set_input_service(self, input_service):
         """Set the input service for this widget"""
         self.input_service = input_service
+
+    def set_zoom_sensitivity(self, sensitivity):
+        """Set the zoom sensitivity for mouse wheel zoom.
+        
+        Args:
+            sensitivity: Zoom sensitivity multiplier (default 1.0)
+        """
+        self.zoom_sensitivity = sensitivity
+
+    def reset_camera(self):
+        """Reset camera to default position and zoom level."""
+        self.camera_distance = 10.0
+        self.camera_angle_x = 30.0
+        self.camera_angle_y = 45.0
+        self.update()
 
 

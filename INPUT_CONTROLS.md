@@ -22,6 +22,27 @@ The drone trainer now supports multiple input methods for controlling objects in
 - **Page Up/Down**: Move up/down
 - **Home/End**: Rotate
 
+## Viewport Controls
+
+The 3D viewport supports mouse-based camera controls:
+
+### Mouse Controls
+- **Left Click + Drag**: Orbit the camera around the center point
+- **Scroll Wheel Up**: Zoom in (move camera closer)
+- **Scroll Wheel Down**: Zoom out (move camera further away)
+
+### Zoom Limits
+- **Minimum distance**: 2 units (closest zoom)
+- **Maximum distance**: 50 units (furthest zoom)
+
+### Viewport Settings
+
+To configure viewport controls:
+
+1. Open the **Settings Panel** from the navigation bar
+2. Adjust the **Zoom Sensitivity** slider (0.1x to 3.0x)
+3. Click **Reset Camera** to return to the default camera position
+
 ## Configuration
 
 To change input settings:
