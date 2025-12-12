@@ -99,6 +99,10 @@ class MainWindow(QMainWindow):
         self.config_panel.input_type_changed.connect(self.on_input_type_changed)
         self.config_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
         
+        # Connect command panel signals to input service (joystick settings moved here)
+        self.command_panel.input_type_changed.connect(self.on_input_type_changed)
+        self.command_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
+        
         # Connect settings panel signals to viewport
         self.settings_panel.zoom_sensitivity_changed.connect(self.on_zoom_sensitivity_changed)
         self.settings_panel.reset_camera_requested.connect(self.on_reset_camera_requested)
@@ -153,13 +157,13 @@ class MainWindow(QMainWindow):
     
     @pyqtSlot(object)
     def on_input_type_changed(self, input_type):
-        """Handle input type change from config panel"""
+        """Handle input type change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_input_type(input_type)
     
     @pyqtSlot(float)
     def on_sensitivity_changed(self, sensitivity):
-        """Handle sensitivity change from config panel"""
+        """Handle sensitivity change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_sensitivity(sensitivity)
 
@@ -185,7 +189,8 @@ class MainWindow(QMainWindow):
     def on_joystick_control_enabled(self, enabled):
         """Handle joystick control enable/disable from command panel.
         
-        Joystick control only moves the object when in Joystick mode with live mode enabled.
+        Joystick is now always live when in Joystick mode. Ghost mode affects
+        whether it updates next_setpoint (preview) or setpoint directly.
         """
         if hasattr(self, 'input_service') and self.input_service:
             if enabled:
