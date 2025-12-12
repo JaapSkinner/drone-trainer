@@ -187,11 +187,13 @@ class MainWindow(QMainWindow):
         
         Joystick control only moves the object when in Joystick mode with live mode enabled.
         """
-        if hasattr(self, 'input_service'):
+        if hasattr(self, 'input_service') and self.input_service:
             if enabled:
                 # Enable joystick control - set controlled object
-                obj = self.object_service.get_controlled_object()
-                self.input_service.set_controlled_object(obj)
+                if hasattr(self, 'object_service') and self.object_service:
+                    obj = self.object_service.get_controlled_object()
+                    if obj is not None:
+                        self.input_service.set_controlled_object(obj)
             else:
                 # Disable joystick control - set controlled object to None
                 self.input_service.set_controlled_object(None)

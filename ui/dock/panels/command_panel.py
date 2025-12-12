@@ -870,13 +870,14 @@ class CommandPanel(QWidget):
         self.joystick_control_enabled.emit(is_joystick_mode and self.joystick_live_mode)
     
     def _show_action_feedback(self, title, message):
-        """Show a brief feedback message for user actions."""
+        """Show a brief non-blocking feedback message for user actions."""
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Information)
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        # Use show() for non-blocking display, allowing user to continue
+        msg.show()
     
     # === Helper Methods ===
     
@@ -999,7 +1000,7 @@ class CommandPanel(QWidget):
     def is_joystick_control_allowed(self):
         """Check if joystick control should move the object.
         
-        Returns True only when in Joystick mode AND live mode is enabled,
-        OR in Joystick mode with ghost mode (but only updates setpoint).
+        Returns True only when in Joystick mode AND live mode is enabled.
+        In ghost mode, joystick updates are handled separately via setpoint.
         """
         return self.current_mode == self.MODE_JOYSTICK and self.joystick_live_mode
