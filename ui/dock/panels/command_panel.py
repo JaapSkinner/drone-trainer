@@ -468,17 +468,17 @@ class CommandPanel(QWidget):
         layout = QVBoxLayout(tab)
         layout.setAlignment(Qt.AlignTop)
         
-        # Home position display (X, Y only - height is separate)
-        home_group = QGroupBox("Home Position")
+        # Home position display (X, Z ground position - height/Y is separate)
+        home_group = QGroupBox("Home Position (Ground)")
         home_layout = QFormLayout(home_group)
         
         self.home_x_label = QLabel("0.000")
         self.home_x_label.setStyleSheet("font-family: monospace;")
         home_layout.addRow("X:", self.home_x_label)
         
-        self.home_y_label = QLabel("0.000")
-        self.home_y_label.setStyleSheet("font-family: monospace;")
-        home_layout.addRow("Y:", self.home_y_label)
+        self.home_z_label = QLabel("0.000")
+        self.home_z_label.setStyleSheet("font-family: monospace;")
+        home_layout.addRow("Z:", self.home_z_label)
         
         self.hover_height_spin = QDoubleSpinBox()
         self.hover_height_spin.setRange(0.1, 50.0)
@@ -486,7 +486,7 @@ class CommandPanel(QWidget):
         self.hover_height_spin.setDecimals(2)
         self.hover_height_spin.setSuffix(" m")
         self.hover_height_spin.valueChanged.connect(self._on_hover_height_changed)
-        home_layout.addRow("Height:", self.hover_height_spin)
+        home_layout.addRow("Height (Y):", self.hover_height_spin)
         
         layout.addWidget(home_group)
         
@@ -942,8 +942,8 @@ class CommandPanel(QWidget):
         """Handle set home button click."""
         obj = self._get_controlled_object()
         if obj is not None:
-            # Home is just X, Y - height is separate
-            self.home_position = (obj.pose[0], obj.pose[2])  # X and Z (horizontal plane)
+            # Home stores X and Z coordinates (horizontal plane), height (Y) is separate
+            self.home_position = (obj.pose[0], obj.pose[2])  # (X, Z)
             self._update_home_display()
             height = self.hover_height_spin.value()
             self.set_home_requested.emit((self.home_position[0], self.home_position[1], height))
@@ -955,10 +955,11 @@ class CommandPanel(QWidget):
             return
         
         # Update setpoint to home position with hover height
+        # home_position = (X, Z), height is Y
         target = self.next_setpoint if self.ghost_mode else self.setpoint
         target[0] = self.home_position[0]  # X
         target[1] = self.hover_height_spin.value()  # Y (height)
-        target[2] = self.home_position[1]  # Z
+        target[2] = self.home_position[1]  # Z (stored as home_position[1])
         
         # If not in ghost mode, update object position
         if not self.ghost_mode:
@@ -979,12 +980,6 @@ class CommandPanel(QWidget):
         if self.object_service:
             return self.object_service.get_controlled_object()
         return None
-    
-    def _sync_ghost_setpoint(self):
-        """Sync ghost setpoint with current object position."""
-        obj = self._get_controlled_object()
-        if obj is not None:
-            self.ghost_setpoint = list(obj.pose)
     
     def _sync_setpoints_from_object(self):
         """Sync setpoint and next_setpoint from current object position."""
@@ -1055,9 +1050,12 @@ class CommandPanel(QWidget):
         self.jog_yaw_value.setText(f"{target[6]:.4f}")
     
     def _update_home_display(self):
-        """Update the home position display (X, Y only - height is separate)."""
+        """Update the home position display.
+        
+        home_position stores (X, Z) ground coordinates. Height (Y) is in the spinner.
+        """
         self.home_x_label.setText(f"{self.home_position[0]:.3f}")
-        self.home_y_label.setText(f"{self.home_position[1]:.3f}")
+        self.home_z_label.setText(f"{self.home_position[1]:.3f}")
     
     def refresh_object_list(self):
         """Refresh the controlled object dropdown with only controllable objects."""
