@@ -27,10 +27,13 @@ class CommandPanel(QWidget):
     # Signals for external communication
     land_requested = pyqtSignal()
     go_home_requested = pyqtSignal()
-    send_position_requested = pyqtSignal(tuple)  # Emits (x, y, z, roll, pitch, yaw)
+    send_position_requested = pyqtSignal(tuple)  # Emits (x, y, z, qw, qx, qy, qz)
     set_home_requested = pyqtSignal(tuple)  # Emits (x, y, z, height)
     ghost_mode_changed = pyqtSignal(bool)
     controlled_object_changed = pyqtSignal(object)  # Emits SceneObject
+    
+    # Constants for step scaling
+    ROTATION_STEP_SCALE = 0.1  # Scale factor for rotation steps (radians per step)
     
     def __init__(self, parent=None, object_service=None):
         super().__init__(parent)
@@ -534,7 +537,11 @@ class CommandPanel(QWidget):
         return tab
     
     def _create_position_display(self):
-        """Create the current position display section."""
+        """Create the current position display section.
+        
+        Note: Rotation values displayed are quaternion components (qx, qy, qz),
+        not Euler angles. The pose format is (x, y, z, qw, qx, qy, qz).
+        """
         group = QGroupBox("Current Position")
         layout = QFormLayout(group)
         
@@ -550,17 +557,19 @@ class CommandPanel(QWidget):
         self.pos_z_label.setStyleSheet("font-family: monospace;")
         layout.addRow("Z:", self.pos_z_label)
         
-        self.rot_roll_label = QLabel("0.0000")
-        self.rot_roll_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("Roll:", self.rot_roll_label)
+        # Display quaternion components (qx, qy, qz) as rotation values
+        # Note: These are raw quaternion components, not Euler angles
+        self.rot_qx_label = QLabel("0.0000")
+        self.rot_qx_label.setStyleSheet("font-family: monospace;")
+        layout.addRow("qX:", self.rot_qx_label)
         
-        self.rot_pitch_label = QLabel("0.0000")
-        self.rot_pitch_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("Pitch:", self.rot_pitch_label)
+        self.rot_qy_label = QLabel("0.0000")
+        self.rot_qy_label.setStyleSheet("font-family: monospace;")
+        layout.addRow("qY:", self.rot_qy_label)
         
-        self.rot_yaw_label = QLabel("0.0000")
-        self.rot_yaw_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("Yaw:", self.rot_yaw_label)
+        self.rot_qz_label = QLabel("0.0000")
+        self.rot_qz_label.setStyleSheet("font-family: monospace;")
+        layout.addRow("qZ:", self.rot_qz_label)
         
         return group
     
@@ -595,9 +604,11 @@ class CommandPanel(QWidget):
         if obj is not None:
             # Get current position from object
             x, y, z = obj.pose[0], obj.pose[1], obj.pose[2]
-            # Convert quaternion to Euler angles for roll, pitch, yaw
-            roll, pitch, yaw = 0.0, 0.0, 0.0  # Simplified - would need proper quaternion conversion
-            self.send_position_requested.emit((x, y, z, roll, pitch, yaw))
+            # Get quaternion components directly (qw, qx, qy, qz)
+            # Note: Quaternion to Euler conversion is not implemented here.
+            # The signal emits the raw quaternion components for external processing.
+            qw, qx, qy, qz = obj.pose[3], obj.pose[4], obj.pose[5], obj.pose[6]
+            self.send_position_requested.emit((x, y, z, qw, qx, qy, qz))
     
     def _on_step_size_changed(self, value):
         """Handle step size change."""
@@ -619,11 +630,11 @@ class CommandPanel(QWidget):
         elif axis == "Z":
             pose[2] += step
         elif axis == "Roll":
-            pose[4] += step * 0.1  # Smaller step for rotation
+            pose[4] += step * self.ROTATION_STEP_SCALE
         elif axis == "Pitch":
-            pose[5] += step * 0.1
+            pose[5] += step * self.ROTATION_STEP_SCALE
         elif axis == "Yaw":
-            pose[6] += step * 0.1
+            pose[6] += step * self.ROTATION_STEP_SCALE
         
         obj.set_pose(pose)
         self._update_position_display()
@@ -727,11 +738,10 @@ class CommandPanel(QWidget):
         self.pos_y_label.setText(f"{obj.pose[1]:.4f}")
         self.pos_z_label.setText(f"{obj.pose[2]:.4f}")
         
-        # For rotation, we'd need quaternion to Euler conversion
-        # Using quaternion components directly for now
-        self.rot_roll_label.setText(f"{obj.pose[4]:.4f}")
-        self.rot_pitch_label.setText(f"{obj.pose[5]:.4f}")
-        self.rot_yaw_label.setText(f"{obj.pose[6]:.4f}")
+        # Display quaternion components (qx, qy, qz)
+        self.rot_qx_label.setText(f"{obj.pose[4]:.4f}")
+        self.rot_qy_label.setText(f"{obj.pose[5]:.4f}")
+        self.rot_qz_label.setText(f"{obj.pose[6]:.4f}")
     
     def _update_jog_values(self):
         """Update the jog value labels."""
