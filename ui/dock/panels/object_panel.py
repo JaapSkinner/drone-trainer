@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGroupBox, QLabel, QLineEdit, QComboBox
+from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGroupBox, QLabel, QLineEdit
 
 class ObjectPanel(QWidget):
     NavTag = "live_data"
@@ -9,10 +9,6 @@ class ObjectPanel(QWidget):
         self.object_service = object_service
 
         layout = QVBoxLayout(self)
-        self.combo_box = QComboBox()
-        self.combo_box.currentIndexChanged.connect(self.on_object_selected)
-        layout.addWidget(QLabel("Select Controlled Object"))
-        layout.addWidget(self.combo_box)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -28,7 +24,6 @@ class ObjectPanel(QWidget):
 
     def populate(self):
         self.input_fields.clear()
-        self.combo_box.clear()
         # clear layout
         while self.scroll_layout.count():
             child = self.scroll_layout.takeAt(0)
@@ -36,7 +31,6 @@ class ObjectPanel(QWidget):
                 child.widget().deleteLater()
 
         for i, obj in enumerate(self.object_service.get_objects()):
-            self.combo_box.addItem(obj.name, obj)
 
             group_box = QGroupBox(f"Object {i} - {obj.name}")
             form_layout = QFormLayout()
@@ -101,11 +95,6 @@ class ObjectPanel(QWidget):
             setattr(self.gl_widget.objects[i], attr, val)
         except:
             pass
-
-    def on_object_selected(self, index):
-        obj = self.combo_box.itemData(index)
-        if obj is not None:
-            self.object_service.set_controlled_object(obj=obj)
 
     def refresh(self):
         # TODO: implement this with new object service features

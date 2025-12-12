@@ -2,9 +2,9 @@
 Command Panel for controlling drone/vehicle movement.
 
 This panel provides various control modes for offboard control via mavlink commands:
+- Home mode: Station keeping at a set home point with hover height (default)
 - Jogging mode: Step-based position adjustment with adjustable step size
 - Target mode: Specify target position or tracked object with offset
-- Home mode: Station keeping at a set home point with hover height
 - Joystick mode: Controller/WASD/Arrow keys input (default ghost mode)
 
 Ghost mode allows visualizing movement without sending commands to the drone.
@@ -13,7 +13,8 @@ Ghost mode allows visualizing movement without sending commands to the drone.
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
     QGroupBox, QFormLayout, QPushButton, QDoubleSpinBox,
-    QTabWidget, QCheckBox, QSizePolicy, QScrollArea, QFrame
+    QTabWidget, QCheckBox, QSizePolicy, QScrollArea, QFrame,
+    QMessageBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -31,9 +32,16 @@ class CommandPanel(QWidget):
     set_home_requested = pyqtSignal(tuple)  # Emits (x, y, z, height)
     ghost_mode_changed = pyqtSignal(bool)
     controlled_object_changed = pyqtSignal(object)  # Emits SceneObject
+    joystick_control_enabled = pyqtSignal(bool)  # Emits whether joystick control is active
     
     # Constants for step scaling
     ROTATION_STEP_SCALE = 0.1  # Scale factor for rotation steps (radians per step)
+    
+    # Mode indices
+    MODE_HOME = 0
+    MODE_JOGGING = 1
+    MODE_TARGET = 2
+    MODE_JOYSTICK = 3
     
     def __init__(self, parent=None, object_service=None):
         super().__init__(parent)
@@ -43,6 +51,13 @@ class CommandPanel(QWidget):
         self.home_height = 1.0
         self.step_size = 0.1
         
+        # Ghost mode setpoint (separate from actual position)
+        self.ghost_setpoint = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        
+        # Track current mode for joystick control
+        self.current_mode = self.MODE_HOME
+        self.joystick_live_mode = False
+        
         self.init_ui()
     
     def init_ui(self):
@@ -50,17 +65,19 @@ class CommandPanel(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignTop)
         main_layout.setSpacing(8)
+        main_layout.setContentsMargins(8, 8, 8, 8)
         
         # Create scrollable content
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
         scroll_content = QWidget()
         layout = QVBoxLayout(scroll_content)
         layout.setAlignment(Qt.AlignTop)
         layout.setSpacing(8)
-        layout.setContentsMargins(0, 0, 8, 0)
+        layout.setContentsMargins(0, 0, 12, 0)  # Right margin for scroll bar space
         
         # === Top Controls Section (always visible) ===
         top_controls = self._create_top_controls()
@@ -74,15 +91,16 @@ class CommandPanel(QWidget):
         ghost_group = self._create_ghost_mode_section()
         layout.addWidget(ghost_group)
         
-        # === Mode Tabs ===
+        # === Mode Tabs (Home first as default offboard mode) ===
         self.mode_tabs = QTabWidget()
+        self.mode_tabs.addTab(self._create_home_tab(), "Home")
         self.mode_tabs.addTab(self._create_jogging_tab(), "Jogging")
         self.mode_tabs.addTab(self._create_target_tab(), "Target")
-        self.mode_tabs.addTab(self._create_home_tab(), "Home")
         self.mode_tabs.addTab(self._create_joystick_tab(), "Joystick")
+        self.mode_tabs.currentChanged.connect(self._on_mode_changed)
         layout.addWidget(self.mode_tabs)
         
-        # === Current Position Display ===
+        # === Position Display (Current, Setpoint, Delta) ===
         position_group = self._create_position_display()
         layout.addWidget(position_group)
         
@@ -296,7 +314,7 @@ class CommandPanel(QWidget):
         row.setSpacing(4)
         
         minus_btn = QPushButton("-")
-        minus_btn.setFixedSize(30, 30)
+        minus_btn.setFixedSize(28, 28)
         minus_btn.setStyleSheet("""
             QPushButton {
                 background-color: #6c757d;
@@ -314,12 +332,12 @@ class CommandPanel(QWidget):
         
         value_label = QLabel("0.0000")
         value_label.setAlignment(Qt.AlignCenter)
-        value_label.setMinimumWidth(80)
+        value_label.setFixedWidth(70)
         value_label.setStyleSheet("font-family: monospace;")
         row.addWidget(value_label)
         
         plus_btn = QPushButton("+")
-        plus_btn.setFixedSize(30, 30)
+        plus_btn.setFixedSize(28, 28)
         plus_btn.setStyleSheet("""
             QPushButton {
                 background-color: #6c757d;
@@ -335,6 +353,7 @@ class CommandPanel(QWidget):
         plus_btn.clicked.connect(lambda: self._jog_axis(axis, 1))
         row.addWidget(plus_btn)
         
+        # Add stretch at end to push controls to the left within row
         row.addStretch()
         
         return {"widget": widget, "minus": minus_btn, "value": value_label, "plus": plus_btn}
@@ -537,39 +556,126 @@ class CommandPanel(QWidget):
         return tab
     
     def _create_position_display(self):
-        """Create the current position display section.
+        """Create the position display section with Current, Setpoint, and Delta.
         
         Note: Rotation values displayed are quaternion components (qx, qy, qz),
         not Euler angles. The pose format is (x, y, z, qw, qx, qy, qz).
         """
-        group = QGroupBox("Current Position")
-        layout = QFormLayout(group)
+        group = QGroupBox("Position Info")
+        main_layout = QVBoxLayout(group)
         
+        # Header row
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.addWidget(QLabel(""))
+        header_layout.addWidget(QLabel("<b>Current</b>"))
+        header_layout.addWidget(QLabel("<b>Setpoint</b>"))
+        
+        delta_header = QLabel("<b>Delta</b>")
+        delta_header.setStyleSheet("color: #888;")
+        header_layout.addWidget(delta_header)
+        main_layout.addWidget(header)
+        
+        # Style for delta labels (lighter color)
+        delta_style = "font-family: monospace; color: #888;"
+        mono_style = "font-family: monospace;"
+        
+        # X row
+        x_row = QWidget()
+        x_layout = QHBoxLayout(x_row)
+        x_layout.setContentsMargins(0, 0, 0, 0)
+        x_layout.addWidget(QLabel("X:"))
         self.pos_x_label = QLabel("0.0000")
-        self.pos_x_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("X:", self.pos_x_label)
+        self.pos_x_label.setStyleSheet(mono_style)
+        x_layout.addWidget(self.pos_x_label)
+        self.setpoint_x_label = QLabel("0.0000")
+        self.setpoint_x_label.setStyleSheet(mono_style)
+        x_layout.addWidget(self.setpoint_x_label)
+        self.delta_x_label = QLabel("+0.0000")
+        self.delta_x_label.setStyleSheet(delta_style)
+        x_layout.addWidget(self.delta_x_label)
+        main_layout.addWidget(x_row)
         
+        # Y row
+        y_row = QWidget()
+        y_layout = QHBoxLayout(y_row)
+        y_layout.setContentsMargins(0, 0, 0, 0)
+        y_layout.addWidget(QLabel("Y:"))
         self.pos_y_label = QLabel("0.0000")
-        self.pos_y_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("Y:", self.pos_y_label)
+        self.pos_y_label.setStyleSheet(mono_style)
+        y_layout.addWidget(self.pos_y_label)
+        self.setpoint_y_label = QLabel("0.0000")
+        self.setpoint_y_label.setStyleSheet(mono_style)
+        y_layout.addWidget(self.setpoint_y_label)
+        self.delta_y_label = QLabel("+0.0000")
+        self.delta_y_label.setStyleSheet(delta_style)
+        y_layout.addWidget(self.delta_y_label)
+        main_layout.addWidget(y_row)
         
+        # Z row
+        z_row = QWidget()
+        z_layout = QHBoxLayout(z_row)
+        z_layout.setContentsMargins(0, 0, 0, 0)
+        z_layout.addWidget(QLabel("Z:"))
         self.pos_z_label = QLabel("0.0000")
-        self.pos_z_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("Z:", self.pos_z_label)
+        self.pos_z_label.setStyleSheet(mono_style)
+        z_layout.addWidget(self.pos_z_label)
+        self.setpoint_z_label = QLabel("0.0000")
+        self.setpoint_z_label.setStyleSheet(mono_style)
+        z_layout.addWidget(self.setpoint_z_label)
+        self.delta_z_label = QLabel("+0.0000")
+        self.delta_z_label.setStyleSheet(delta_style)
+        z_layout.addWidget(self.delta_z_label)
+        main_layout.addWidget(z_row)
         
-        # Display quaternion components (qx, qy, qz) as rotation values
-        # Note: These are raw quaternion components, not Euler angles
+        # qX row
+        qx_row = QWidget()
+        qx_layout = QHBoxLayout(qx_row)
+        qx_layout.setContentsMargins(0, 0, 0, 0)
+        qx_layout.addWidget(QLabel("qX:"))
         self.rot_qx_label = QLabel("0.0000")
-        self.rot_qx_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("qX:", self.rot_qx_label)
+        self.rot_qx_label.setStyleSheet(mono_style)
+        qx_layout.addWidget(self.rot_qx_label)
+        self.setpoint_qx_label = QLabel("0.0000")
+        self.setpoint_qx_label.setStyleSheet(mono_style)
+        qx_layout.addWidget(self.setpoint_qx_label)
+        self.delta_qx_label = QLabel("+0.0000")
+        self.delta_qx_label.setStyleSheet(delta_style)
+        qx_layout.addWidget(self.delta_qx_label)
+        main_layout.addWidget(qx_row)
         
+        # qY row
+        qy_row = QWidget()
+        qy_layout = QHBoxLayout(qy_row)
+        qy_layout.setContentsMargins(0, 0, 0, 0)
+        qy_layout.addWidget(QLabel("qY:"))
         self.rot_qy_label = QLabel("0.0000")
-        self.rot_qy_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("qY:", self.rot_qy_label)
+        self.rot_qy_label.setStyleSheet(mono_style)
+        qy_layout.addWidget(self.rot_qy_label)
+        self.setpoint_qy_label = QLabel("0.0000")
+        self.setpoint_qy_label.setStyleSheet(mono_style)
+        qy_layout.addWidget(self.setpoint_qy_label)
+        self.delta_qy_label = QLabel("+0.0000")
+        self.delta_qy_label.setStyleSheet(delta_style)
+        qy_layout.addWidget(self.delta_qy_label)
+        main_layout.addWidget(qy_row)
         
+        # qZ row
+        qz_row = QWidget()
+        qz_layout = QHBoxLayout(qz_row)
+        qz_layout.setContentsMargins(0, 0, 0, 0)
+        qz_layout.addWidget(QLabel("qZ:"))
         self.rot_qz_label = QLabel("0.0000")
-        self.rot_qz_label.setStyleSheet("font-family: monospace;")
-        layout.addRow("qZ:", self.rot_qz_label)
+        self.rot_qz_label.setStyleSheet(mono_style)
+        qz_layout.addWidget(self.rot_qz_label)
+        self.setpoint_qz_label = QLabel("0.0000")
+        self.setpoint_qz_label.setStyleSheet(mono_style)
+        qz_layout.addWidget(self.setpoint_qz_label)
+        self.delta_qz_label = QLabel("+0.0000")
+        self.delta_qz_label.setStyleSheet(delta_style)
+        qz_layout.addWidget(self.delta_qz_label)
+        main_layout.addWidget(qz_row)
         
         return group
     
@@ -578,10 +684,20 @@ class CommandPanel(QWidget):
     def _on_land_clicked(self):
         """Handle LAND button click."""
         self.land_requested.emit()
+        self._show_action_feedback("Landing", "Land command sent to drone.")
     
     def _on_home_clicked(self):
-        """Handle HOME button click."""
+        """Handle HOME button click - enables Home mode."""
+        self.mode_tabs.setCurrentIndex(self.MODE_HOME)
         self.go_home_requested.emit()
+        self._show_action_feedback("Home Mode", "Home mode enabled. Drone returning to home position.")
+    
+    def _on_mode_changed(self, index):
+        """Handle mode tab change."""
+        self.current_mode = index
+        # Update joystick control based on mode
+        is_joystick_mode = (index == self.MODE_JOYSTICK)
+        self.joystick_control_enabled.emit(is_joystick_mode and self.joystick_live_mode)
     
     def _on_object_selected(self, index):
         """Handle controlled object selection."""
@@ -591,52 +707,78 @@ class CommandPanel(QWidget):
             self.controlled_object_changed.emit(obj)
             self._update_position_display()
             self._update_jog_values()
+            self._sync_ghost_setpoint()
     
     def _on_ghost_mode_changed(self, state):
         """Handle ghost mode toggle."""
         self.ghost_mode = state == Qt.Checked
         self.send_position_btn.setEnabled(self.ghost_mode)
         self.ghost_mode_changed.emit(self.ghost_mode)
+        if self.ghost_mode:
+            self._sync_ghost_setpoint()
     
     def _on_send_position_clicked(self):
         """Handle send position button click."""
         obj = self._get_controlled_object()
         if obj is not None:
+            if self.ghost_mode:
+                # In ghost mode, apply the ghost setpoint to the actual object
+                obj.set_pose(self.ghost_setpoint)
             # Get current position from object
             x, y, z = obj.pose[0], obj.pose[1], obj.pose[2]
             # Get quaternion components directly (qw, qx, qy, qz)
-            # Note: Quaternion to Euler conversion is not implemented here.
-            # The signal emits the raw quaternion components for external processing.
             qw, qx, qy, qz = obj.pose[3], obj.pose[4], obj.pose[5], obj.pose[6]
             self.send_position_requested.emit((x, y, z, qw, qx, qy, qz))
+            self._show_action_feedback("Position Sent", f"Position sent: ({x:.2f}, {y:.2f}, {z:.2f})")
+            self._update_position_display()
+            self._update_jog_values()
     
     def _on_step_size_changed(self, value):
         """Handle step size change."""
         self.step_size = value
     
     def _jog_axis(self, axis, direction):
-        """Jog the controlled object along the specified axis."""
+        """Jog the controlled object along the specified axis.
+        
+        In ghost mode, updates the setpoint without moving the actual object.
+        """
         obj = self._get_controlled_object()
         if obj is None:
             return
         
         step = self.step_size * direction
-        pose = list(obj.pose)
         
-        if axis == "X":
-            pose[0] += step
-        elif axis == "Y":
-            pose[1] += step
-        elif axis == "Z":
-            pose[2] += step
-        elif axis == "Roll":
-            pose[4] += step * self.ROTATION_STEP_SCALE
-        elif axis == "Pitch":
-            pose[5] += step * self.ROTATION_STEP_SCALE
-        elif axis == "Yaw":
-            pose[6] += step * self.ROTATION_STEP_SCALE
+        if self.ghost_mode:
+            # Update ghost setpoint instead of actual position
+            if axis == "X":
+                self.ghost_setpoint[0] += step
+            elif axis == "Y":
+                self.ghost_setpoint[1] += step
+            elif axis == "Z":
+                self.ghost_setpoint[2] += step
+            elif axis == "Roll":
+                self.ghost_setpoint[4] += step * self.ROTATION_STEP_SCALE
+            elif axis == "Pitch":
+                self.ghost_setpoint[5] += step * self.ROTATION_STEP_SCALE
+            elif axis == "Yaw":
+                self.ghost_setpoint[6] += step * self.ROTATION_STEP_SCALE
+        else:
+            # Update actual object position
+            pose = list(obj.pose)
+            if axis == "X":
+                pose[0] += step
+            elif axis == "Y":
+                pose[1] += step
+            elif axis == "Z":
+                pose[2] += step
+            elif axis == "Roll":
+                pose[4] += step * self.ROTATION_STEP_SCALE
+            elif axis == "Pitch":
+                pose[5] += step * self.ROTATION_STEP_SCALE
+            elif axis == "Yaw":
+                pose[6] += step * self.ROTATION_STEP_SCALE
+            obj.set_pose(pose)
         
-        obj.set_pose(pose)
         self._update_position_display()
         self._update_jog_values()
     
@@ -697,6 +839,8 @@ class CommandPanel(QWidget):
             height = self.hover_height_spin.value()
             self.set_home_requested.emit((self.home_position[0], self.home_position[1], 
                                           self.home_position[2], height))
+            self._show_action_feedback("Home Set", 
+                f"Home position set to ({self.home_position[0]:.2f}, {self.home_position[1]:.2f}, {self.home_position[2]:.2f})")
     
     def _on_go_home_tab_clicked(self):
         """Handle go home button click in the home tab."""
@@ -709,6 +853,7 @@ class CommandPanel(QWidget):
             obj.set_pose(pose)
             self._update_position_display()
             self._update_jog_values()
+            self._show_action_feedback("Go Home", "Navigating to home position.")
     
     def _on_hover_height_changed(self, value):
         """Handle hover height change."""
@@ -716,9 +861,22 @@ class CommandPanel(QWidget):
     
     def _on_live_mode_changed(self, state):
         """Handle live mode toggle in joystick tab."""
+        self.joystick_live_mode = (state == Qt.Checked)
         # When live mode is enabled, disable ghost mode
-        if state == Qt.Checked:
+        if self.joystick_live_mode:
             self.ghost_checkbox.setChecked(False)
+        # Emit signal to enable/disable joystick control
+        is_joystick_mode = (self.current_mode == self.MODE_JOYSTICK)
+        self.joystick_control_enabled.emit(is_joystick_mode and self.joystick_live_mode)
+    
+    def _show_action_feedback(self, title, message):
+        """Show a brief feedback message for user actions."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
     
     # === Helper Methods ===
     
@@ -728,33 +886,71 @@ class CommandPanel(QWidget):
             return self.object_service.get_controlled_object()
         return None
     
+    def _sync_ghost_setpoint(self):
+        """Sync ghost setpoint with current object position."""
+        obj = self._get_controlled_object()
+        if obj is not None:
+            self.ghost_setpoint = list(obj.pose)
+    
     def _update_position_display(self):
-        """Update the current position display."""
+        """Update the position display with current, setpoint, and delta."""
         obj = self._get_controlled_object()
         if obj is None:
             return
         
+        # Current position
         self.pos_x_label.setText(f"{obj.pose[0]:.4f}")
         self.pos_y_label.setText(f"{obj.pose[1]:.4f}")
         self.pos_z_label.setText(f"{obj.pose[2]:.4f}")
-        
-        # Display quaternion components (qx, qy, qz)
         self.rot_qx_label.setText(f"{obj.pose[4]:.4f}")
         self.rot_qy_label.setText(f"{obj.pose[5]:.4f}")
         self.rot_qz_label.setText(f"{obj.pose[6]:.4f}")
+        
+        # Setpoint (ghost mode position)
+        self.setpoint_x_label.setText(f"{self.ghost_setpoint[0]:.4f}")
+        self.setpoint_y_label.setText(f"{self.ghost_setpoint[1]:.4f}")
+        self.setpoint_z_label.setText(f"{self.ghost_setpoint[2]:.4f}")
+        self.setpoint_qx_label.setText(f"{self.ghost_setpoint[4]:.4f}")
+        self.setpoint_qy_label.setText(f"{self.ghost_setpoint[5]:.4f}")
+        self.setpoint_qz_label.setText(f"{self.ghost_setpoint[6]:.4f}")
+        
+        # Delta (setpoint - current)
+        delta_x = self.ghost_setpoint[0] - obj.pose[0]
+        delta_y = self.ghost_setpoint[1] - obj.pose[1]
+        delta_z = self.ghost_setpoint[2] - obj.pose[2]
+        delta_qx = self.ghost_setpoint[4] - obj.pose[4]
+        delta_qy = self.ghost_setpoint[5] - obj.pose[5]
+        delta_qz = self.ghost_setpoint[6] - obj.pose[6]
+        
+        self.delta_x_label.setText(f"{delta_x:+.4f}")
+        self.delta_y_label.setText(f"{delta_y:+.4f}")
+        self.delta_z_label.setText(f"{delta_z:+.4f}")
+        self.delta_qx_label.setText(f"{delta_qx:+.4f}")
+        self.delta_qy_label.setText(f"{delta_qy:+.4f}")
+        self.delta_qz_label.setText(f"{delta_qz:+.4f}")
     
     def _update_jog_values(self):
-        """Update the jog value labels."""
+        """Update the jog value labels based on ghost mode state."""
         obj = self._get_controlled_object()
         if obj is None:
             return
         
-        self.jog_x_value.setText(f"{obj.pose[0]:.4f}")
-        self.jog_y_value.setText(f"{obj.pose[1]:.4f}")
-        self.jog_z_value.setText(f"{obj.pose[2]:.4f}")
-        self.jog_roll_value.setText(f"{obj.pose[4]:.4f}")
-        self.jog_pitch_value.setText(f"{obj.pose[5]:.4f}")
-        self.jog_yaw_value.setText(f"{obj.pose[6]:.4f}")
+        if self.ghost_mode:
+            # Show ghost setpoint values in jogging tab
+            self.jog_x_value.setText(f"{self.ghost_setpoint[0]:.4f}")
+            self.jog_y_value.setText(f"{self.ghost_setpoint[1]:.4f}")
+            self.jog_z_value.setText(f"{self.ghost_setpoint[2]:.4f}")
+            self.jog_roll_value.setText(f"{self.ghost_setpoint[4]:.4f}")
+            self.jog_pitch_value.setText(f"{self.ghost_setpoint[5]:.4f}")
+            self.jog_yaw_value.setText(f"{self.ghost_setpoint[6]:.4f}")
+        else:
+            # Show actual object position
+            self.jog_x_value.setText(f"{obj.pose[0]:.4f}")
+            self.jog_y_value.setText(f"{obj.pose[1]:.4f}")
+            self.jog_z_value.setText(f"{obj.pose[2]:.4f}")
+            self.jog_roll_value.setText(f"{obj.pose[4]:.4f}")
+            self.jog_pitch_value.setText(f"{obj.pose[5]:.4f}")
+            self.jog_yaw_value.setText(f"{obj.pose[6]:.4f}")
     
     def _update_home_display(self):
         """Update the home position display."""
@@ -791,10 +987,19 @@ class CommandPanel(QWidget):
         self.object_combo.blockSignals(False)
         
         # Update displays
+        self._sync_ghost_setpoint()
         self._update_position_display()
         self._update_jog_values()
     
     def refresh(self):
-        """Refresh the panel display."""
+        """Refresh the panel display (called on input updates)."""
         self._update_position_display()
         self._update_jog_values()
+    
+    def is_joystick_control_allowed(self):
+        """Check if joystick control should move the object.
+        
+        Returns True only when in Joystick mode AND live mode is enabled,
+        OR in Joystick mode with ghost mode (but only updates setpoint).
+        """
+        return self.current_mode == self.MODE_JOYSTICK and self.joystick_live_mode

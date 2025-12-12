@@ -15,7 +15,7 @@ class DockManager(QDockWidget):
         super().__init__(parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(380)  # Increased to prevent horizontal scroll and button clipping
         self.setMinimumHeight(300)
         self.current_widget = None
 

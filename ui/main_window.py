@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(0, False)  # Prevent dock collapsing
         splitter.setCollapsible(1, False)  # Prevent GL collapsing
         self.glWidget.setMinimumWidth(200)
-        self.dock.setMinimumWidth(250)
+        self.dock.setMinimumWidth(380)  # Increased to prevent horizontal scroll and button clipping
         
         self.navbar.panel_selected.connect(self.dock.set_active_panel)
         
@@ -112,6 +112,9 @@ class MainWindow(QMainWindow):
         
         # Populate command panel with objects after they're created
         self.command_panel.refresh_object_list()
+        
+        # Connect command panel joystick control signal
+        self.command_panel.joystick_control_enabled.connect(self.on_joystick_control_enabled)
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
@@ -143,6 +146,9 @@ class MainWindow(QMainWindow):
     def on_input_update(self, obj):
         """Handle input device updates (replaces on_joystick_update)"""
         self.object_panel.refresh()
+        # Update command panel position display live
+        if hasattr(self, 'command_panel'):
+            self.command_panel.refresh()
         self.glWidget.update()
     
     @pyqtSlot(object)
@@ -174,6 +180,21 @@ class MainWindow(QMainWindow):
         """Handle lock object change from settings panel"""
         if hasattr(self, 'glWidget') and self.glWidget:
             self.glWidget.set_locked_object(obj)
+    
+    @pyqtSlot(bool)
+    def on_joystick_control_enabled(self, enabled):
+        """Handle joystick control enable/disable from command panel.
+        
+        Joystick control only moves the object when in Joystick mode with live mode enabled.
+        """
+        if hasattr(self, 'input_service'):
+            if enabled:
+                # Enable joystick control - set controlled object
+                obj = self.object_service.get_controlled_object()
+                self.input_service.set_controlled_object(obj)
+            else:
+                # Disable joystick control - set controlled object to None
+                self.input_service.set_controlled_object(None)
         
     def resizeEvent(self, event):
         super().resizeEvent(event)
