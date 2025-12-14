@@ -635,7 +635,7 @@ class CommandPanel(QWidget):
         Note: Rotation values displayed are quaternion components (qx, qy, qz),
         not Euler angles. The pose format is (x, y, z, qw, qx, qy, qz).
         """
-        group = QGroupBox("Position Info")
+        group = QGroupBox("Position Info (m)")
         main_layout = QVBoxLayout(group)
         
         # Header row
@@ -776,10 +776,32 @@ class CommandPanel(QWidget):
         self.land_requested.emit()
     
     def _on_home_clicked(self):
-        """Handle HOME button click - enables Home mode AND executes Go to Home."""
+        """Handle HOME button click - enables Home mode AND executes Go to Home.
+        
+        This is a safety button so it IGNORES ghost mode and immediately updates
+        both setpoint and object position.
+        """
         self.mode_tabs.setCurrentIndex(self.MODE_HOME)
-        # Also execute Go to Home command
-        self._on_go_home_tab_clicked()
+        
+        # Safety button - ignore ghost mode and immediately update setpoint AND object
+        obj = self._get_controlled_object()
+        if obj is not None:
+            # Update setpoint to home position with hover height
+            self.setpoint[0] = self.home_position[0]  # X
+            self.setpoint[1] = self.hover_height_spin.value()  # Y (height)
+            self.setpoint[2] = self.home_position[1]  # Z (stored as home_position[1])
+            
+            # Also sync next_setpoint if in ghost mode
+            if self.ghost_mode:
+                self.next_setpoint = list(self.setpoint)
+            
+            # Immediately update object position (safety - ignore ghost mode)
+            obj.set_pose(self.setpoint)
+            
+            self._update_send_button_state()
+            self._update_position_display()
+            self._update_jog_values()
+        
         self.go_home_requested.emit()
     
     def _on_mode_changed(self, index):
@@ -1095,18 +1117,33 @@ class CommandPanel(QWidget):
         self._update_position_display()
         self._update_jog_values()
     
-    def update_next_setpoint_from_joystick(self, pose_delta):
-        """Update next_setpoint from joystick input (called when in ghost mode).
+    def update_setpoint_from_joystick(self, pose_delta):
+        """Update setpoint (or next_setpoint in ghost mode) from joystick input.
+        
+        This is the primary method for joystick mode to update positions.
+        Joystick should ALWAYS update setpoint/next_setpoint, never the object directly.
         
         Args:
-            pose_delta: The delta to apply to next_setpoint [dx, dy, dz, dqw, dqx, dqy, dqz]
+            pose_delta: The delta to apply [dx, dy, dz, dqw, dqx, dqy, dqz]
         """
-        if self.ghost_mode:
-            for i in range(7):
-                self.next_setpoint[i] += pose_delta[i]
-            self._update_send_button_state()
-            self._update_position_display()
-            self._update_jog_values()
+        obj = self._get_controlled_object()
+        if obj is None:
+            return
+        
+        # Determine which setpoint to update
+        target = self.next_setpoint if self.ghost_mode else self.setpoint
+        
+        # Apply delta to target setpoint
+        for i in range(7):
+            target[i] += pose_delta[i]
+        
+        # If not in ghost mode, also update the object position
+        if not self.ghost_mode:
+            obj.set_pose(self.setpoint)
+        
+        self._update_send_button_state()
+        self._update_position_display()
+        self._update_jog_values()
     
     def is_joystick_control_allowed(self):
         """Check if joystick control should move the object.

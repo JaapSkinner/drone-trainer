@@ -43,6 +43,9 @@ class MainWindow(QMainWindow):
         
         # Connect GL widget to input service for keyboard events
         self.glWidget.set_input_service(self.input_service)
+        
+        # Connect input service to command panel for setpoint-based control
+        self.input_service.set_command_panel(self.command_panel)
 
         self.status_service = StatusService(
             self.status_panel,

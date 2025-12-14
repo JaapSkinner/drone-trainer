@@ -23,6 +23,9 @@ class InputService(ServiceBase):
     - Controller/Gamepad (Xbox, PlayStation, etc.)
     - WASD keyboard input
     - Arrow Keys keyboard input
+    
+    The service calculates pose deltas and routes them through the command panel
+    to update setpoint/next_setpoint instead of directly modifying object position.
     """
     input_updated = pyqtSignal(object)  # emits the updated object state
 
@@ -60,6 +63,7 @@ class InputService(ServiceBase):
         }
         
         self.controlled_object = None
+        self.command_panel = None  # Reference to command panel for setpoint updates
         self.timer = None
     
     @staticmethod
@@ -210,13 +214,20 @@ class InputService(ServiceBase):
 
         obj = self.controlled_object
         if obj is not None:
-            obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                                (rb - lb) * 0.1 * self.sensitivity,
-                                ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-            obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                          obj.pose[1] + obj.pose_delta[1],
-                          obj.pose[2] + obj.pose_delta[2],
-                          1, ry * 0.03 * self.sensitivity, -rz * 0.03 * self.sensitivity, -rx * 0.03 * self.sensitivity])
+            # Calculate pose delta
+            pose_delta = [
+                lx * 0.1 * self.sensitivity,
+                (rb - lb) * 0.1 * self.sensitivity,
+                ly * 0.1 * self.sensitivity,
+                0,  # qw delta (not used)
+                ry * 0.03 * self.sensitivity,
+                -rz * 0.03 * self.sensitivity,
+                -rx * 0.03 * self.sensitivity
+            ]
+            
+            # Route through command panel to update setpoint (not position directly)
+            if self.command_panel is not None:
+                self.command_panel.update_setpoint_from_joystick(pose_delta)
             
             self.input_updated.emit(obj)
 
@@ -241,13 +252,21 @@ class InputService(ServiceBase):
         ly = -strafe * np.sin(np.radians(cam_angle_y)) + forward * np.cos(np.radians(cam_angle_y))
         
         obj = self.controlled_object
-        obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                            vertical * 0.1 * self.sensitivity,
-                            ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-        obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                      obj.pose[1] + obj.pose_delta[1],
-                      obj.pose[2] + obj.pose_delta[2],
-                      1, 0, 0, -rot_x * 0.03 * self.sensitivity])
+        
+        # Calculate pose delta
+        pose_delta = [
+            lx * 0.1 * self.sensitivity,
+            vertical * 0.1 * self.sensitivity,
+            ly * 0.1 * self.sensitivity,
+            0,  # qw delta (not used)
+            0,
+            0,
+            -rot_x * 0.03 * self.sensitivity
+        ]
+        
+        # Route through command panel to update setpoint (not position directly)
+        if self.command_panel is not None:
+            self.command_panel.update_setpoint_from_joystick(pose_delta)
         
         self.input_updated.emit(obj)
 
@@ -272,13 +291,21 @@ class InputService(ServiceBase):
         ly = -strafe * np.sin(np.radians(cam_angle_y)) + forward * np.cos(np.radians(cam_angle_y))
         
         obj = self.controlled_object
-        obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                            vertical * 0.1 * self.sensitivity,
-                            ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-        obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                      obj.pose[1] + obj.pose_delta[1],
-                      obj.pose[2] + obj.pose_delta[2],
-                      1, 0, 0, -rot_x * 0.03 * self.sensitivity])
+        
+        # Calculate pose delta
+        pose_delta = [
+            lx * 0.1 * self.sensitivity,
+            vertical * 0.1 * self.sensitivity,
+            ly * 0.1 * self.sensitivity,
+            0,  # qw delta (not used)
+            0,
+            0,
+            -rot_x * 0.03 * self.sensitivity
+        ]
+        
+        # Route through command panel to update setpoint (not position directly)
+        if self.command_panel is not None:
+            self.command_panel.update_setpoint_from_joystick(pose_delta)
         
         self.input_updated.emit(obj)
 
@@ -290,3 +317,12 @@ class InputService(ServiceBase):
             obj: The scene object to control
         """
         self.controlled_object = obj
+    
+    def set_command_panel(self, command_panel):
+        """
+        Set the command panel reference for routing setpoint updates.
+        
+        Args:
+            command_panel: The CommandPanel instance
+        """
+        self.command_panel = command_panel
