@@ -5,6 +5,7 @@ from PyQt5.QtGui import QFontDatabase, QFont
 from services.input_service import InputService, InputType
 from services.object_service import ObjectService
 from services.status_service import StatusService
+from services.mavlink_service import MavlinkService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
@@ -15,6 +16,15 @@ from ui.status_panel.status_panel import StatusPanel
 
 
 class MainWindow(QMainWindow):
+    """Main application window for the Drone Trainer.
+    
+    Integrates all services and UI components including:
+    - Object service for scene management
+    - Input service for controller/keyboard input
+    - MAVLink service for drone communication
+    - Status service for health monitoring
+    """
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         # Load and set global font
@@ -44,16 +54,27 @@ class MainWindow(QMainWindow):
         # Connect GL widget to input service for keyboard events
         self.glWidget.set_input_service(self.input_service)
 
+        # Initialize MAVLink service for drone communication
+        # TODO: Connect to DTRG-Mavlink custom message definitions when submodule is added
+        self.mavlink_service = MavlinkService()
+        
+        # Connect mavlink service to dock panel
+        self.dock.set_mavlink_service(self.mavlink_service)
+
         self.status_service = StatusService(
             self.status_panel,
             self.input_service,
-            None  # Placeholder for mavlink service
+            self.mavlink_service
         )
         self.status_service.start()
         
         
         self.input_service.input_updated.connect(self.on_input_update)
         self.input_service.start()
+        
+        # Start mavlink service
+        self.mavlink_service.start()
+        
         # self.vicon.position_updated.connect(self.update_vicon_position)
         
 
@@ -183,6 +204,8 @@ class MainWindow(QMainWindow):
             self.status_service.stop()
         if hasattr(self, 'input_service'):
             self.input_service.stop()
+        if hasattr(self, 'mavlink_service'):
+            self.mavlink_service.stop()
         
         # Stop the GL widget timer
         if hasattr(self, 'glWidget') and self.glWidget and hasattr(self.glWidget, 'timer'):
