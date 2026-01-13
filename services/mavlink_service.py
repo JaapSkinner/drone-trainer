@@ -597,6 +597,49 @@ class MavlinkService(ServiceBase):
         """
         return (self._total_rate_hz, self._active_connections)
     
+    def get_connection_count(self) -> int:
+        """Get the number of active connections.
+        
+        Returns:
+            Number of active MAVLink connections
+        """
+        return len(self._connections)
+    
+    def get_connection_statistics(self) -> dict:
+        """Get aggregated statistics for all connections.
+        
+        Returns:
+            Dictionary with total_sent, total_received, and connections list
+        """
+        total_sent = 0
+        total_received = 0
+        connections = []
+        
+        for sys_id, conn in self._connections.items():
+            total_sent += conn.status.messages_sent
+            total_received += conn.status.messages_received
+            connections.append({
+                'system_id': sys_id,
+                'connected': conn.is_connected,
+                'messages_sent': conn.status.messages_sent,
+                'messages_received': conn.status.messages_received,
+                'rate_hz': conn.status.message_rate_hz,
+            })
+        
+        return {
+            'total_sent': total_sent,
+            'total_received': total_received,
+            'connections': connections,
+        }
+    
+    def get_status_label(self) -> str:
+        """Get the current status label.
+        
+        Returns:
+            Current status label string
+        """
+        return self._status_label
+    
     def _sanitize_setpoint(self, setpoint: SetpointData) -> bool:
         """Validate and sanitize a setpoint before sending.
         

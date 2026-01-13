@@ -70,7 +70,7 @@ class StatusService(ServiceBase):
             if active_conns > 0:
                 label = f"{active_conns} drones @ {rate_hz:.0f} Hz"
             else:
-                label = getattr(mavlink_svc, "_status_label", "Not Connected")
+                label = mavlink_svc.get_status_label()
             
             self.status_panel.handle_status_change(
                 mavlink_svc.status.value,

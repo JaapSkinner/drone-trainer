@@ -154,11 +154,11 @@ class MavlinkPanel(QWidget):
         health_layout = QFormLayout()
         
         self.rate_label = QLabel("0 Hz")
-        self.rate_label.setFont(QFont("NotoSan", 12, QFont.Bold))
+        self.rate_label.setFont(QFont("NotoSans", 12, QFont.Bold))
         health_layout.addRow("Message Rate:", self.rate_label)
         
         self.connections_count_label = QLabel("0")
-        self.connections_count_label.setFont(QFont("NotoSan", 12, QFont.Bold))
+        self.connections_count_label.setFont(QFont("NotoSans", 12, QFont.Bold))
         health_layout.addRow("Active Connections:", self.connections_count_label)
         
         self.messages_sent_label = QLabel("0")
@@ -270,7 +270,7 @@ class MavlinkPanel(QWidget):
             del self._telemetry_labels[system_id]
         
         # Show placeholder if no connections
-        if self.mavlink_service is None or len(self.mavlink_service._connections) == 0:
+        if self.mavlink_service is None or self.mavlink_service.get_connection_count() == 0:
             self.no_connections_label.show()
             self.telemetry_placeholder.show()
     
@@ -387,14 +387,9 @@ class MavlinkPanel(QWidget):
         
         # Update message counts if mavlink service available
         if self.mavlink_service is not None:
-            total_sent = 0
-            total_received = 0
-            for conn in self.mavlink_service._connections.values():
-                total_sent += conn.status.messages_sent
-                total_received += conn.status.messages_received
-            
-            self.messages_sent_label.setText(str(total_sent))
-            self.messages_received_label.setText(str(total_received))
+            stats = self.mavlink_service.get_connection_statistics()
+            self.messages_sent_label.setText(str(stats['total_sent']))
+            self.messages_received_label.setText(str(stats['total_received']))
     
     def set_mavlink_service(self, mavlink_service):
         """Set or update the mavlink service reference.
