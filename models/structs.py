@@ -185,3 +185,69 @@ class MocapData:
     z: float = 0.0
     q: tuple = (1.0, 0.0, 0.0, 0.0)  # Identity quaternion (w, x, y, z)
     timestamp_usec: int = 0
+
+
+@dataclass
+class MavlinkObjectConfig:
+    """MAVLink configuration for an individual scene object.
+    
+    This config determines how a scene object interacts with MAVLink.
+    Objects can send mocap data, receive setpoints, or both.
+    
+    Attributes:
+        enabled: Whether MAVLink is enabled for this object
+        connection_string: MAVLink connection string (e.g., 'udp:127.0.0.1:14550')
+        system_id: Target MAVLink system ID (1-255)
+        component_id: Target MAVLink component ID (default: 1)
+        send_mocap: Whether to stream this object's pose as mocap data
+        receive_setpoints: Whether to apply received setpoints to this object
+        mocap_rate_hz: Rate to send mocap data (Hz), 0 = use global default
+        use_global_connection: If True, use global connection instead of object-specific
+    """
+    enabled: bool = False
+    connection_string: str = "udp:127.0.0.1:14550"
+    system_id: int = 1
+    component_id: int = 1
+    send_mocap: bool = True
+    receive_setpoints: bool = False
+    mocap_rate_hz: float = 0.0  # 0 = use global default
+    use_global_connection: bool = True
+
+
+@dataclass
+class MavlinkGlobalSettings:
+    """Global MAVLink settings that apply to all connections.
+    
+    These settings are stored in the MavlinkService and can be configured
+    via the Settings panel.
+    
+    Attributes:
+        default_connection_string: Default connection string for new objects
+        default_mocap_rate_hz: Default motion capture send rate in Hz
+        default_setpoint_rate_hz: Default setpoint send rate in Hz
+        telemetry_rate_hz: Telemetry receive/process rate in Hz
+        heartbeat_interval: Interval for heartbeat messages in seconds
+        connection_timeout: Timeout for connection attempts in seconds
+        enable_setpoint_sanitization: Enable safety checks on setpoints
+        max_position_magnitude: Maximum position setpoint distance in meters
+        max_velocity_magnitude: Maximum velocity setpoint in m/s
+        max_yaw_rate: Maximum yaw rate in rad/s
+        source_system_id: Source system ID for outgoing messages
+        source_component_id: Source component ID for outgoing messages
+        auto_reconnect: Automatically attempt to reconnect on connection loss
+        reconnect_interval: Interval between reconnection attempts in seconds
+    """
+    default_connection_string: str = "udp:127.0.0.1:14550"
+    default_mocap_rate_hz: float = 100.0
+    default_setpoint_rate_hz: float = 50.0
+    telemetry_rate_hz: float = 20.0
+    heartbeat_interval: float = 1.0
+    connection_timeout: float = 5.0
+    enable_setpoint_sanitization: bool = True
+    max_position_magnitude: float = 100.0
+    max_velocity_magnitude: float = 10.0
+    max_yaw_rate: float = 3.14159
+    source_system_id: int = 255
+    source_component_id: int = 0
+    auto_reconnect: bool = True
+    reconnect_interval: float = 5.0

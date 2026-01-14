@@ -1,12 +1,29 @@
-from PyQt5.QtWidgets import QWidget, QScrollArea, QVBoxLayout, QFormLayout, QGroupBox, QLabel, QLineEdit, QComboBox
+from PyQt5.QtWidgets import (QWidget, QScrollArea, QVBoxLayout, QFormLayout, 
+                             QGroupBox, QLabel, QLineEdit, QComboBox, QCheckBox,
+                             QSpinBox, QDoubleSpinBox, QHBoxLayout)
+from PyQt5.QtCore import pyqtSignal
+from models.structs import MavlinkObjectConfig
+
 
 class ObjectPanel(QWidget):
+    """Panel for viewing and editing scene object properties.
+    
+    Includes MAVLink configuration for each object.
+    
+    Signals:
+        mavlink_config_changed: Emitted when an object's MAVLink config changes
+    """
     NavTag = "live_data"
-    def __init__(self, gl_widget, parent=None, object_service = None):
+    
+    # Signal emitted when mavlink config changes (object, config)
+    mavlink_config_changed = pyqtSignal(object, object)
+    
+    def __init__(self, gl_widget, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
         self.gl_widget = gl_widget
         self.input_fields = []
         self.object_service = object_service
+        self.mavlink_service = mavlink_service
 
         layout = QVBoxLayout(self)
         self.combo_box = QComboBox()
@@ -27,6 +44,7 @@ class ObjectPanel(QWidget):
         self.populate()
 
     def populate(self):
+        """Populate the panel with all objects from the object service."""
         self.input_fields.clear()
         self.combo_box.clear()
         # clear layout
@@ -81,6 +99,11 @@ class ObjectPanel(QWidget):
 
             group_box.setLayout(form_layout)
             self.scroll_layout.addWidget(group_box)
+            
+            # Add MAVLink configuration group for controllable objects
+            if getattr(obj, 'controllable', False):
+                mavlink_group = self._create_mavlink_group(obj, i)
+                self.scroll_layout.addWidget(mavlink_group)
 
             self.input_fields.append({
                 'x_pos': x, 'y_pos': y, 'z_pos': z,
@@ -88,6 +111,108 @@ class ObjectPanel(QWidget):
                 # 'color': color, 'size': size,
                 # 'length': length, 'transparency': trans
             })
+    
+    def _create_mavlink_group(self, obj, index):
+        """Create a MAVLink configuration group for an object.
+        
+        Args:
+            obj: The scene object
+            index: Object index in the list
+            
+        Returns:
+            QGroupBox with MAVLink configuration widgets
+        """
+        group = QGroupBox(f"MAVLink - {obj.name}")
+        layout = QFormLayout()
+        
+        config = getattr(obj, 'mavlink_config', MavlinkObjectConfig())
+        
+        # Enable MAVLink checkbox
+        enabled_cb = QCheckBox()
+        enabled_cb.setChecked(config.enabled)
+        enabled_cb.stateChanged.connect(
+            lambda state, o=obj: self._on_mavlink_enabled_changed(o, state == 2)
+        )
+        layout.addRow("MAVLink Enabled:", enabled_cb)
+        
+        # Use global connection checkbox
+        use_global_cb = QCheckBox()
+        use_global_cb.setChecked(config.use_global_connection)
+        use_global_cb.stateChanged.connect(
+            lambda state, o=obj: self._on_mavlink_param_changed(o, 'use_global_connection', state == 2)
+        )
+        layout.addRow("Use Global Connection:", use_global_cb)
+        
+        # Connection string (only visible if not using global)
+        conn_edit = QLineEdit(config.connection_string)
+        conn_edit.setEnabled(not config.use_global_connection)
+        conn_edit.textChanged.connect(
+            lambda text, o=obj: self._on_mavlink_param_changed(o, 'connection_string', text)
+        )
+        use_global_cb.stateChanged.connect(
+            lambda state: conn_edit.setEnabled(state != 2)
+        )
+        layout.addRow("Connection String:", conn_edit)
+        
+        # System ID
+        system_id_spin = QSpinBox()
+        system_id_spin.setRange(1, 255)
+        system_id_spin.setValue(config.system_id)
+        system_id_spin.valueChanged.connect(
+            lambda val, o=obj: self._on_mavlink_param_changed(o, 'system_id', val)
+        )
+        layout.addRow("System ID:", system_id_spin)
+        
+        # Component ID
+        component_id_spin = QSpinBox()
+        component_id_spin.setRange(1, 255)
+        component_id_spin.setValue(config.component_id)
+        component_id_spin.valueChanged.connect(
+            lambda val, o=obj: self._on_mavlink_param_changed(o, 'component_id', val)
+        )
+        layout.addRow("Component ID:", component_id_spin)
+        
+        # Send Mocap checkbox
+        send_mocap_cb = QCheckBox()
+        send_mocap_cb.setChecked(config.send_mocap)
+        send_mocap_cb.stateChanged.connect(
+            lambda state, o=obj: self._on_mavlink_param_changed(o, 'send_mocap', state == 2)
+        )
+        layout.addRow("Send MoCap Data:", send_mocap_cb)
+        
+        # Receive Setpoints checkbox
+        recv_sp_cb = QCheckBox()
+        recv_sp_cb.setChecked(config.receive_setpoints)
+        recv_sp_cb.stateChanged.connect(
+            lambda state, o=obj: self._on_mavlink_param_changed(o, 'receive_setpoints', state == 2)
+        )
+        layout.addRow("Receive Setpoints:", recv_sp_cb)
+        
+        # Mocap Rate
+        mocap_rate_spin = QDoubleSpinBox()
+        mocap_rate_spin.setRange(0, 200)
+        mocap_rate_spin.setValue(config.mocap_rate_hz)
+        mocap_rate_spin.setSuffix(" Hz")
+        mocap_rate_spin.setToolTip("0 = use global default rate")
+        mocap_rate_spin.valueChanged.connect(
+            lambda val, o=obj: self._on_mavlink_param_changed(o, 'mocap_rate_hz', val)
+        )
+        layout.addRow("MoCap Rate (0=default):", mocap_rate_spin)
+        
+        group.setLayout(layout)
+        return group
+    
+    def _on_mavlink_enabled_changed(self, obj, enabled):
+        """Handle MAVLink enabled state change for an object."""
+        if hasattr(obj, 'mavlink_config'):
+            obj.mavlink_config.enabled = enabled
+            self.mavlink_config_changed.emit(obj, obj.mavlink_config)
+    
+    def _on_mavlink_param_changed(self, obj, param, value):
+        """Handle MAVLink parameter change for an object."""
+        if hasattr(obj, 'mavlink_config'):
+            setattr(obj.mavlink_config, param, value)
+            self.mavlink_config_changed.emit(obj, obj.mavlink_config)
 
     def _connect(self, line_edit, index, attr):
         line_edit.textChanged.connect(lambda text, i=index, a=attr: self._update_object(i, a, text))

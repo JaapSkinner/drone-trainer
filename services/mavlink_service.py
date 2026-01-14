@@ -34,6 +34,8 @@ from models.structs import (
     MavlinkMessagePriority,
     SetpointData,
     MocapData,
+    MavlinkGlobalSettings,
+    MavlinkObjectConfig,
 )
 
 
@@ -444,6 +446,9 @@ class MavlinkService(ServiceBase):
         self._telemetry_callbacks: List[Callable] = []
         self._mocap_sources: Dict[int, object] = {}  # system_id -> scene object
         
+        # Global settings for MAVLink operations
+        self._global_settings = MavlinkGlobalSettings()
+        
         # Timers for different priority tasks
         self._heartbeat_timer: Optional[QTimer] = None
         self._telemetry_timer: Optional[QTimer] = None
@@ -457,7 +462,110 @@ class MavlinkService(ServiceBase):
         # Setpoint sources (object -> setpoint data)
         self._setpoint_sources: Dict[int, SetpointData] = {}
         
+        # MAVLink-enabled objects (object -> MavlinkObjectConfig)
+        self._mavlink_objects: Dict[object, MavlinkObjectConfig] = {}
+        
         self.status_label = "MAVLink: Not Connected"
+    
+    def get_global_settings(self) -> MavlinkGlobalSettings:
+        """Get the current global MAVLink settings.
+        
+        Returns:
+            Current global settings
+        """
+        return self._global_settings
+    
+    def update_global_settings(self, settings: MavlinkGlobalSettings):
+        """Update global MAVLink settings.
+        
+        Updates the service configuration including setpoint limits and rates.
+        
+        Args:
+            settings: New global settings to apply
+        """
+        self._global_settings = settings
+        
+        # Update service parameters from settings
+        self.MAX_POSITION_MAGNITUDE = settings.max_position_magnitude
+        self.MAX_VELOCITY_MAGNITUDE = settings.max_velocity_magnitude
+        self.MAX_YAW_RATE = settings.max_yaw_rate
+        
+        # Update timer intervals if timers exist
+        if self._telemetry_timer is not None:
+            interval = int(1000 / settings.telemetry_rate_hz) if settings.telemetry_rate_hz > 0 else 50
+            self._telemetry_timer.setInterval(interval)
+        
+        if self._setpoint_timer is not None:
+            interval = int(1000 / settings.default_setpoint_rate_hz) if settings.default_setpoint_rate_hz > 0 else 20
+            self._setpoint_timer.setInterval(interval)
+        
+        if self._mocap_timer is not None:
+            interval = int(1000 / settings.default_mocap_rate_hz) if settings.default_mocap_rate_hz > 0 else 10
+            self._mocap_timer.setInterval(interval)
+    
+    def register_mavlink_object(self, obj, config: MavlinkObjectConfig = None):
+        """Register a scene object for MAVLink operations.
+        
+        Objects can send mocap data and/or receive setpoints.
+        
+        Args:
+            obj: Scene object to register
+            config: MAVLink configuration (uses object's config if None)
+        """
+        if config is None and hasattr(obj, 'mavlink_config'):
+            config = obj.mavlink_config
+        
+        if config is None:
+            config = MavlinkObjectConfig(enabled=True)
+        
+        self._mavlink_objects[obj] = config
+        
+        # If object should send mocap, register as mocap source
+        if config.send_mocap and config.enabled:
+            self.register_mocap_source(config.system_id, obj)
+    
+    def unregister_mavlink_object(self, obj):
+        """Unregister a scene object from MAVLink operations.
+        
+        Args:
+            obj: Scene object to unregister
+        """
+        if obj in self._mavlink_objects:
+            config = self._mavlink_objects[obj]
+            
+            # Remove from mocap sources if registered
+            if config.send_mocap:
+                self.unregister_mocap_source(config.system_id)
+            
+            del self._mavlink_objects[obj]
+    
+    def update_object_config(self, obj, config: MavlinkObjectConfig):
+        """Update MAVLink configuration for a registered object.
+        
+        Args:
+            obj: Scene object to update
+            config: New MAVLink configuration
+        """
+        if obj in self._mavlink_objects:
+            old_config = self._mavlink_objects[obj]
+            
+            # Handle mocap registration changes
+            if old_config.send_mocap and not config.send_mocap:
+                self.unregister_mocap_source(old_config.system_id)
+            elif config.send_mocap and config.enabled and not old_config.send_mocap:
+                self.register_mocap_source(config.system_id, obj)
+            
+            self._mavlink_objects[obj] = config
+        else:
+            self.register_mavlink_object(obj, config)
+    
+    def get_mavlink_objects(self) -> Dict[object, MavlinkObjectConfig]:
+        """Get all registered MAVLink-enabled objects.
+        
+        Returns:
+            Dictionary mapping objects to their MAVLink configurations
+        """
+        return self._mavlink_objects.copy()
     
     @staticmethod
     def get_dialect_info() -> dict:
