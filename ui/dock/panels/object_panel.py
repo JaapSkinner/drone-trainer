@@ -127,11 +127,16 @@ class ObjectPanel(QWidget):
         
         config = getattr(obj, 'mavlink_config', MavlinkObjectConfig())
         
+        # Container widget for all non-enabled options (for hiding/showing)
+        options_container = QWidget()
+        options_layout = QFormLayout(options_container)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Enable MAVLink checkbox
         enabled_cb = QCheckBox()
         enabled_cb.setChecked(config.enabled)
         enabled_cb.stateChanged.connect(
-            lambda state, o=obj: self._on_mavlink_enabled_changed(o, state == 2)
+            lambda state, o=obj, c=options_container: self._on_mavlink_enabled_toggled(o, state == 2, c)
         )
         layout.addRow("MAVLink Enabled:", enabled_cb)
         
@@ -141,7 +146,7 @@ class ObjectPanel(QWidget):
         use_global_cb.stateChanged.connect(
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'use_global_connection', state == 2)
         )
-        layout.addRow("Use Global Connection:", use_global_cb)
+        options_layout.addRow("Use Global Connection:", use_global_cb)
         
         # Connection string (only visible if not using global)
         conn_edit = QLineEdit(config.connection_string)
@@ -152,7 +157,7 @@ class ObjectPanel(QWidget):
         use_global_cb.stateChanged.connect(
             lambda state: conn_edit.setEnabled(state != 2)
         )
-        layout.addRow("Connection String:", conn_edit)
+        options_layout.addRow("Connection String:", conn_edit)
         
         # System ID
         system_id_spin = QSpinBox()
@@ -161,7 +166,7 @@ class ObjectPanel(QWidget):
         system_id_spin.valueChanged.connect(
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'system_id', val)
         )
-        layout.addRow("System ID:", system_id_spin)
+        options_layout.addRow("System ID:", system_id_spin)
         
         # Component ID
         component_id_spin = QSpinBox()
@@ -170,7 +175,7 @@ class ObjectPanel(QWidget):
         component_id_spin.valueChanged.connect(
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'component_id', val)
         )
-        layout.addRow("Component ID:", component_id_spin)
+        options_layout.addRow("Component ID:", component_id_spin)
         
         # Send Mocap checkbox
         send_mocap_cb = QCheckBox()
@@ -178,7 +183,7 @@ class ObjectPanel(QWidget):
         send_mocap_cb.stateChanged.connect(
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'send_mocap', state == 2)
         )
-        layout.addRow("Send MoCap Data:", send_mocap_cb)
+        options_layout.addRow("Send MoCap Data:", send_mocap_cb)
         
         # Receive Setpoints checkbox
         recv_sp_cb = QCheckBox()
@@ -186,7 +191,7 @@ class ObjectPanel(QWidget):
         recv_sp_cb.stateChanged.connect(
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'receive_setpoints', state == 2)
         )
-        layout.addRow("Receive Setpoints:", recv_sp_cb)
+        options_layout.addRow("Receive Setpoints:", recv_sp_cb)
         
         # Mocap Rate
         mocap_rate_spin = QDoubleSpinBox()
@@ -197,10 +202,27 @@ class ObjectPanel(QWidget):
         mocap_rate_spin.valueChanged.connect(
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'mocap_rate_hz', val)
         )
-        layout.addRow("MoCap Rate (0=default):", mocap_rate_spin)
+        options_layout.addRow("MoCap Rate (0=default):", mocap_rate_spin)
+        
+        # Add options container to main layout
+        layout.addRow(options_container)
+        
+        # Initially hide/show options based on enabled state
+        options_container.setVisible(config.enabled)
         
         group.setLayout(layout)
         return group
+    
+    def _on_mavlink_enabled_toggled(self, obj, enabled, options_container):
+        """Handle MAVLink enabled state change with UI update.
+        
+        Args:
+            obj: Scene object
+            enabled: New enabled state
+            options_container: Widget containing options to show/hide
+        """
+        options_container.setVisible(enabled)
+        self._on_mavlink_enabled_changed(obj, enabled)
     
     def _on_mavlink_enabled_changed(self, obj, enabled):
         """Handle MAVLink enabled state change for an object."""

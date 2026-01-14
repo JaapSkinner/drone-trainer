@@ -61,22 +61,43 @@ class StatusService(ServiceBase):
                 "input"
             )
         
-        # MAVLink service status
+        # MAVLink service status - only show when there are connections or mavlink-enabled objects
         if self.mavlink_service is not None:
             mavlink_svc = self.mavlink_service
             rate_hz, active_conns = mavlink_svc.get_health_metrics()
+            mavlink_objects = mavlink_svc.get_mavlink_objects()
             
-            # Build status label with rate and connection info
+            # Count enabled mavlink objects
+            enabled_objects = sum(1 for cfg in mavlink_objects.values() if cfg.enabled)
+            
+            # Only show mavlink status if there are connections or enabled objects
             if active_conns > 0:
-                label = f"{active_conns} drones @ {rate_hz:.0f} Hz"
+                # Show connection count and health
+                if active_conns == 1:
+                    # For single connection, show health details
+                    label = f"1 drone @ {rate_hz:.0f} Hz"
+                else:
+                    label = f"{active_conns} drones @ {rate_hz:.0f} Hz"
+                self.status_panel.handle_status_change(
+                    mavlink_svc.status.value,
+                    label,
+                    "mavlink"
+                )
+            elif enabled_objects > 0:
+                # Objects configured but not connected
+                label = f"Not Connected ({enabled_objects} objects configured)"
+                self.status_panel.handle_status_change(
+                    ServiceLevel.WARNING.value,
+                    label,
+                    "mavlink"
+                )
             else:
-                label = mavlink_svc.get_status_label()
-            
-            self.status_panel.handle_status_change(
-                mavlink_svc.status.value,
-                label,
-                "mavlink"
-            )
+                # No connections or objects - hide mavlink status
+                self.status_panel.handle_status_change(
+                    ServiceLevel.STOPPED.value,
+                    "",
+                    "mavlink"
+                )
     
     def set_mavlink_service(self, mavlink_service):
         """Set or update the mavlink service reference.

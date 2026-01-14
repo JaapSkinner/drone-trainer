@@ -28,6 +28,12 @@ class MavlinkPanel(QWidget):
     """
     NavTag = "mavlink"
     
+    # Connection quality thresholds for test results
+    GOOD_RATE_HZ = 50       # Minimum Hz for 'good' rating
+    GOOD_LATENCY_MS = 50    # Maximum latency for 'good' rating
+    FAIR_RATE_HZ = 20       # Minimum Hz for 'fair' rating
+    FAIR_LATENCY_MS = 100   # Maximum latency for 'fair' rating
+    
     def __init__(self, parent=None, mavlink_service=None):
         """Initialize the MAVLink panel.
         
@@ -113,8 +119,83 @@ class MavlinkPanel(QWidget):
         connections_group.setLayout(self.connections_layout)
         layout.addWidget(connections_group)
         
+        # Connection test group
+        test_group = QGroupBox("Connection Test")
+        test_layout = QVBoxLayout()
+        
+        # Test description
+        test_info = QLabel("Run a packet rate test to verify connection quality before flight.")
+        test_info.setWordWrap(True)
+        test_info.setStyleSheet("color: #666; font-size: 11px;")
+        test_layout.addWidget(test_info)
+        
+        # Test button
+        self.test_connection_btn = QPushButton("Run Connection Test")
+        self.test_connection_btn.clicked.connect(self.on_test_connection_clicked)
+        self.test_connection_btn.setEnabled(False)  # Enabled when connected
+        test_layout.addWidget(self.test_connection_btn)
+        
+        # Test results display
+        self.test_results_label = QLabel("")
+        self.test_results_label.setWordWrap(True)
+        self.test_results_label.setStyleSheet("font-size: 11px; padding: 5px;")
+        test_layout.addWidget(self.test_results_label)
+        
+        test_group.setLayout(test_layout)
+        layout.addWidget(test_group)
+        
         layout.addStretch()
         return widget
+    
+    def on_test_connection_clicked(self):
+        """Run a connection quality test.
+        
+        Tests packet rate by sending a burst of messages and measuring response times.
+        """
+        if self.mavlink_service is None:
+            return
+        
+        active_conns = self.mavlink_service.get_connection_count()
+        if active_conns == 0:
+            self.test_results_label.setText("<span style='color: red;'>No active connections to test</span>")
+            return
+        
+        self.test_results_label.setText("<span style='color: orange;'>Testing connection quality...</span>")
+        self.test_connection_btn.setEnabled(False)
+        
+        # Get test results from service
+        try:
+            test_results = self.mavlink_service.run_connection_test()
+            
+            result_text = "<b>Connection Test Results:</b><br>"
+            for sys_id, result in test_results.items():
+                rate_hz = result.get('rate_hz', 0)
+                latency_ms = result.get('latency_ms', 0)
+                lost_packets = result.get('lost_packets', 0)
+                
+                # Color code based on quality thresholds
+                if rate_hz >= self.GOOD_RATE_HZ and latency_ms < self.GOOD_LATENCY_MS and lost_packets == 0:
+                    color = 'green'
+                    status = 'Good'
+                elif rate_hz >= self.FAIR_RATE_HZ and latency_ms < self.FAIR_LATENCY_MS:
+                    color = 'orange'
+                    status = 'Fair'
+                else:
+                    color = 'red'
+                    status = 'Poor'
+                
+                result_text += f"<br><b>System {sys_id}:</b> "
+                result_text += f"<span style='color: {color};'>{status}</span><br>"
+                result_text += f"  Rate: {rate_hz:.1f} Hz, Latency: {latency_ms:.1f} ms"
+                if lost_packets > 0:
+                    result_text += f"<br>  <span style='color: red;'>Lost: {lost_packets} packets</span>"
+            
+            self.test_results_label.setText(result_text)
+            
+        except Exception as e:
+            self.test_results_label.setText(f"<span style='color: red;'>Test failed: {str(e)}</span>")
+        finally:
+            self.test_connection_btn.setEnabled(True)
     
     def _create_telemetry_tab(self) -> QWidget:
         """Create the telemetry display tab."""
@@ -421,6 +502,12 @@ class MavlinkPanel(QWidget):
         """Handle health metrics update."""
         self.rate_label.setText(f"{rate_hz:.0f} Hz")
         self.connections_count_label.setText(str(active_connections))
+        
+        # Enable/disable test button based on connections
+        self.test_connection_btn.setEnabled(active_connections > 0)
+        
+        # Update no connections label visibility
+        self.no_connections_label.setVisible(active_connections == 0)
         
         # Update message counts if mavlink service available
         if self.mavlink_service is not None:

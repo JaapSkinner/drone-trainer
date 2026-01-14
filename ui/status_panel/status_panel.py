@@ -76,5 +76,11 @@ class StatusPanel(QFrame):
 
         if target in label_map:
             label_widget, prefix = label_map[target]
-            label_widget.setText(f"{prefix}: {text}")
-            label_widget.setStyleSheet(f"color: {color};")
+            
+            # Hide mavlink label if no connections/objects (empty label means hide)
+            if target == "mavlink" and (not label or level_enum == ServiceLevel.STOPPED):
+                label_widget.setVisible(False)
+            else:
+                label_widget.setVisible(True)
+                label_widget.setText(f"{prefix}: {text}")
+                label_widget.setStyleSheet(f"color: {color};")

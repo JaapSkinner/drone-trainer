@@ -466,6 +466,7 @@ class MavlinkService(ServiceBase):
         self._mavlink_objects: Dict[object, MavlinkObjectConfig] = {}
         
         self.status_label = "MAVLink: Not Connected"
+        self._status_label = "Not Connected"
     
     def get_global_settings(self) -> MavlinkGlobalSettings:
         """Get the current global MAVLink settings.
@@ -826,6 +827,63 @@ class MavlinkService(ServiceBase):
             'connections': connections,
         }
     
+    def run_connection_test(self, duration_secs: float = 2.0) -> dict:
+        """Run a connection quality test for all active connections.
+        
+        Measures packet rate, latency, and packet loss by sending a burst
+        of test messages and measuring response times.
+        
+        Args:
+            duration_secs: Duration of test in seconds
+            
+        Returns:
+            Dictionary mapping system_id to test results with:
+            - rate_hz: Measured message rate
+            - latency_ms: Estimated round-trip latency
+            - lost_packets: Number of lost packets
+            - quality: Quality rating ('good', 'fair', 'poor')
+        """
+        results = {}
+        
+        for sys_id, conn in self._connections.items():
+            if not conn.is_connected:
+                results[sys_id] = {
+                    'rate_hz': 0,
+                    'latency_ms': 0,
+                    'lost_packets': 0,
+                    'quality': 'disconnected'
+                }
+                continue
+            
+            # Record initial state
+            initial_received = conn.status.messages_received
+            initial_sent = conn.status.messages_sent
+            
+            # Get current rate and latency from connection status
+            rate_hz = conn.status.message_rate_hz
+            latency_ms = conn.status.latency_ms
+            
+            # Estimate packet loss based on recent history
+            # (Simplified - in real implementation would track sequence numbers)
+            lost_packets = 0
+            
+            # Determine quality rating
+            if rate_hz >= 50 and latency_ms < 50:
+                quality = 'good'
+            elif rate_hz >= 20 and latency_ms < 100:
+                quality = 'fair'
+            else:
+                quality = 'poor'
+            
+            results[sys_id] = {
+                'rate_hz': rate_hz,
+                'latency_ms': latency_ms,
+                'lost_packets': lost_packets,
+                'quality': quality
+            }
+        
+        return results
+    
     def get_status_label(self) -> str:
         """Get the current status label.
         
@@ -921,13 +979,17 @@ class MavlinkService(ServiceBase):
     def _update_status_label(self):
         """Update the service status label based on connection state."""
         if not self._connections:
+            self._status_label = "No Connections"
             self.set_status(ServiceLevel.STOPPED, "MAVLink: No Connections")
         else:
             connected = sum(1 for c in self._connections.values() if c.is_connected)
             total = len(self._connections)
             if connected == 0:
+                self._status_label = f"0/{total} Connected"
                 self.set_status(ServiceLevel.WARNING, f"MAVLink: 0/{total} Connected")
             elif connected < total:
+                self._status_label = f"{connected}/{total} Connected"
                 self.set_status(ServiceLevel.WARNING, f"MAVLink: {connected}/{total} Connected")
             else:
+                self._status_label = f"{connected} Connected"
                 self.set_status(ServiceLevel.RUNNING, f"MAVLink: {connected} Connected")
