@@ -490,18 +490,22 @@ class MavlinkService(ServiceBase):
         self.MAX_VELOCITY_MAGNITUDE = settings.max_velocity_magnitude
         self.MAX_YAW_RATE = settings.max_yaw_rate
         
+        # Helper to safely calculate interval (avoid division by zero)
+        def rate_to_interval(rate_hz: float, default_ms: int) -> int:
+            """Convert rate in Hz to interval in ms, with fallback."""
+            if rate_hz is None or rate_hz <= 0:
+                return default_ms
+            return max(1, int(1000 / rate_hz))
+        
         # Update timer intervals if timers exist
         if self._telemetry_timer is not None:
-            interval = int(1000 / settings.telemetry_rate_hz) if settings.telemetry_rate_hz > 0 else 50
-            self._telemetry_timer.setInterval(interval)
+            self._telemetry_timer.setInterval(rate_to_interval(settings.telemetry_rate_hz, 50))
         
         if self._setpoint_timer is not None:
-            interval = int(1000 / settings.default_setpoint_rate_hz) if settings.default_setpoint_rate_hz > 0 else 20
-            self._setpoint_timer.setInterval(interval)
+            self._setpoint_timer.setInterval(rate_to_interval(settings.default_setpoint_rate_hz, 20))
         
         if self._mocap_timer is not None:
-            interval = int(1000 / settings.default_mocap_rate_hz) if settings.default_mocap_rate_hz > 0 else 10
-            self._mocap_timer.setInterval(interval)
+            self._mocap_timer.setInterval(rate_to_interval(settings.default_mocap_rate_hz, 10))
     
     def register_mavlink_object(self, obj, config: MavlinkObjectConfig = None):
         """Register a scene object for MAVLink operations.
