@@ -38,3 +38,7 @@ coverage.xml
 *.tmp
 *.~ 
 *.ipynb_checkpoints
+
+# Generated MAVLink dialect files (regenerate with scripts/build_mavlink.py)
+libs/dtrg-mavlink/pymavlink/dialects/v20/*.py
+!libs/dtrg-mavlink/pymavlink/dialects/v20/__init__.py

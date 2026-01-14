@@ -6,12 +6,17 @@ This service handles MAVLink protocol communication with PX4 drones including:
 - Setpoint transmission for offboard control (medium priority)
 - Motion capture data transmission (highest priority, critical for flight)
 
-The service supports multiple simultaneous drone connections and uses configurable
-MAVLink topics for compatibility with custom DTRG-Mavlink message definitions.
+The service supports multiple simultaneous drone connections and uses the
+DTRG-Mavlink dialect for compatibility with custom PX4 firmware.
 
-TODO: Add DTRG-Mavlink git submodule for custom topic definitions
-TODO: Add pipeline for building custom mavlink message definitions
+To build the DTRG MAVLink dialect:
+    python scripts/build_mavlink.py --dialect dtrg
+
+The DTRG dialect includes all standard PX4 messages plus custom DTRG messages
+defined in libs/dtrg-mavlink/message_definitions/v1.0/dtrg.xml
 """
+import os
+import sys
 import time
 import threading
 from queue import Queue, Empty, PriorityQueue
@@ -31,13 +36,62 @@ from models.structs import (
     MocapData,
 )
 
-# Import pymavlink - handles MAVLink protocol
+
+# Add DTRG-Mavlink pymavlink to Python path for importing custom dialects
+# This ensures we use the DTRG-specific MAVLink definitions
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DTRG_MAVLINK_PATH = os.path.join(_REPO_ROOT, "libs", "dtrg-mavlink")
+_PYMAVLINK_PATH = os.path.join(_DTRG_MAVLINK_PATH, "pymavlink")
+_DIALECTS_PATH = os.path.join(_PYMAVLINK_PATH, "dialects", "v20")
+
+# Check if DTRG-Mavlink submodule is available
+DTRG_MAVLINK_AVAILABLE = os.path.exists(_PYMAVLINK_PATH) and os.path.isdir(_PYMAVLINK_PATH)
+
+# Check if DTRG dialect has been built
+_DTRG_DIALECT_FILE = os.path.join(_DIALECTS_PATH, "dtrg.py")
+DTRG_DIALECT_BUILT = os.path.exists(_DTRG_DIALECT_FILE)
+
+
+# Import pymavlink for connection handling and standard messages
+# Then import DTRG dialect if available for custom messages
 try:
     from pymavlink import mavutil
     PYMAVLINK_AVAILABLE = True
+    
+    # If DTRG dialect is built, import it for custom message definitions
+    # The DTRG dialect extends the standard PX4 messages with custom DTRG messages
+    if DTRG_MAVLINK_AVAILABLE and DTRG_DIALECT_BUILT:
+        try:
+            # Add dialects path so we can import dtrg module
+            if _DIALECTS_PATH not in sys.path:
+                sys.path.insert(0, _DIALECTS_PATH)
+            
+            import dtrg as dtrg_dialect_module
+            
+            # Successfully loaded DTRG dialect
+            USING_DTRG_DIALECT = True
+            mavlink_dialect = dtrg_dialect_module
+            
+            # The DTRG dialect can be used for encoding/decoding custom messages
+            # For standard operations, we still use mavutil's default dialect
+            print(f"[MavlinkService] DTRG dialect loaded from {_DIALECTS_PATH}")
+            
+        except ImportError as e:
+            # If custom dialect loading fails, fall back to standard
+            print(f"[MavlinkService] Warning: Failed to import DTRG dialect: {e}")
+            USING_DTRG_DIALECT = False
+            mavlink_dialect = mavutil.mavlink
+    else:
+        USING_DTRG_DIALECT = False
+        mavlink_dialect = mavutil.mavlink
+        if not DTRG_DIALECT_BUILT and DTRG_MAVLINK_AVAILABLE:
+            print("[MavlinkService] DTRG dialect not built. Run: python scripts/build_mavlink.py")
+        
 except ImportError:
     PYMAVLINK_AVAILABLE = False
+    USING_DTRG_DIALECT = False
     mavutil = None
+    mavlink_dialect = None
 
 
 class ConnectionState(Enum):
@@ -405,11 +459,39 @@ class MavlinkService(ServiceBase):
         
         self.status_label = "MAVLink: Not Connected"
     
+    @staticmethod
+    def get_dialect_info() -> dict:
+        """Get information about the MAVLink dialect being used.
+        
+        Returns:
+            Dictionary with dialect information including:
+            - available: Whether pymavlink is available
+            - using_dtrg: Whether using DTRG-specific dialect
+            - dialect_name: Name of the dialect
+            - dtrg_path: Path to DTRG-Mavlink submodule
+            - dtrg_built: Whether the DTRG dialect has been built
+        """
+        return {
+            'available': PYMAVLINK_AVAILABLE,
+            'using_dtrg': USING_DTRG_DIALECT,
+            'dialect_name': 'dtrg' if USING_DTRG_DIALECT else 'common',
+            'dtrg_path': _DTRG_MAVLINK_PATH if DTRG_MAVLINK_AVAILABLE else None,
+            'dtrg_available': DTRG_MAVLINK_AVAILABLE,
+            'dtrg_built': DTRG_DIALECT_BUILT,
+        }
+    
     def on_start(self):
         """Initialize timers and start the service."""
         if not PYMAVLINK_AVAILABLE:
             self.set_status(ServiceLevel.ERROR, "MAVLink: pymavlink not installed")
             return
+        
+        # Log which dialect is being used
+        dialect_info = self.get_dialect_info()
+        if dialect_info['using_dtrg']:
+            print(f"[MavlinkService] Using DTRG dialect from {dialect_info['dtrg_path']}")
+        else:
+            print(f"[MavlinkService] Using standard MAVLink dialect (DTRG not available)")
         
         # Heartbeat timer - runs at 10Hz to check all connections
         self._heartbeat_timer = QTimer()

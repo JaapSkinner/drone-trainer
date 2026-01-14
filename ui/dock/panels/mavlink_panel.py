@@ -170,6 +170,40 @@ class MavlinkPanel(QWidget):
         health_group.setLayout(health_layout)
         layout.addWidget(health_group)
         
+        # Dialect info group
+        dialect_group = QGroupBox("MAVLink Dialect")
+        dialect_layout = QFormLayout()
+        
+        # Get dialect info from service
+        from services.mavlink_service import MavlinkService
+        dialect_info = MavlinkService.get_dialect_info()
+        
+        self.dialect_label = QLabel(dialect_info['dialect_name'].upper())
+        if dialect_info['using_dtrg']:
+            self.dialect_label.setStyleSheet("color: green; font-weight: bold;")
+        else:
+            self.dialect_label.setStyleSheet("color: orange; font-weight: bold;")
+        dialect_layout.addRow("Active Dialect:", self.dialect_label)
+        
+        self.dtrg_status_label = QLabel("Available" if dialect_info['dtrg_available'] else "Not Found")
+        if dialect_info['dtrg_available']:
+            self.dtrg_status_label.setStyleSheet("color: green;")
+        else:
+            self.dtrg_status_label.setStyleSheet("color: red;")
+        dialect_layout.addRow("DTRG Submodule:", self.dtrg_status_label)
+        
+        # Show if dialect is built
+        dtrg_built = dialect_info.get('dtrg_built', False)
+        self.dtrg_built_label = QLabel("Built" if dtrg_built else "Not Built")
+        if dtrg_built:
+            self.dtrg_built_label.setStyleSheet("color: green;")
+        else:
+            self.dtrg_built_label.setStyleSheet("color: orange;")
+        dialect_layout.addRow("DTRG Dialect:", self.dtrg_built_label)
+        
+        dialect_group.setLayout(dialect_layout)
+        layout.addWidget(dialect_group)
+        
         # Info group
         info_group = QGroupBox("MAVLink Info")
         info_layout = QVBoxLayout()
@@ -182,7 +216,10 @@ class MavlinkPanel(QWidget):
         <b>Rate Limits:</b><br>
         • Motion capture: 100 Hz<br>
         • Setpoints: 50 Hz<br>
-        • Telemetry: 20 Hz""")
+        • Telemetry: 20 Hz<br>
+        <br>
+        <b>Build DTRG Dialect:</b><br>
+        <code>python scripts/build_mavlink.py --dialect dtrg</code>""")
         info_text.setWordWrap(True)
         info_text.setStyleSheet("font-size: 11px; color: #555;")
         info_layout.addWidget(info_text)
