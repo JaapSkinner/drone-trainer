@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QScrollArea, QVBoxLayout, QFormLayout, 
                              QGroupBox, QLabel, QLineEdit, QComboBox, QCheckBox,
-                             QSpinBox, QDoubleSpinBox, QHBoxLayout)
+                             QSpinBox, QDoubleSpinBox, QHBoxLayout, QPushButton,
+                             QDialog, QDialogButtonBox)
 from PyQt5.QtCore import pyqtSignal
 from models.structs import MavlinkObjectConfig
 
@@ -140,6 +141,26 @@ class ObjectPanel(QWidget):
         )
         layout.addRow("MAVLink Enabled:", enabled_cb)
         
+        # === Link Connection Section ===
+        # Show linked connection name
+        linked_name = config.linked_connection_name or "(Not linked)"
+        linked_label = QLabel(linked_name)
+        linked_label.setStyleSheet("color: #666;" if not config.linked_connection_name else "color: green; font-weight: bold;")
+        
+        # Store reference for updating
+        if not hasattr(self, '_linked_labels'):
+            self._linked_labels = {}
+        self._linked_labels[obj.name] = linked_label
+        
+        # Link button
+        link_btn = QPushButton("Link Connection" if not config.linked_connection_name else "Change Connection")
+        link_btn.clicked.connect(lambda checked, o=obj: self._on_link_connection_clicked(o))
+        
+        link_row = QHBoxLayout()
+        link_row.addWidget(linked_label)
+        link_row.addWidget(link_btn)
+        options_layout.addRow("Linked Connection:", link_row)
+        
         # Use global connection checkbox
         use_global_cb = QCheckBox()
         use_global_cb.setChecked(config.use_global_connection)
@@ -212,6 +233,76 @@ class ObjectPanel(QWidget):
         
         group.setLayout(layout)
         return group
+    
+    def _on_link_connection_clicked(self, obj):
+        """Handle link connection button click for an object."""
+        if self.mavlink_service is None:
+            return
+        
+        # Get available connection names
+        connection_names = self.mavlink_service.get_available_connection_names()
+        
+        if not connection_names:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, 
+                "No Connections", 
+                "No MAVLink connections available. Create a connection in the MAVLink panel first."
+            )
+            return
+        
+        # Create selection dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Link MAVLink Connection - {obj.name}")
+        dialog_layout = QVBoxLayout(dialog)
+        
+        dialog_layout.addWidget(QLabel("Select a connection to link:"))
+        
+        combo = QComboBox()
+        combo.addItem("(None - Unlink)", "")
+        for name in connection_names:
+            combo.addItem(name, name)
+        
+        # Pre-select current linked connection
+        current_linked = getattr(obj, 'mavlink_config', MavlinkObjectConfig()).linked_connection_name
+        if current_linked:
+            idx = combo.findData(current_linked)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        
+        dialog_layout.addWidget(combo)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            selected_name = combo.currentData()
+            
+            # Update object config
+            if hasattr(obj, 'mavlink_config'):
+                obj.mavlink_config.linked_connection_name = selected_name
+                self.mavlink_config_changed.emit(obj, obj.mavlink_config)
+            
+            # Update linked label display
+            if obj.name in self._linked_labels:
+                if selected_name:
+                    self._linked_labels[obj.name].setText(selected_name)
+                    self._linked_labels[obj.name].setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    self._linked_labels[obj.name].setText("(Not linked)")
+                    self._linked_labels[obj.name].setStyleSheet("color: #666;")
+            
+            # Update mavlink service bidirectional link
+            if self.mavlink_service:
+                if selected_name:
+                    self.mavlink_service.link_connection_to_object(selected_name, obj.name)
+                else:
+                    # Find and unlink the old connection
+                    old_linked = getattr(obj, 'mavlink_config', MavlinkObjectConfig()).linked_connection_name
+                    if old_linked:
+                        self.mavlink_service.unlink_connection_from_object(old_linked)
     
     def _on_mavlink_enabled_toggled(self, obj, enabled, options_container):
         """Handle MAVLink enabled state change with UI update.

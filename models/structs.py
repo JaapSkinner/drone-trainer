@@ -32,7 +32,7 @@ class MavlinkConnectionConfig:
     """Configuration for a MAVLink connection.
     
     Attributes:
-        connection_string: MAVLink connection string (e.g., 'udp:127.0.0.1:14550')
+        connection_string: MAVLink connection string (e.g., 'udpin:0.0.0.0:14550')
         system_id: MAVLink system ID for this connection (1-255)
         component_id: MAVLink component ID (default: 1)
         source_system: Source system ID for outgoing messages
@@ -41,6 +41,8 @@ class MavlinkConnectionConfig:
         setpoint_topic: Topic name for setpoint messages
         heartbeat_interval: Interval for sending heartbeats in seconds
         mocap_rate_hz: Target rate for motion capture data in Hz
+        name: User-friendly name for this connection (must be unique)
+        linked_object_name: Name of the scene object linked to this connection
     """
     connection_string: str
     system_id: int = 1
@@ -51,6 +53,8 @@ class MavlinkConnectionConfig:
     setpoint_topic: str = "SET_POSITION_TARGET_LOCAL_NED"
     heartbeat_interval: float = 1.0
     mocap_rate_hz: float = 100.0
+    name: str = ""  # User-friendly name, auto-generated if empty
+    linked_object_name: str = ""  # Name of linked scene object
 
 
 @dataclass
@@ -196,22 +200,24 @@ class MavlinkObjectConfig:
     
     Attributes:
         enabled: Whether MAVLink is enabled for this object
-        connection_string: MAVLink connection string (e.g., 'udp:127.0.0.1:14550')
+        connection_string: MAVLink connection string (e.g., 'udpin:0.0.0.0:14550')
         system_id: Target MAVLink system ID (1-255)
         component_id: Target MAVLink component ID (default: 1)
         send_mocap: Whether to stream this object's pose as mocap data
         receive_setpoints: Whether to apply received setpoints to this object
         mocap_rate_hz: Rate to send mocap data (Hz), 0 = use global default
         use_global_connection: If True, use global connection instead of object-specific
+        linked_connection_name: Name of the linked MAVLink connection
     """
     enabled: bool = False
-    connection_string: str = "udp:127.0.0.1:14550"
+    connection_string: str = "udpin:0.0.0.0:14550"
     system_id: int = 1
     component_id: int = 1
     send_mocap: bool = True
     receive_setpoints: bool = False
     mocap_rate_hz: float = 0.0  # 0 = use global default
     use_global_connection: bool = True
+    linked_connection_name: str = ""  # Name of linked MAVLink connection
 
 
 @dataclass
@@ -236,8 +242,9 @@ class MavlinkGlobalSettings:
         source_component_id: Source component ID for outgoing messages
         auto_reconnect: Automatically attempt to reconnect on connection loss
         reconnect_interval: Interval between reconnection attempts in seconds
+        auto_connect_discovered: Automatically connect to discovered MAVLink devices
     """
-    default_connection_string: str = "udp:127.0.0.1:14550"
+    default_connection_string: str = "udpin:0.0.0.0:14550"
     default_mocap_rate_hz: float = 100.0
     default_setpoint_rate_hz: float = 50.0
     telemetry_rate_hz: float = 20.0
@@ -251,3 +258,34 @@ class MavlinkGlobalSettings:
     source_component_id: int = 0
     auto_reconnect: bool = True
     reconnect_interval: float = 5.0
+    auto_connect_discovered: bool = False  # Auto-connect to discovered devices
+
+
+@dataclass
+class DiscoveredDevice:
+    """Information about a discovered MAVLink device.
+    
+    Attributes:
+        address: IP address of the device (source of MAVLink packets)
+        port: Port number where device was discovered
+        system_id: MAVLink system ID (if known)
+        component_id: MAVLink component ID (if known)
+        last_seen: Timestamp when device was last seen
+        connection_string: Constructed connection string for connecting
+    """
+    address: str
+    port: int
+    system_id: int = 0
+    component_id: int = 0
+    last_seen: float = field(default_factory=time.time)
+    connection_string: str = ""
+    
+    def __post_init__(self):
+        """Generate connection string if not provided.
+        
+        Uses udpin with 0.0.0.0 to listen on all interfaces for the discovered port.
+        This is appropriate because the drone sends to this port.
+        """
+        if not self.connection_string:
+            # Use udpin to bind locally and receive from the discovered port
+            self.connection_string = f"udpin:0.0.0.0:{self.port}"

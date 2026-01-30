@@ -446,6 +446,9 @@ class MavlinkService(ServiceBase):
         self._telemetry_callbacks: List[Callable] = []
         self._mocap_sources: Dict[int, object] = {}  # system_id -> scene object
         
+        # Saved connection configs (for inactive connections linked to objects)
+        self._saved_connections: Dict[str, MavlinkConnectionConfig] = {}
+        
         # Global settings for MAVLink operations
         self._global_settings = MavlinkGlobalSettings()
         
@@ -666,11 +669,23 @@ class MavlinkService(ServiceBase):
         Returns:
             True if connection was established successfully
         """
+        # Generate a unique name if not provided
+        if not config.name:
+            config.name = self.generate_connection_name()
+        elif not self.is_connection_name_unique(config.name):
+            # Name already exists, generate a new one
+            config.name = self.generate_connection_name(config.name)
+        
         connection = MavlinkConnection(config)
         
         if connection.connect():
             self._connections[connection.status.system_id] = connection
             self._active_connections = len(self._connections)
+            
+            # Remove from saved connections if it was there
+            if config.name in self._saved_connections:
+                del self._saved_connections[config.name]
+            
             self.connection_changed.emit(connection.status.system_id, True)
             self._update_status_label()
             return True
@@ -680,11 +695,21 @@ class MavlinkService(ServiceBase):
     def remove_connection(self, system_id: int):
         """Remove and disconnect a MAVLink connection.
         
+        If the connection has a linked object, it is saved to _saved_connections
+        so it can be reconnected later.
+        
         Args:
             system_id: System ID of the connection to remove
         """
         if system_id in self._connections:
-            self._connections[system_id].disconnect()
+            conn = self._connections[system_id]
+            
+            # Save config if it has a linked object for potential reconnection
+            if conn.config.linked_object_name or conn.config.name:
+                name = conn.config.name or f"Connection-{system_id}"
+                self._saved_connections[name] = conn.config
+            
+            conn.disconnect()
             del self._connections[system_id]
             self._active_connections = len(self._connections)
             self.connection_changed.emit(system_id, False)
@@ -826,6 +851,243 @@ class MavlinkService(ServiceBase):
             'total_received': total_received,
             'connections': connections,
         }
+    
+    def get_all_connections(self) -> Dict[str, MavlinkConnectionConfig]:
+        """Get all configured connections (both active and inactive).
+        
+        Returns:
+            Dictionary mapping connection name to MavlinkConnectionConfig
+        """
+        result = {}
+        for sys_id, conn in self._connections.items():
+            name = conn.config.name or f"Connection-{sys_id}"
+            result[name] = conn.config
+        
+        # Also include inactive connections from saved config
+        for name, config in self._saved_connections.items():
+            if name not in result:
+                result[name] = config
+        
+        return result
+    
+    def get_connection_by_name(self, name: str) -> Optional[MavlinkConnection]:
+        """Get an active connection by its name.
+        
+        Args:
+            name: Connection name
+            
+        Returns:
+            MavlinkConnection if found and active, None otherwise
+        """
+        for conn in self._connections.values():
+            conn_name = conn.config.name or f"Connection-{conn.config.system_id}"
+            if conn_name == name:
+                return conn
+        return None
+    
+    def is_connection_name_unique(self, name: str, exclude_system_id: int = None) -> bool:
+        """Check if a connection name is unique.
+        
+        Args:
+            name: Connection name to check
+            exclude_system_id: System ID to exclude from check (for renaming)
+            
+        Returns:
+            True if name is unique
+        """
+        for sys_id, conn in self._connections.items():
+            if exclude_system_id is not None and sys_id == exclude_system_id:
+                continue
+            if conn.config.name == name:
+                return False
+        
+        # Also check saved inactive connections
+        for saved_name in self._saved_connections.keys():
+            if saved_name == name:
+                return False
+        
+        return True
+    
+    def generate_connection_name(self, base_name: str = "Drone") -> str:
+        """Generate a unique connection name.
+        
+        Args:
+            base_name: Base name to use
+            
+        Returns:
+            Unique connection name
+        """
+        counter = 1
+        name = f"{base_name}-{counter}"
+        while not self.is_connection_name_unique(name):
+            counter += 1
+            name = f"{base_name}-{counter}"
+        return name
+    
+    def rename_connection(self, system_id: int, new_name: str) -> bool:
+        """Rename a connection.
+        
+        Args:
+            system_id: System ID of the connection
+            new_name: New name for the connection
+            
+        Returns:
+            True if rename was successful
+        """
+        if not self.is_connection_name_unique(new_name, exclude_system_id=system_id):
+            return False
+        
+        conn = self._connections.get(system_id)
+        if conn is not None:
+            conn.config.name = new_name
+            return True
+        return False
+    
+    def link_connection_to_object(self, connection_name: str, object_name: str):
+        """Link a MAVLink connection to a scene object.
+        
+        Args:
+            connection_name: Name of the connection
+            object_name: Name of the object to link
+        """
+        # Update connection config
+        conn = self.get_connection_by_name(connection_name)
+        if conn is not None:
+            conn.config.linked_object_name = object_name
+        
+        # Also update in saved connections
+        if connection_name in self._saved_connections:
+            self._saved_connections[connection_name].linked_object_name = object_name
+        
+        # Emit update
+        self.connection_changed.emit(conn.config.system_id if conn else 0, True)
+    
+    def unlink_connection_from_object(self, connection_name: str):
+        """Unlink a MAVLink connection from its object.
+        
+        Args:
+            connection_name: Name of the connection to unlink
+        """
+        conn = self.get_connection_by_name(connection_name)
+        if conn is not None:
+            conn.config.linked_object_name = ""
+        
+        if connection_name in self._saved_connections:
+            self._saved_connections[connection_name].linked_object_name = ""
+    
+    def get_linked_object_name(self, connection_name: str) -> str:
+        """Get the name of the object linked to a connection.
+        
+        Args:
+            connection_name: Name of the connection
+            
+        Returns:
+            Object name if linked, empty string otherwise
+        """
+        conn = self.get_connection_by_name(connection_name)
+        if conn is not None:
+            return conn.config.linked_object_name
+        
+        if connection_name in self._saved_connections:
+            return self._saved_connections[connection_name].linked_object_name
+        
+        return ""
+    
+    def save_connection_config(self, config: MavlinkConnectionConfig):
+        """Save a connection configuration for later use.
+        
+        Used for inactive connections that are linked to objects but not connected.
+        
+        Args:
+            config: Connection configuration to save
+        """
+        name = config.name or self.generate_connection_name()
+        config.name = name
+        self._saved_connections[name] = config
+    
+    def get_available_connection_names(self) -> List[str]:
+        """Get list of all available connection names (for dropdowns).
+        
+        Returns:
+            List of connection names
+        """
+        names = []
+        
+        # Active connections
+        for conn in self._connections.values():
+            name = conn.config.name or f"Connection-{conn.config.system_id}"
+            names.append(name)
+        
+        # Saved inactive connections
+        for name in self._saved_connections.keys():
+            if name not in names:
+                names.append(name)
+        
+        return sorted(names)
+    
+    def discover_devices(self, timeout_secs: float = 3.0) -> List:
+        """Discover MAVLink devices on the network.
+        
+        Listens for MAVLink heartbeats on common ports to discover devices.
+        Note: This is a simplified discovery that may not work if the ports
+        are already bound by other processes.
+        
+        Args:
+            timeout_secs: Time to listen for devices
+            
+        Returns:
+            List of DiscoveredDevice objects
+        """
+        from models.structs import DiscoveredDevice
+        import socket
+        discovered = []
+        
+        # Common MAVLink ports to check
+        ports_to_check = [14550, 14540, 14560]
+        port_timeout = timeout_secs / len(ports_to_check)
+        
+        for port in ports_to_check:
+            try:
+                # Create a UDP socket to listen for heartbeats
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.settimeout(port_timeout)
+                
+                try:
+                    # Bind to all interfaces to receive MAVLink packets from any network source
+                    # This is required for device discovery - drones may be on any network interface
+                    # CodeQL: py/bind-socket-all-network-interfaces - intentional for discovery
+                    sock.bind(('0.0.0.0', port))  # nosec B104
+                    
+                    # Listen for incoming data until timeout
+                    start_time = time.time()
+                    while time.time() - start_time < port_timeout:
+                        try:
+                            data, addr = sock.recvfrom(1024)
+                            if len(data) > 0:
+                                # Check if this looks like a MAVLink message
+                                if data[0] == 0xFE or data[0] == 0xFD:  # MAVLink v1/v2 magic bytes
+                                    # Use proper connection string for UDP input
+                                    device = DiscoveredDevice(
+                                        address=addr[0],
+                                        port=port,
+                                        connection_string=f"udpin:0.0.0.0:{port}"
+                                    )
+                                    # Avoid duplicates
+                                    if not any(d.port == port for d in discovered):
+                                        discovered.append(device)
+                                        break  # Found device on this port, move to next
+                        except socket.timeout:
+                            break  # No more data on this port
+                except OSError:
+                    # Port already in use - skip it
+                    pass
+                finally:
+                    sock.close()
+            except Exception as e:
+                print(f"[MavlinkService] Discovery error on port {port}: {e}")
+        
+        return discovered
     
     def run_connection_test(self, duration_secs: float = 2.0) -> dict:
         """Run a connection quality test for all active connections.

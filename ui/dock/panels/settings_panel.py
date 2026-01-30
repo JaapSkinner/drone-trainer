@@ -235,6 +235,15 @@ class SettingsPanel(QWidget):
         )
         layout.addRow("Reconnect Interval:", self.reconnect_spin)
         
+        # Auto Connect Discovered
+        self.auto_connect_cb = QCheckBox()
+        self.auto_connect_cb.setChecked(self._mavlink_settings.auto_connect_discovered)
+        self.auto_connect_cb.setToolTip("Automatically connect to MAVLink devices found during discovery")
+        self.auto_connect_cb.stateChanged.connect(
+            lambda state: self._update_mavlink_setting('auto_connect_discovered', state == 2)
+        )
+        layout.addRow("Auto Connect Discovered:", self.auto_connect_cb)
+        
         group.setLayout(layout)
         return group
     
@@ -292,7 +301,8 @@ class SettingsPanel(QWidget):
             self.mavlink_conn_edit, self.source_system_spin, self.source_component_spin,
             self.mocap_rate_spin, self.setpoint_rate_spin, self.telemetry_rate_spin,
             self.heartbeat_spin, self.timeout_spin, self.sanitize_cb, self.max_pos_spin,
-            self.max_vel_spin, self.max_yaw_spin, self.auto_reconnect_cb, self.reconnect_spin
+            self.max_vel_spin, self.max_yaw_spin, self.auto_reconnect_cb, self.reconnect_spin,
+            self.auto_connect_cb
         ]
         for w in widgets:
             w.blockSignals(True)
@@ -311,6 +321,7 @@ class SettingsPanel(QWidget):
         self.max_yaw_spin.setValue(s.max_yaw_rate)
         self.auto_reconnect_cb.setChecked(s.auto_reconnect)
         self.reconnect_spin.setValue(s.reconnect_interval)
+        self.auto_connect_cb.setChecked(s.auto_connect_discovered)
         
         for w in widgets:
             w.blockSignals(False)
