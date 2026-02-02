@@ -14,84 +14,10 @@ from PyQt5.QtWidgets import (
     QProgressBar, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QPainter, QColor, QPen
+from PyQt5.QtGui import QFont
 import math
 
 from models.structs import MavlinkConnectionConfig, MavlinkTelemetryData
-
-
-class MiniPlot(QWidget):
-    """Simple mini plot widget for telemetry visualization."""
-    
-    def __init__(self, parent=None, max_points: int = 50, 
-                 min_val: float = -1.0, max_val: float = 1.0,
-                 color: QColor = None):
-        super().__init__(parent)
-        self.max_points = max_points
-        self.min_val = min_val
-        self.max_val = max_val
-        self.color = color or QColor(0, 150, 0)
-        self.values = []
-        self.setMinimumHeight(40)
-        self.setMaximumHeight(50)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-    
-    def add_value(self, value: float):
-        """Add a new value to the plot."""
-        self.values.append(value)
-        if len(self.values) > self.max_points:
-            self.values.pop(0)
-        self.update()
-    
-    def clear(self):
-        """Clear all values."""
-        self.values = []
-        self.update()
-    
-    def paintEvent(self, event):
-        """Draw the plot."""
-        if not self.values:
-            return
-        
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Background
-        painter.fillRect(self.rect(), QColor(40, 40, 40))
-        
-        # Draw zero line
-        painter.setPen(QPen(QColor(80, 80, 80), 1))
-        zero_y = self._value_to_y(0)
-        painter.drawLine(0, zero_y, self.width(), zero_y)
-        
-        # Draw data
-        painter.setPen(QPen(self.color, 2))
-        
-        w = self.width()
-        h = self.height()
-        
-        if len(self.values) > 1:
-            step = w / (self.max_points - 1)
-            for i in range(1, len(self.values)):
-                x1 = int((i - 1) * step + (self.max_points - len(self.values)) * step)
-                x2 = int(i * step + (self.max_points - len(self.values)) * step)
-                y1 = self._value_to_y(self.values[i - 1])
-                y2 = self._value_to_y(self.values[i])
-                painter.drawLine(x1, y1, x2, y2)
-    
-    def _value_to_y(self, value: float) -> int:
-        """Convert value to Y coordinate."""
-        h = self.height()
-        # Clamp value
-        value = max(self.min_val, min(self.max_val, value))
-        # Normalize to 0-1 range (inverted for screen coords)
-        # Handle case where min == max to avoid division by zero
-        range_val = self.max_val - self.min_val
-        if range_val == 0:
-            normalized = 0.5
-        else:
-            normalized = 1.0 - (value - self.min_val) / range_val
-        return int(normalized * h)
 
 
 class ConnectionCard(QFrame):
@@ -101,7 +27,8 @@ class ConnectionCard(QFrame):
     action_clicked = pyqtSignal(str)  # connection_name - for connect/disconnect
     link_object_clicked = pyqtSignal(str)  # connection_name
     test_clicked = pyqtSignal(str)  # connection_name
-    
+    edit_clicked = pyqtSignal(str)  # connection_name
+
     def __init__(self, config: MavlinkConnectionConfig, is_active: bool = True, parent=None):
         super().__init__(parent)
         self.config = config
@@ -181,6 +108,12 @@ class ConnectionCard(QFrame):
             disconnect_btn.clicked.connect(lambda: self.action_clicked.emit(self.config.name))
             buttons.addWidget(disconnect_btn)
         else:
+            # Edit button for inactive connections only
+            edit_btn = QPushButton("Edit")
+            edit_btn.setFixedHeight(24)
+            edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self.config.name))
+            buttons.addWidget(edit_btn)
+
             # Connect button for inactive connections
             connect_btn = QPushButton("Connect")
             connect_btn.setFixedHeight(24)
@@ -247,7 +180,6 @@ class MavlinkPanel(QWidget):
         self.object_service = object_service
         self._telemetry_data: dict = {}  # system_id -> TelemetryData
         self._connection_cards: dict = {}  # connection_name -> ConnectionCard
-        self._mini_plots: dict = {}  # system_id -> {field_name: MiniPlot}
         self._telemetry_labels: dict = {}
         
         self.init_ui()
@@ -414,7 +346,7 @@ class MavlinkPanel(QWidget):
         
         try:
             devices = self.mavlink_service.discover_devices(timeout_secs=2.0)
-            
+
             # Clear layout
             while self.discovered_layout.count() > 0:
                 child = self.discovered_layout.takeAt(0)
@@ -493,7 +425,9 @@ class MavlinkPanel(QWidget):
                 rate_hz = result.get('rate_hz', 0)
                 latency_ms = result.get('latency_ms', 0)
                 lost_packets = result.get('lost_packets', 0)
-                
+                messages_sent = result.get('messages_sent', 0)
+                messages_received = result.get('messages_received', 0)
+
                 # Color code based on quality thresholds
                 if rate_hz >= self.GOOD_RATE_HZ and latency_ms < self.GOOD_LATENCY_MS and lost_packets == 0:
                     color = 'green'
@@ -505,9 +439,19 @@ class MavlinkPanel(QWidget):
                     color = 'red'
                     status = '✗ Poor'
                 
-                result_text += f"<span style='color: {color};'><b>ID {sys_id}:</b> {status}</span> "
-                result_text += f"({rate_hz:.0f}Hz, {latency_ms:.0f}ms)<br>"
-            
+                result_text += f"<span style='color: {color};'><b>ID {sys_id}:</b> {status}</span><br>"
+                result_text += f"  • Rate: {rate_hz:.0f} Hz (messages/second)<br>"
+                result_text += f"  • Sent: {messages_sent:,} | Received: {messages_received:,}<br>"
+
+                # Always show latency
+                result_text += f"  • Latency: {latency_ms:.1f} ms (round-trip time)<br>"
+
+                # Show dropped packets as ratio of total
+                total_expected = messages_received + lost_packets
+                result_text += f"  • Dropped: {lost_packets} out of {total_expected:,} packet(s)<br>"
+
+                result_text += "<br>"
+
             self.test_results_label.setText(result_text)
             
         except Exception as e:
@@ -544,101 +488,101 @@ class MavlinkPanel(QWidget):
         return widget
     
     def _create_telemetry_widget(self, system_id: int) -> QGroupBox:
-        """Create an improved telemetry display widget with plots for a drone."""
+        """Create a compact telemetry display widget for a drone."""
         group = QGroupBox(f"Drone {system_id}")
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(4)
-        
+        main_layout.setSpacing(6)
+
         labels = {}
-        plots = {}
-        
-        # === Attitude Section with Plots ===
-        attitude_layout = QHBoxLayout()
-        
-        # Attitude values (compact)
-        att_values = QGridLayout()
-        att_values.setSpacing(2)
-        
-        att_values.addWidget(QLabel("R:"), 0, 0)
+
+        # === Attitude Section ===
+        att_layout = QGridLayout()
+        att_layout.setSpacing(4)
+
+        att_layout.addWidget(QLabel("Roll:"), 0, 0)
         labels['roll'] = QLabel("0°")
-        labels['roll'].setStyleSheet("font-weight: bold; min-width: 45px;")
-        att_values.addWidget(labels['roll'], 0, 1)
-        
-        att_values.addWidget(QLabel("P:"), 0, 2)
+        labels['roll'].setStyleSheet("font-weight: bold;")
+        att_layout.addWidget(labels['roll'], 0, 1)
+
+        att_layout.addWidget(QLabel("Pitch:"), 0, 2)
         labels['pitch'] = QLabel("0°")
-        labels['pitch'].setStyleSheet("font-weight: bold; min-width: 45px;")
-        att_values.addWidget(labels['pitch'], 0, 3)
-        
-        att_values.addWidget(QLabel("Y:"), 0, 4)
+        labels['pitch'].setStyleSheet("font-weight: bold;")
+        att_layout.addWidget(labels['pitch'], 0, 3)
+
+        att_layout.addWidget(QLabel("Yaw:"), 0, 4)
         labels['yaw'] = QLabel("0°")
-        labels['yaw'].setStyleSheet("font-weight: bold; min-width: 45px;")
-        att_values.addWidget(labels['yaw'], 0, 5)
-        
-        attitude_layout.addLayout(att_values)
-        
-        # Attitude mini plot (roll/pitch)
-        plots['attitude'] = MiniPlot(min_val=-45, max_val=45, color=QColor(0, 150, 200))
-        attitude_layout.addWidget(plots['attitude'], stretch=1)
-        
-        main_layout.addLayout(attitude_layout)
-        
+        labels['yaw'].setStyleSheet("font-weight: bold;")
+        att_layout.addWidget(labels['yaw'], 0, 5)
+
+        main_layout.addLayout(att_layout)
+
         # === Position Section ===
-        pos_layout = QHBoxLayout()
-        
-        pos_values = QGridLayout()
-        pos_values.setSpacing(2)
-        
-        pos_values.addWidget(QLabel("X:"), 0, 0)
+        pos_layout = QGridLayout()
+        pos_layout.setSpacing(4)
+
+        pos_layout.addWidget(QLabel("X:"), 0, 0)
         labels['x'] = QLabel("0.0m")
-        labels['x'].setStyleSheet("font-weight: bold; min-width: 50px;")
-        pos_values.addWidget(labels['x'], 0, 1)
-        
-        pos_values.addWidget(QLabel("Y:"), 0, 2)
+        labels['x'].setStyleSheet("font-weight: bold;")
+        pos_layout.addWidget(labels['x'], 0, 1)
+
+        pos_layout.addWidget(QLabel("Y:"), 0, 2)
         labels['y'] = QLabel("0.0m")
-        labels['y'].setStyleSheet("font-weight: bold; min-width: 50px;")
-        pos_values.addWidget(labels['y'], 0, 3)
-        
-        pos_values.addWidget(QLabel("Z:"), 0, 4)
+        labels['y'].setStyleSheet("font-weight: bold;")
+        pos_layout.addWidget(labels['y'], 0, 3)
+
+        pos_layout.addWidget(QLabel("Z:"), 0, 4)
         labels['z'] = QLabel("0.0m")
-        labels['z'].setStyleSheet("font-weight: bold; min-width: 50px;")
-        pos_values.addWidget(labels['z'], 0, 5)
-        
-        pos_layout.addLayout(pos_values)
-        
-        # Altitude mini plot
-        plots['altitude'] = MiniPlot(min_val=-10, max_val=10, color=QColor(200, 100, 0))
-        pos_layout.addWidget(plots['altitude'], stretch=1)
-        
+        labels['z'].setStyleSheet("font-weight: bold;")
+        pos_layout.addWidget(labels['z'], 0, 5)
+
         main_layout.addLayout(pos_layout)
         
-        # === Velocity Section (compact single row) ===
-        vel_layout = QHBoxLayout()
-        vel_layout.addWidget(QLabel("Vel:"))
-        
-        labels['vx'] = QLabel("0.0")
-        labels['vx'].setStyleSheet("min-width: 35px;")
-        vel_layout.addWidget(labels['vx'])
-        
-        labels['vy'] = QLabel("0.0")
-        labels['vy'].setStyleSheet("min-width: 35px;")
-        vel_layout.addWidget(labels['vy'])
-        
-        labels['vz'] = QLabel("0.0")
-        labels['vz'].setStyleSheet("min-width: 35px;")
-        vel_layout.addWidget(labels['vz'])
-        
-        vel_layout.addWidget(QLabel("m/s"))
-        vel_layout.addStretch()
-        
+        # === Velocity Section ===
+        vel_layout = QGridLayout()
+        vel_layout.setSpacing(4)
+
+        vel_layout.addWidget(QLabel("VX:"), 0, 0)
+        labels['vx'] = QLabel("0.0 m/s")
+        labels['vx'].setStyleSheet("font-weight: bold;")
+        vel_layout.addWidget(labels['vx'], 0, 1)
+
+        vel_layout.addWidget(QLabel("VY:"), 0, 2)
+        labels['vy'] = QLabel("0.0 m/s")
+        labels['vy'].setStyleSheet("font-weight: bold;")
+        vel_layout.addWidget(labels['vy'], 0, 3)
+
+        vel_layout.addWidget(QLabel("VZ:"), 0, 4)
+        labels['vz'] = QLabel("0.0 m/s")
+        labels['vz'].setStyleSheet("font-weight: bold;")
+        vel_layout.addWidget(labels['vz'], 0, 5)
+
         main_layout.addLayout(vel_layout)
         
-        # === Status Row (compact) ===
+        # === Angular Rates Section ===
+        rates_layout = QGridLayout()
+        rates_layout.setSpacing(4)
+
+        rates_layout.addWidget(QLabel("Roll Rate:"), 0, 0)
+        labels['rollspeed'] = QLabel("0°/s")
+        rates_layout.addWidget(labels['rollspeed'], 0, 1)
+
+        rates_layout.addWidget(QLabel("Pitch Rate:"), 0, 2)
+        labels['pitchspeed'] = QLabel("0°/s")
+        rates_layout.addWidget(labels['pitchspeed'], 0, 3)
+
+        rates_layout.addWidget(QLabel("Yaw Rate:"), 0, 4)
+        labels['yawspeed'] = QLabel("0°/s")
+        rates_layout.addWidget(labels['yawspeed'], 0, 5)
+
+        main_layout.addLayout(rates_layout)
+
+        # === Status Section ===
         status_layout = QHBoxLayout()
-        status_layout.setSpacing(10)
-        
+        status_layout.setSpacing(15)
+
         # Armed status
         labels['armed'] = QLabel("⬡ Disarmed")
-        labels['armed'].setStyleSheet("color: green;")
+        labels['armed'].setStyleSheet("color: green; font-weight: bold;")
         status_layout.addWidget(labels['armed'])
         
         # Battery
@@ -658,33 +602,12 @@ class MavlinkPanel(QWidget):
         
         main_layout.addLayout(status_layout)
         
-        # === Rates Row (additional data) ===
-        rates_layout = QHBoxLayout()
-        rates_layout.setSpacing(10)
-        
-        rates_layout.addWidget(QLabel("Rates:"))
-        labels['rollspeed'] = QLabel("R: 0°/s")
-        labels['rollspeed'].setStyleSheet("color: #666; font-size: 10px;")
-        rates_layout.addWidget(labels['rollspeed'])
-        
-        labels['pitchspeed'] = QLabel("P: 0°/s")
-        labels['pitchspeed'].setStyleSheet("color: #666; font-size: 10px;")
-        rates_layout.addWidget(labels['pitchspeed'])
-        
-        labels['yawspeed'] = QLabel("Y: 0°/s")
-        labels['yawspeed'].setStyleSheet("color: #666; font-size: 10px;")
-        rates_layout.addWidget(labels['yawspeed'])
-        
-        rates_layout.addStretch()
-        main_layout.addLayout(rates_layout)
-        
         group.setLayout(main_layout)
         
-        # Store labels and plots for updates
+        # Store labels for updates
         labels['widget'] = group
         self._telemetry_labels[system_id] = labels
-        self._mini_plots[system_id] = plots
-        
+
         return group
     
     def _update_telemetry_display(self, system_id: int, telemetry: MavlinkTelemetryData):
@@ -696,8 +619,7 @@ class MavlinkPanel(QWidget):
             self.telemetry_placeholder.hide()
         
         labels = self._telemetry_labels[system_id]
-        plots = self._mini_plots.get(system_id, {})
-        
+
         # Convert radians to degrees for display
         roll_deg = math.degrees(telemetry.roll)
         pitch_deg = math.degrees(telemetry.pitch)
@@ -708,37 +630,29 @@ class MavlinkPanel(QWidget):
         labels['pitch'].setText(f"{pitch_deg:.1f}°")
         labels['yaw'].setText(f"{yaw_deg:.1f}°")
         
-        # Update attitude plot with roll value
-        if 'attitude' in plots:
-            plots['attitude'].add_value(roll_deg)
-        
         # Update position
         labels['x'].setText(f"{telemetry.x:.1f}m")
         labels['y'].setText(f"{telemetry.y:.1f}m")
         labels['z'].setText(f"{telemetry.z:.1f}m")
         
-        # Update altitude plot (negative Z in NED = altitude)
-        if 'altitude' in plots:
-            plots['altitude'].add_value(-telemetry.z)
-        
         # Update velocity
-        labels['vx'].setText(f"{telemetry.vx:.1f}")
-        labels['vy'].setText(f"{telemetry.vy:.1f}")
-        labels['vz'].setText(f"{telemetry.vz:.1f}")
-        
+        labels['vx'].setText(f"{telemetry.vx:.1f} m/s")
+        labels['vy'].setText(f"{telemetry.vy:.1f} m/s")
+        labels['vz'].setText(f"{telemetry.vz:.1f} m/s")
+
         # Update angular rates
-        labels['rollspeed'].setText(f"R: {math.degrees(telemetry.rollspeed):.1f}°/s")
-        labels['pitchspeed'].setText(f"P: {math.degrees(telemetry.pitchspeed):.1f}°/s")
-        labels['yawspeed'].setText(f"Y: {math.degrees(telemetry.yawspeed):.1f}°/s")
-        
+        labels['rollspeed'].setText(f"{math.degrees(telemetry.rollspeed):.1f}°/s")
+        labels['pitchspeed'].setText(f"{math.degrees(telemetry.pitchspeed):.1f}°/s")
+        labels['yawspeed'].setText(f"{math.degrees(telemetry.yawspeed):.1f}°/s")
+
         # Update status
         if telemetry.armed:
             labels['armed'].setText("⬢ ARMED")
             labels['armed'].setStyleSheet("color: red; font-weight: bold;")
         else:
             labels['armed'].setText("⬡ Disarmed")
-            labels['armed'].setStyleSheet("color: green;")
-        
+            labels['armed'].setStyleSheet("color: green; font-weight: bold;")
+
         # Battery with color coding
         bat_pct = telemetry.battery_remaining
         if bat_pct > 50:
@@ -770,6 +684,7 @@ class MavlinkPanel(QWidget):
         
         self.rate_label = QLabel("0 Hz")
         self.rate_label.setFont(QFont("NotoSans", 12, QFont.Bold))
+        self.rate_label.setToolTip("Messages per second (Hz = Hertz)\nHigher is better. Good: >50 Hz, Fair: >20 Hz")
         health_layout.addRow("Message Rate:", self.rate_label)
         
         self.connections_count_label = QLabel("0")
@@ -876,7 +791,19 @@ class MavlinkPanel(QWidget):
             # Clear name input for next connection
             self.name_input.clear()
             self._refresh_connections_list()
-    
+        else:
+            # Show error message
+            QMessageBox.warning(
+                self,
+                "Connection Failed",
+                f"Failed to connect to {connection_string}\n\n"
+                "Please check:\n"
+                "• Connection string is correct\n"
+                "• Device is powered on and sending heartbeats\n"
+                "• No firewall blocking the connection"
+            )
+            # Don't refresh - failed connections don't create new entries
+
     def _refresh_connections_list(self):
         """Refresh the connections list showing all active and inactive connections."""
         # Clear current connections
@@ -912,7 +839,8 @@ class MavlinkPanel(QWidget):
             card.action_clicked.connect(self._on_connection_action)
             card.link_object_clicked.connect(self._on_link_object_clicked)
             card.test_clicked.connect(self._on_test_single_connection)
-            
+            card.edit_clicked.connect(self._on_edit_connection)
+
             self._connection_cards[name] = card
             self.connections_layout.addWidget(card)
         
@@ -928,15 +856,31 @@ class MavlinkPanel(QWidget):
         if conn is not None and conn.is_connected:
             # Disconnect
             self.mavlink_service.remove_connection(conn.config.system_id)
+            self._refresh_connections_list()
         else:
             # Connect - get saved config or create new
             all_conns = self.mavlink_service.get_all_connections()
             if connection_name in all_conns:
                 config = all_conns[connection_name]
-                self.mavlink_service.add_connection(config)
-        
-        self._refresh_connections_list()
-    
+                success = self.mavlink_service.add_connection(config)
+
+                if success:
+                    # Refresh to show as active
+                    self._refresh_connections_list()
+                else:
+                    # Show error message
+                    QMessageBox.warning(
+                        self,
+                        "Connection Failed",
+                        f"Failed to connect to {config.connection_string}\n\n"
+                        "Please check:\n"
+                        "• Connection string is correct\n"
+                        "• Device is powered on and sending heartbeats\n"
+                        "• No firewall blocking the connection\n\n"
+                        "You can edit the connection to fix the settings."
+                    )
+                    # Don't refresh - failed connections don't change the UI state
+
     def _on_link_object_clicked(self, connection_name: str):
         """Handle link object button click - show object selection dialog."""
         if self.object_service is None:
@@ -1010,13 +954,137 @@ class MavlinkPanel(QWidget):
             quality = result.get('quality', 'unknown')
             rate = result.get('rate_hz', 0)
             latency = result.get('latency_ms', 0)
-            
+            sent = result.get('messages_sent', 0)
+            received = result.get('messages_received', 0)
+            dropped = result.get('lost_packets', 0)
+
+            # Build detailed message
+            msg = f"Quality: {quality.upper()}\n"
+            msg += f"Rate: {rate:.1f} Hz (messages/second)\n"
+            msg += f"Messages Sent: {sent:,}\n"
+            msg += f"Messages Received: {received:,}\n"
+            msg += f"Latency: {latency:.1f} ms (round-trip time)\n"
+
+            total_expected = received + dropped
+            msg += f"Dropped Packets: {dropped} out of {total_expected:,}\n"
+
             QMessageBox.information(
                 self, 
                 f"Connection Test - {connection_name}",
-                f"Quality: {quality.upper()}\nRate: {rate:.1f} Hz\nLatency: {latency:.1f} ms"
+                msg
             )
     
+    def _on_edit_connection(self, connection_name: str):
+        """Handle edit connection button click - show edit dialog."""
+        if self.mavlink_service is None:
+            return
+
+        # Try to get active connection first, then check saved connections
+        conn = self.mavlink_service.get_connection_by_name(connection_name)
+        config = None
+
+        if conn is not None:
+            # Active connection
+            config = conn.config
+        else:
+            # Check saved connections
+            all_connections = self.mavlink_service.get_all_connections()
+            if connection_name in all_connections:
+                config = all_connections[connection_name]
+
+        if config is None:
+            QMessageBox.warning(self, "Connection Not Found", f"Connection '{connection_name}' not found.")
+            return
+
+        # Create edit dialog
+        from PyQt5.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Edit Connection - {connection_name}")
+        dialog_layout = QVBoxLayout(dialog)
+
+        # Form for editing
+        form_layout = QFormLayout()
+
+        # Name field
+        name_edit = QLineEdit(config.name or "")
+        name_edit.setPlaceholderText("Connection name")
+        form_layout.addRow("Name:", name_edit)
+
+        # Connection string field
+        address_edit = QLineEdit(config.connection_string)
+        address_edit.setPlaceholderText("e.g., udpin:0.0.0.0:14550")
+        form_layout.addRow("Address:", address_edit)
+
+        # System ID field (editable for saved connections, read-only for active)
+        if conn is not None:
+            # Active connection - system ID is read-only
+            system_id_widget = QLabel(str(config.system_id))
+            system_id_widget.setStyleSheet("color: #666;")
+        else:
+            # Saved connection - system ID can be edited
+            system_id_widget = QSpinBox()
+            system_id_widget.setRange(1, 255)
+            system_id_widget.setValue(config.system_id)
+        form_layout.addRow("System ID:", system_id_widget)
+
+        # Warning label
+        warning = QLabel("⚠ Changing address requires reconnection" if conn else "⚠ Changes saved for next connection")
+        warning.setStyleSheet("color: orange; font-style: italic; font-size: 10px;")
+
+        dialog_layout.addLayout(form_layout)
+        dialog_layout.addWidget(warning)
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            new_name = name_edit.text().strip()
+            new_address = address_edit.text().strip()
+            new_system_id = system_id_widget.value() if isinstance(system_id_widget, QSpinBox) else config.system_id
+
+            if not new_address:
+                QMessageBox.warning(self, "Invalid Input", "Connection address cannot be empty.")
+                return
+
+            # Check what changed
+            address_changed = new_address != config.connection_string
+            name_changed = new_name != (config.name or "")
+            system_id_changed = new_system_id != config.system_id
+
+            if conn is not None:
+                # Active connection - not allowed to edit, should disconnect first
+                QMessageBox.warning(
+                    self,
+                    "Cannot Edit Active Connection",
+                    "Please disconnect before editing connection properties."
+                )
+                return
+            else:
+                # Saved connection - update the saved config
+                old_linked_object = config.linked_object_name
+
+                # Create updated config
+                updated_config = MavlinkConnectionConfig(
+                    connection_string=new_address,
+                    system_id=new_system_id,
+                    name=new_name if new_name else connection_name,
+                    linked_object_name=old_linked_object
+                )
+
+                # Remove old saved connection (by old name)
+                if hasattr(self.mavlink_service, '_saved_connections') and connection_name in self.mavlink_service._saved_connections:
+                    del self.mavlink_service._saved_connections[connection_name]
+
+                # Save updated config with new name
+                self.mavlink_service.save_connection_config(updated_config)
+
+            # Refresh the connections list
+            self._refresh_connections_list()
+
     def _add_connection_widget(self, system_id: int, connection_string: str):
         """Legacy method - now calls _refresh_connections_list instead."""
         self._refresh_connections_list()
@@ -1037,10 +1105,7 @@ class MavlinkPanel(QWidget):
                 widget.deleteLater()
             del self._telemetry_labels[system_id]
         
-        # Remove plots
-        if system_id in self._mini_plots:
-            del self._mini_plots[system_id]
-        
+
         self._refresh_connections_list()
     
     def refresh_telemetry_display(self):
@@ -1071,9 +1136,14 @@ class MavlinkPanel(QWidget):
         # Enable/disable test button based on connections
         self.test_connection_btn.setEnabled(active_connections > 0)
         
-        # Update no connections label visibility
-        self.no_connections_label.setVisible(active_connections == 0)
-        
+        # Update no connections label visibility if it exists
+        if hasattr(self, 'no_connections_label') and self.no_connections_label is not None:
+            try:
+                self.no_connections_label.setVisible(active_connections == 0)
+            except RuntimeError:
+                # Widget has been deleted, ignore
+                pass
+
         # Update message counts if mavlink service available
         if self.mavlink_service is not None:
             stats = self.mavlink_service.get_connection_statistics()

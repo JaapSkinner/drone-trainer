@@ -151,7 +151,15 @@ class MavlinkConnection:
         self._last_heartbeat_sent = 0.0
         self._message_count_window: List[float] = []
         self._lock = threading.Lock()
-    
+
+        # Packet loss tracking
+        self._last_seq_num = None  # Last received sequence number
+        self._packets_dropped = 0  # Total dropped packets
+
+        # Round-trip time tracking
+        self._ping_start_time = None
+        self._last_ping_sent = 0.0
+
     @property
     def state(self) -> ConnectionState:
         """Get current connection state."""
@@ -167,6 +175,11 @@ class MavlinkConnection:
             return False
         return True
     
+    @property
+    def packets_dropped(self) -> int:
+        """Get the total number of dropped packets detected."""
+        return self._packets_dropped
+
     def connect(self) -> bool:
         """Establish the MAVLink connection.
         
@@ -174,6 +187,7 @@ class MavlinkConnection:
             True if connection was established successfully, False otherwise.
         """
         if not PYMAVLINK_AVAILABLE:
+            print(f"[MavlinkConnection] ERROR: pymavlink not available")
             self._state = ConnectionState.ERROR
             return False
         
@@ -188,6 +202,7 @@ class MavlinkConnection:
             # Wait for heartbeat with timeout
             msg = self._connection.wait_heartbeat(timeout=5.0)
             if msg is None:
+                print(f"[MavlinkConnection] ERROR: No heartbeat received (timeout)")
                 self._state = ConnectionState.DISCONNECTED
                 return False
             
@@ -198,6 +213,7 @@ class MavlinkConnection:
             return True
             
         except Exception as e:
+            print(f"[MavlinkConnection] ERROR: Connection failed: {e}")
             self._state = ConnectionState.ERROR
             self.status.connected = False
             return False
@@ -208,12 +224,12 @@ class MavlinkConnection:
             if self._connection is not None:
                 try:
                     self._connection.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[MavlinkConnection] ERROR: Error closing connection: {e}")
                 self._connection = None
             self._state = ConnectionState.DISCONNECTED
             self.status.connected = False
-    
+
     def send_heartbeat(self) -> bool:
         """Send a heartbeat message to the drone.
         
@@ -241,7 +257,38 @@ class MavlinkConnection:
             return True
         except Exception:
             return False
-    
+
+    def send_ping(self) -> bool:
+        """Send a PING message to measure round-trip time.
+
+        Returns:
+            True if ping was sent successfully
+        """
+        if self._connection is None:
+            return False
+
+        now = time.time()
+
+        # Don't send pings too frequently (max 1 per second)
+        if now - self._last_ping_sent < 1.0:
+            return True
+
+        try:
+            # Send PING message with current timestamp in microseconds
+            timestamp_usec = int(now * 1e6)
+            self._connection.mav.ping_send(
+                timestamp_usec,  # Time since system boot (we use current time)
+                0,  # Ping sequence
+                self.status.system_id,  # Target system
+                0  # Target component (0 = all)
+            )
+            self._ping_start_time = now
+            self._last_ping_sent = now
+            self.status.messages_sent += 1
+            return True
+        except Exception:
+            return False
+
     def send_mocap_data(self, mocap: MocapData) -> bool:
         """Send motion capture position/orientation data to the drone.
         
@@ -270,7 +317,8 @@ class MavlinkConnection:
             )
             self.status.messages_sent += 1
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[MavlinkConnection] ERROR: Error sending mocap data: {e}")
             return False
     
     def send_setpoint(self, setpoint: SetpointData) -> bool:
@@ -310,7 +358,8 @@ class MavlinkConnection:
         """Receive pending MAVLink messages.
         
         Non-blocking receive of available messages from the connection.
-        
+        Also tracks packet loss by monitoring sequence numbers.
+
         Args:
             max_messages: Maximum number of messages to receive per call
             
@@ -329,6 +378,24 @@ class MavlinkConnection:
                 messages.append(msg)
                 self.status.messages_received += 1
                 self._update_message_rate()
+
+                # Track packet loss using sequence numbers
+                # MAVLink v1 and v2 both have sequence numbers in the header
+                seq = msg.get_seq()
+                if self._last_seq_num is not None:
+                    # Calculate expected sequence (wraps at 256)
+                    expected_seq = (self._last_seq_num + 1) % 256
+                    if seq != expected_seq:
+                        # Packets were dropped
+                        if seq > expected_seq:
+                            dropped = seq - expected_seq
+                        else:
+                            # Wrapped around
+                            dropped = (256 - expected_seq) + seq
+                        self._packets_dropped += dropped
+
+                self._last_seq_num = seq
+
             except Exception:
                 break
         
@@ -364,6 +431,20 @@ class MavlinkConnection:
             self.telemetry.armed = (msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED) != 0
             return True
         
+        elif msg_type == 'PING':
+            # Respond to PING with same timestamp to measure RTT
+            if self._ping_start_time is not None:
+                now = time.time()
+                rtt_ms = (now - self._ping_start_time) * 1000.0
+                # Update latency with exponential moving average (smooth out spikes)
+                if self.status.latency_ms == 0:
+                    self.status.latency_ms = rtt_ms
+                else:
+                    # 80% old value, 20% new value
+                    self.status.latency_ms = (0.8 * self.status.latency_ms) + (0.2 * rtt_ms)
+                self._ping_start_time = None
+            return True
+
         elif msg_type == 'ATTITUDE':
             self.telemetry.roll = msg.roll
             self.telemetry.pitch = msg.pitch
@@ -682,14 +763,27 @@ class MavlinkService(ServiceBase):
             self._connections[connection.status.system_id] = connection
             self._active_connections = len(self._connections)
             
-            # Remove from saved connections if it was there
+            # Remove from saved connections if it was there (by name or by matching connection string)
+            # This prevents duplicates when reconnecting with a different auto-generated name
             if config.name in self._saved_connections:
                 del self._saved_connections[config.name]
             
+            # Also remove any saved connection with the same connection string or system ID
+            to_remove = []
+            for saved_name, saved_config in self._saved_connections.items():
+                if (saved_config.connection_string == config.connection_string or
+                    saved_config.system_id == connection.status.system_id):
+                    to_remove.append(saved_name)
+            for saved_name in to_remove:
+                del self._saved_connections[saved_name]
+
             self.connection_changed.emit(connection.status.system_id, True)
             self._update_status_label()
             return True
         
+        # Connection failed - do NOT save to saved_connections
+        # Failed connections should not persist in the UI
+        print(f"[MavlinkService] ERROR: Failed to establish connection: {config.name}")
         return False
     
     def remove_connection(self, system_id: int):
@@ -1058,7 +1152,7 @@ class MavlinkService(ServiceBase):
                     # This is required for device discovery - drones may be on any network interface
                     # CodeQL: py/bind-socket-all-network-interfaces - intentional for discovery
                     sock.bind(('0.0.0.0', port))  # nosec B104
-                    
+
                     # Listen for incoming data until timeout
                     start_time = time.time()
                     while time.time() - start_time < port_timeout:
@@ -1079,57 +1173,63 @@ class MavlinkService(ServiceBase):
                                         break  # Found device on this port, move to next
                         except socket.timeout:
                             break  # No more data on this port
-                except OSError:
+                except OSError as e:
                     # Port already in use - skip it
-                    pass
+                    print(f"[MavlinkService] Discovery: Port {port} already in use")
                 finally:
                     sock.close()
             except Exception as e:
-                print(f"[MavlinkService] Discovery error on port {port}: {e}")
-        
+                print(f"[MavlinkService] ERROR: Discovery error on port {port}: {e}")
+
         return discovered
     
     def run_connection_test(self, duration_secs: float = 2.0) -> dict:
         """Run a connection quality test for all active connections.
         
-        Measures packet rate, latency, and packet loss by sending a burst
-        of test messages and measuring response times.
-        
+        Sends ping messages to measure round-trip time and collects current metrics.
+
         Args:
             duration_secs: Duration of test in seconds
             
         Returns:
             Dictionary mapping system_id to test results with:
             - rate_hz: Measured message rate
-            - latency_ms: Estimated round-trip latency
-            - lost_packets: Number of lost packets
+            - latency_ms: Round-trip time in milliseconds
+            - lost_packets: Number of dropped packets detected
+            - messages_sent: Total messages sent on this connection
+            - messages_received: Total messages received on this connection
             - quality: Quality rating ('good', 'fair', 'poor')
         """
         results = {}
         
+        # Send pings to all connections
+        for conn in self._connections.values():
+            if conn.is_connected:
+                conn.send_ping()
+
+        # Wait a bit for pings to return (give time for RTT measurement)
+        time.sleep(0.1)
+
         for sys_id, conn in self._connections.items():
             if not conn.is_connected:
                 results[sys_id] = {
                     'rate_hz': 0,
                     'latency_ms': 0,
                     'lost_packets': 0,
+                    'messages_sent': 0,
+                    'messages_received': 0,
                     'quality': 'disconnected'
                 }
                 continue
             
-            # Record initial state
-            initial_received = conn.status.messages_received
-            initial_sent = conn.status.messages_sent
-            
-            # Get current rate and latency from connection status
+            # Get current metrics from connection status
             rate_hz = conn.status.message_rate_hz
             latency_ms = conn.status.latency_ms
-            
-            # Estimate packet loss based on recent history
-            # (Simplified - in real implementation would track sequence numbers)
-            lost_packets = 0
-            
-            # Determine quality rating
+            messages_sent = conn.status.messages_sent
+            messages_received = conn.status.messages_received
+            lost_packets = conn.packets_dropped
+
+            # Determine quality rating based on message rate and latency
             if rate_hz >= 50 and latency_ms < 50:
                 quality = 'good'
             elif rate_hz >= 20 and latency_ms < 100:
@@ -1141,6 +1241,8 @@ class MavlinkService(ServiceBase):
                 'rate_hz': rate_hz,
                 'latency_ms': latency_ms,
                 'lost_packets': lost_packets,
+                'messages_sent': messages_sent,
+                'messages_received': messages_received,
                 'quality': quality
             }
         
