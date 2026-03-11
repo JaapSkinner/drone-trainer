@@ -4,10 +4,31 @@ Refactored from JoystickService to support multiple input types.
 """
 import numpy as np
 import pygame
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import pyqtSignal, Qt, QObject, QEvent
+from PyQt5.QtWidgets import QApplication
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from PyQt5.QtCore import QTimer
 from enum import Enum
+
+
+class _KeyboardEventFilter(QObject):
+    """Application-level event filter that intercepts key events globally.
+
+    This allows keyboard-driven input modes (WASD, Arrow Keys) to work
+    regardless of which widget currently has keyboard focus.
+    """
+
+    def __init__(self, input_service):
+        super().__init__()
+        self._input_service = input_service
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and not event.isAutoRepeat():
+            self._input_service.handle_key_press(event.key())
+        elif event.type() == QEvent.KeyRelease and not event.isAutoRepeat():
+            self._input_service.handle_key_release(event.key())
+        # Never consume the event — let normal Qt processing continue.
+        return False
 
 
 class InputType(Enum):
@@ -65,7 +86,10 @@ class InputService(ServiceBase):
         self.controlled_object = None
         self.command_panel = None  # Reference to command panel for setpoint updates
         self.timer = None
-    
+
+        # Global key event filter (installed for keyboard input modes)
+        self._key_event_filter = None
+
     @staticmethod
     def _apply_deadzone(value, threshold=0.1):
         """
@@ -88,10 +112,30 @@ class InputService(ServiceBase):
             # For keyboard input, we just need to set up the status
             self.status_label = f"{self.input_type.value}"
             self.status = ServiceLevel.RUNNING
+            self._install_key_filter()
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
+
+    def _install_key_filter(self):
+        """Install an application-level event filter to capture key events globally."""
+        if self._key_event_filter is None:
+            self._key_event_filter = _KeyboardEventFilter(self)
+            app = QApplication.instance()
+            if app is not None:
+                app.installEventFilter(self._key_event_filter)
+
+    def _uninstall_key_filter(self):
+        """Remove the application-level key event filter and reset all key states."""
+        if self._key_event_filter is not None:
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self._key_event_filter)
+            self._key_event_filter = None
+        # Reset all key states to avoid stuck keys
+        for key in self.key_states:
+            self.key_states[key] = False
 
     def _init_controller(self):
         """Initialize pygame for controller input"""
@@ -115,6 +159,7 @@ class InputService(ServiceBase):
             self.timer = None
         if self.input_type == InputType.CONTROLLER:
             pygame.quit()
+        self._uninstall_key_filter()
 
     def set_input_type(self, input_type: InputType):
         """
@@ -127,15 +172,19 @@ class InputService(ServiceBase):
             # Clean up old input type
             if self.input_type == InputType.CONTROLLER:
                 pygame.quit()
-            
+            else:
+                # Switching away from a keyboard mode — remove the global filter
+                self._uninstall_key_filter()
+
             self.input_type = input_type
-            
+
             # Initialize new input type
             if input_type == InputType.CONTROLLER:
                 self._init_controller()
             else:
                 self.status_label = f"{input_type.value}"
                 self.status = ServiceLevel.RUNNING
+                self._install_key_filter()
 
     def set_sensitivity(self, sensitivity: float):
         """
@@ -164,6 +213,11 @@ class InputService(ServiceBase):
             key: Qt key code
         """
         if key in self.key_states:
+            self.key_states[key] = False
+
+    def clear_key_states(self):
+        """Reset all tracked key states to False (e.g. when window loses focus)."""
+        for key in self.key_states:
             self.key_states[key] = False
 
     def update(self):

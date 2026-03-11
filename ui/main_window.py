@@ -202,10 +202,22 @@ class MainWindow(QMainWindow):
                     obj = self.object_service.get_controlled_object()
                     if obj is not None:
                         self.input_service.set_controlled_object(obj)
+                # Return focus to viewport so controller/keyboard input works immediately
+                if hasattr(self, 'glWidget') and self.glWidget:
+                    self.glWidget.setFocus()
             else:
                 # Disable joystick control - set controlled object to None
                 self.input_service.set_controlled_object(None)
         
+    def changeEvent(self, event):
+        """Handle window state changes, including focus loss."""
+        from PyQt5.QtCore import QEvent as _QEvent
+        super().changeEvent(event)
+        if event.type() == _QEvent.ActivationChange and not self.isActiveWindow():
+            # Window lost focus — clear keyboard states to avoid stuck keys
+            if hasattr(self, 'input_service') and self.input_service:
+                self.input_service.clear_key_states()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())
