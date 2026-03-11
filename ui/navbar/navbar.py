@@ -42,12 +42,16 @@ class SideNavbar(QWidget):
         self.button_group.setExclusive(True)  # Only one checked
 
 
-        for name in ["Home", "Trainer", "Leaderboard", "Config", "Vicon", "Live Data", "Command"]:
+        for name in ["Home", "Leaderboard", "Config", "Vicon", "Live Data", "Command"]:
             key = name.lower().replace(" ", "_")
             name = " " + name
             btn = QPushButton(name)
             btn.setCheckable(True)
-            icon_path = f"ui/assets/icons/{key}.png"
+            # Command reuses the trainer icon
+            if key == "command":
+                icon_path = "ui/assets/icons/trainer.png"
+            else:
+                icon_path = f"ui/assets/icons/{key}.png"
             btn.setIcon(QIcon(icon_path))
             btn.setIconSize(QSize(22, 22))
             btn.setCursor(Qt.PointingHandCursor)
