@@ -814,7 +814,14 @@ class CommandPanel(QWidget):
     def _on_object_selected(self, index):
         """Handle controlled object selection."""
         obj = self.object_combo.itemData(index)
-        if obj is not None and self.object_service:
+        if obj is None:
+            # "— None —" selected — clear controlled object and disable input
+            if self.object_service:
+                self.object_service.set_controlled_object(obj=None)
+            self.controlled_object_changed.emit(None)
+            self.joystick_control_enabled.emit(False)
+            return
+        if self.object_service:
             self.object_service.set_controlled_object(obj=obj)
             self.controlled_object_changed.emit(obj)
             # Sync setpoints with new object
@@ -1090,21 +1097,28 @@ class CommandPanel(QWidget):
         # Clear and repopulate
         self.object_combo.blockSignals(True)
         self.object_combo.clear()
-        
+
+        # First item is always the "no object" sentinel
+        self.object_combo.addItem("— None —", None)
+
         for obj in self.object_service.get_objects():
             # Only include controllable objects, exclude debug/utility objects
             is_controllable = getattr(obj, 'controllable', False)
             is_debug_text = isinstance(obj, DebugText)
             if is_controllable and not is_debug_text:
                 self.object_combo.addItem(obj.name, obj)
-        
-        # Restore selection if still valid
+
+        # Restore previous selection if still present; otherwise stay on None
+        restored = False
         if current_obj is not None:
             for i in range(self.object_combo.count()):
                 if self.object_combo.itemData(i) == current_obj:
                     self.object_combo.setCurrentIndex(i)
+                    restored = True
                     break
-        
+        if not restored:
+            self.object_combo.setCurrentIndex(0)  # Select "— None —"
+
         self.object_combo.blockSignals(False)
         
         # Sync setpoints and update displays
