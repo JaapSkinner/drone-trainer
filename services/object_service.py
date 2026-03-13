@@ -116,6 +116,13 @@ class ObjectService(ServiceBase):
 
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Controlled object set to {obj.name}.")
 
+    def clear_controlled_object(self) -> None:
+        """Clear the currently controlled object."""
+        self.controlled_object = None
+        if self.input_service:
+            self.input_service.set_controlled_object(None)
+        self.status_changed.emit(ServiceLevel.RUNNING.value, "Controlled object cleared.")
+
 
     def draw_objects(self):
         for obj in self.objects:

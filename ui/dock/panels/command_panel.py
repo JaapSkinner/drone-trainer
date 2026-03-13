@@ -817,7 +817,7 @@ class CommandPanel(QWidget):
         if obj is None:
             # "— None —" selected — clear controlled object and disable input
             if self.object_service:
-                self.object_service.set_controlled_object(obj=None)
+                self.object_service.clear_controlled_object()
             self.controlled_object_changed.emit(None)
             self.joystick_control_enabled.emit(False)
             return
