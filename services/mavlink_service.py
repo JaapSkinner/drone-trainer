@@ -198,7 +198,14 @@ class MavlinkConnection:
                 source_system=self.config.source_system,
                 source_component=self.config.source_component,
             )
-            
+
+            # Prime the drone's MAVLink router by sending GCS heartbeats before
+            # waiting for a response.  Many drones (PX4 + MAVLink router) won't
+            # start unicasting back to our UDP address until they see at least one
+            # incoming packet from us.  QGC triggers this same behaviour when you
+            # manually add a UDP comm link and hit Connect.
+            self._prime_connection()
+
             # Wait for heartbeat with timeout
             msg = self._connection.wait_heartbeat(timeout=5.0)
             if msg is None:
@@ -225,6 +232,34 @@ class MavlinkConnection:
             self.status.connected = False
             return False
     
+    def _prime_connection(self, num_heartbeats: int = 3, interval: float = 0.5):
+        """Send GCS heartbeats to prime the drone's MAVLink router.
+
+        Some drones (PX4 with mavlink-router or similar) are passive: they only
+        start unicasting telemetry back to a UDP endpoint after receiving at
+        least one packet *from* that endpoint.  QGC works around this by sending
+        heartbeats immediately on a manual UDP connect, which registers our
+        IP:port with the router.  We replicate that behaviour here so the
+        connection works on first attempt without needing QGC as a middleman.
+
+        Args:
+            num_heartbeats: Number of heartbeat packets to send before listening.
+            interval: Delay in seconds between each heartbeat.
+        """
+        if self._connection is None:
+            return
+        try:
+            for _ in range(num_heartbeats):
+                self._connection.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0
+                )
+                time.sleep(interval)
+        except Exception as e:
+            # Non-fatal – we still try wait_heartbeat afterwards
+            print(f"[MavlinkConnection] Warning: priming heartbeat send failed: {e}")
+
     def disconnect(self):
         """Close the MAVLink connection."""
         with self._lock:
@@ -1133,37 +1168,78 @@ class MavlinkService(ServiceBase):
     
     def discover_devices(self, timeout_secs: float = 3.0) -> List:
         """Discover MAVLink devices on the network.
-        
+
         Listens for MAVLink heartbeats on common ports to discover devices.
+        Before listening on each port, a GCS heartbeat is broadcast to that
+        port so that passive drones (PX4 + mavlink-router style setups) that
+        only begin sending once they receive an incoming packet will respond.
+        This mirrors the behaviour of QGC's manual UDP "Connect" button.
+
         Note: This is a simplified discovery that may not work if the ports
         are already bound by other processes.
-        
+
         Args:
             timeout_secs: Time to listen for devices
-            
+
         Returns:
             List of DiscoveredDevice objects
         """
         from models.structs import DiscoveredDevice
         import socket
         discovered = []
-        
+
         # Common MAVLink ports to check
         ports_to_check = [14550, 14540, 14560]
         port_timeout = timeout_secs / len(ports_to_check)
-        
+
+        # --- Build a minimal MAVLink v1 GCS HEARTBEAT packet by hand ---
+        # This avoids needing an active mavutil connection at this point and
+        # lets us probe each port before binding a listener to it.
+        # MAVLink v1 HEARTBEAT: magic=0xFE, len=9, seq=0, sys=255, comp=0,
+        # msg_id=0 (HEARTBEAT), type=6 (GCS), autopilot=8 (INVALID),
+        # base_mode=0, custom_mode=0, system_status=0, mavlink_version=3
+        _HEARTBEAT_PAYLOAD = bytes([6, 8, 0, 0, 0, 0, 3])  # 7 bytes
+        _crc_extra = 50  # HEARTBEAT CRC extra byte
+        # CRC-16/MCRF4XX over (len, seq, sys, comp, msg_id) + payload + crc_extra
+        def _mavlink_crc(data: bytes) -> int:
+            crc = 0xFFFF
+            for b in data:
+                tmp = b ^ (crc & 0xFF)
+                tmp ^= (tmp << 4) & 0xFF
+                crc = ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xFFFF
+            return crc
+
+        _header = bytes([9, 0, 255, 0, 0])  # len=9, seq=0, sys=255, comp=0, msg_id=0
+        _crc_input = _header + _HEARTBEAT_PAYLOAD + bytes([_crc_extra])
+        _crc_val = _mavlink_crc(_crc_input)
+        _HEARTBEAT_PACKET = (
+            bytes([0xFE])          # magic
+            + _header
+            + _HEARTBEAT_PAYLOAD
+            + bytes([_crc_val & 0xFF, (_crc_val >> 8) & 0xFF])
+        )
+
         for port in ports_to_check:
             try:
                 # Create a UDP socket to listen for heartbeats
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.settimeout(port_timeout)
-                
+
                 try:
                     # Bind to all interfaces to receive MAVLink packets from any network source
                     # This is required for device discovery - drones may be on any network interface
                     # CodeQL: py/bind-socket-all-network-interfaces - intentional for discovery
                     sock.bind(('0.0.0.0', port))  # nosec B104
+
+                    # Probe: broadcast a GCS heartbeat so passive drones register our
+                    # address and start sending.  This is what QGC does on a manual
+                    # UDP connect and is the fix for the "works after QGC, not before" quirk.
+                    try:
+                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                        sock.sendto(_HEARTBEAT_PACKET, ('<broadcast>', port))
+                    except Exception:
+                        pass  # Broadcast may fail on some interfaces; carry on listening anyway
 
                     # Listen for incoming data until timeout
                     start_time = time.time()
