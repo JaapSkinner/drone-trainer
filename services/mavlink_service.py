@@ -1064,8 +1064,9 @@ class MavlinkService(ServiceBase):
         if connection_name in self._saved_connections:
             self._saved_connections[connection_name].linked_object_name = object_name
         
-        # Emit update
-        self.connection_changed.emit(conn.config.system_id if conn else 0, True)
+        # Emit update only for an active connection
+        if conn is not None:
+            self.connection_changed.emit(conn.config.system_id, True)
     
     def unlink_connection_from_object(self, connection_name: str):
         """Unlink a MAVLink connection from its object.
