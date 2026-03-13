@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
             QApplication.setFont(QFont(family, 11))
 
         # --- Persistent storage (loaded synchronously before other services) ---
+        # on_start() is called directly (not via start()) because settings must
+        # be available immediately—before any threaded service is created.
         self.storage_service = StorageService()
         self.storage_service.on_start()  # load data from disk immediately
 
@@ -344,10 +346,9 @@ class MainWindow(QMainWindow):
     def _on_connection_changed(self, system_id: int, connected: bool):
         """Persist connection configs whenever a connection is added or removed.
         
-        This is triggered by the mavlink_service.connection_changed signal.
-        After a connect, the active connection config is upserted.
-        After a disconnect, the mavlink_service already saves the config in
-        _saved_connections; we mirror that to persistent storage.
+        Args:
+            system_id: System ID of the changed connection (unused; full sync performed).
+            connected: Whether the connection was established or removed (unused).
         """
         self._sync_connections_to_storage()
 
@@ -372,9 +373,10 @@ class MainWindow(QMainWindow):
             current_names.add(name)
 
         # Remove any entries no longer known to the mavlink service
-        for stored in self.storage_service.list_connections():
-            if stored.name not in current_names:
-                self.storage_service.delete_connection(stored.name)
+        stale = [s.name for s in self.storage_service.list_connections()
+                 if s.name not in current_names]
+        for name in stale:
+            self.storage_service.delete_connection(name)
 
     def changeEvent(self, event):
         """Handle window state changes, including focus loss."""
