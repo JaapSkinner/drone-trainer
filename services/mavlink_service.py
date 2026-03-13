@@ -1188,9 +1188,10 @@ class MavlinkService(ServiceBase):
         import socket
         discovered = []
 
-        # Common MAVLink ports to check
+        # Common MAVLink ports to check.
+        # Each port needs at least 1.5 s to be sure of catching a 1 Hz PX4 heartbeat.
         ports_to_check = [14550, 14540, 14560]
-        port_timeout = timeout_secs / len(ports_to_check)
+        port_timeout = max(1.5, timeout_secs / len(ports_to_check))
 
         # --- Build a minimal MAVLink v1 GCS HEARTBEAT packet by hand ---
         # This avoids needing an active mavutil connection at this point and
@@ -1241,26 +1242,108 @@ class MavlinkService(ServiceBase):
                     except Exception:
                         pass  # Broadcast may fail on some interfaces; carry on listening anyway
 
-                    # Listen for incoming data until timeout
+                    # Listen for packets until we get the flight controller's HEARTBEAT
+                    # or the timeout expires.
+                    #
+                    # Why not just break on the first heartbeat?
+                    # A PX4 stack typically forwards heartbeats from *multiple* components:
+                    #   - The companion / MAVLink router itself (autopilot=8 INVALID, type=18)
+                    #   - The actual flight controller      (autopilot=12 PX4,     type=14)
+                    # The companion heartbeat usually arrives first.  We keep reading until
+                    # we find one with a real autopilot value, falling back to whatever we
+                    # have if time runs out.
+                    _MAV_AUTOPILOT_INVALID = 8  # MAV_AUTOPILOT_INVALID — not a real FC
+
                     start_time = time.time()
+                    best_device = None   # best heartbeat decoded so far
+
                     while time.time() - start_time < port_timeout:
                         try:
                             data, addr = sock.recvfrom(1024)
-                            if len(data) > 0:
-                                # Check if this looks like a MAVLink message
-                                if data[0] == 0xFE or data[0] == 0xFD:  # MAVLink v1/v2 magic bytes
-                                    # Use proper connection string for UDP input
-                                    device = DiscoveredDevice(
-                                        address=addr[0],
-                                        port=port,
-                                        connection_string=f"udpin:0.0.0.0:{port}"
-                                    )
-                                    # Avoid duplicates
-                                    if not any(d.port == port for d in discovered):
-                                        discovered.append(device)
-                                        break  # Found device on this port, move to next
+                            if len(data) < 6:
+                                continue
+
+                            magic = data[0]
+                            if magic not in (0xFE, 0xFD):
+                                continue  # Not a MAVLink packet
+
+                            # Skip if we already have a confirmed entry for this address
+                            if any(d.address == addr[0] and d.port == port for d in discovered):
+                                break
+
+                            # --- Parse header ---
+                            try:
+                                if magic == 0xFE:
+                                    plen          = data[1]
+                                    sys_id        = data[3]
+                                    comp_id       = data[4]
+                                    msg_id        = data[5]
+                                    payload_start = 6
+                                    mav_version   = 1
+                                else:
+                                    plen          = data[1]
+                                    sys_id        = data[5]
+                                    comp_id       = data[6]
+                                    msg_id        = data[7] | (data[8] << 8) | (data[9] << 16)
+                                    payload_start = 10
+                                    mav_version   = 2
+                            except IndexError:
+                                continue
+
+                            # Only HEARTBEAT (msg_id 0) carries identity info
+                            if msg_id != 0:
+                                continue
+
+                            # --- Decode HEARTBEAT payload ---
+                            # bytes 0-3  custom_mode  (uint32 LE)
+                            # byte  4    MAV_TYPE
+                            # byte  5    MAV_AUTOPILOT
+                            # byte  6    base_mode    (0x80 = ARMED)
+                            vehicle_type   = -1
+                            autopilot_type = -1
+                            armed          = False
+                            try:
+                                if plen >= 7 and len(data) >= payload_start + plen:
+                                    p              = data[payload_start: payload_start + plen]
+                                    vehicle_type   = p[4]
+                                    autopilot_type = p[5]
+                                    armed          = bool(p[6] & 0x80)
+                                    print(f"[MavlinkService] Discovery HB: sys={sys_id} comp={comp_id} "
+                                          f"type={vehicle_type} autopilot={autopilot_type} "
+                                          f"armed={armed} mav_v={mav_version}")
+                            except IndexError:
+                                pass
+
+                            candidate = DiscoveredDevice(
+                                address=addr[0],
+                                port=port,
+                                system_id=sys_id,
+                                component_id=comp_id,
+                                connection_string=f"udpin:0.0.0.0:{port}",
+                                vehicle_type=vehicle_type,
+                                autopilot=autopilot_type,
+                                armed=armed,
+                                mavlink_version=mav_version,
+                            )
+
+                            # Prefer a real flight controller over a companion/router.
+                            # Keep reading if we only have an INVALID autopilot so far.
+                            if best_device is None:
+                                best_device = candidate
+
+                            if autopilot_type != _MAV_AUTOPILOT_INVALID:
+                                # Found the actual FC — no need to wait any longer
+                                best_device = candidate
+                                break
+                            # else: companion HB — store as fallback and keep waiting
+
                         except socket.timeout:
-                            break  # No more data on this port
+                            break
+
+                    if best_device is not None:
+                        if not any(d.address == best_device.address and d.port == port
+                                   for d in discovered):
+                            discovered.append(best_device)
                 except OSError as e:
                     # Port already in use - skip it
                     print(f"[MavlinkService] Discovery: Port {port} already in use")

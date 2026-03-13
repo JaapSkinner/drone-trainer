@@ -261,17 +261,71 @@ class MavlinkGlobalSettings:
     auto_connect_discovered: bool = False  # Auto-connect to discovered devices
 
 
+# Lookup tables used by DiscoveredDevice (defined outside the class to keep
+# the dataclass field ordering simple — no default-after-required issue).
+_MAV_TYPE_NAMES: "dict[int, str]" = {
+    0:  "Generic",
+    1:  "Fixed Wing",
+    2:  "Quadrotor",
+    3:  "Coaxial Heli",
+    4:  "Helicopter",
+    5:  "Antenna Tracker",
+    6:  "GCS",
+    7:  "Airship",
+    8:  "Free Balloon",
+    9:  "Rocket",
+    10: "Ground Rover",
+    11: "Surface Boat",
+    12: "Submarine",
+    13: "Hexarotor",
+    14: "Octorotor",
+    15: "Tricopter",
+    16: "Flapping Wing",
+    17: "Kite",
+    18: "Onboard Controller",
+    19: "VTOL Tailsitter (Duo)",
+    20: "VTOL Tailsitter (Quad)",
+    21: "VTOL Tiltrotor",
+    22: "VTOL Fixed Rotor",
+    23: "VTOL Tailsitter",
+    24: "VTOL Tiltwing",
+    26: "Gimbal",
+    27: "ADSB",
+    29: "Dodecarotor",
+    30: "Camera",
+    35: "Decarotor",
+}
+
+_MAV_AUTOPILOT_NAMES: "dict[int, str]" = {
+    0:  "Generic",
+    3:  "ArduPilot",
+    4:  "OpenPilot",
+    8:  "No Autopilot",
+    12: "PX4",
+    13: "SMACCMPilot",
+    17: "ASLUAV",
+    18: "SmartAP",
+    20: "Reflex",
+}
+
+
 @dataclass
 class DiscoveredDevice:
     """Information about a discovered MAVLink device.
-    
+
     Attributes:
         address: IP address of the device (source of MAVLink packets)
         port: Port number where device was discovered
-        system_id: MAVLink system ID (if known)
-        component_id: MAVLink component ID (if known)
+        system_id: MAVLink system ID extracted from heartbeat header (0 if unknown)
+        component_id: MAVLink component ID extracted from heartbeat header (0 if unknown)
         last_seen: Timestamp when device was last seen
         connection_string: Constructed connection string for connecting
+
+        # Fields decoded from HEARTBEAT payload
+        vehicle_type: MAV_TYPE value (e.g. 2=quadrotor, 13=hexarotor).  -1 = unknown.
+        autopilot: MAV_AUTOPILOT value (e.g. 12=PX4, 3=ArduPilot).  -1 = unknown.
+        armed: Whether the vehicle reported itself as armed in the heartbeat.
+        mavlink_version: MAVLink protocol version reported in the heartbeat (1 or 2).
     """
     address: str
     port: int
@@ -279,13 +333,45 @@ class DiscoveredDevice:
     component_id: int = 0
     last_seen: float = field(default_factory=time.time)
     connection_string: str = ""
-    
+
+    # Decoded from HEARTBEAT payload
+    vehicle_type: int = -1    # MAV_TYPE (-1 = not decoded)
+    autopilot: int = -1       # MAV_AUTOPILOT (-1 = not decoded)
+    armed: bool = False
+    mavlink_version: int = 0  # 1 or 2
+
     def __post_init__(self):
-        """Generate connection string if not provided.
-        
-        Uses udpin with 0.0.0.0 to listen on all interfaces for the discovered port.
-        This is appropriate because the drone sends to this port.
-        """
+        """Generate connection string if not provided."""
         if not self.connection_string:
-            # Use udpin to bind locally and receive from the discovered port
             self.connection_string = f"udpin:0.0.0.0:{self.port}"
+
+    @property
+    def vehicle_type_name(self) -> str:
+        """Human-readable vehicle type string."""
+        return _MAV_TYPE_NAMES.get(self.vehicle_type, f"Type {self.vehicle_type}")
+
+    @property
+    def autopilot_name(self) -> str:
+        """Human-readable autopilot string."""
+        return _MAV_AUTOPILOT_NAMES.get(self.autopilot, f"Autopilot {self.autopilot}")
+
+    @property
+    def display_name(self) -> str:
+        """Short human-readable label suitable for a list entry.
+
+        Examples:
+            "PX4  Quadrotor  SysID 1  192.168.1.10:14550"
+            "ArduPilot  Hexarotor  SysID 3  10.0.0.5:14540  [ARMED]"
+        """
+        parts = []
+        if self.autopilot >= 0:
+            parts.append(self.autopilot_name)
+        if self.vehicle_type >= 0:
+            parts.append(self.vehicle_type_name)
+        if self.system_id > 0:
+            parts.append(f"SysID {self.system_id}")
+        parts.append(f"{self.address}:{self.port}")
+        if self.armed:
+            parts.append("[ARMED]")
+        return "  ".join(parts)
+

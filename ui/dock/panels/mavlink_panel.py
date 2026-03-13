@@ -361,7 +361,7 @@ class MavlinkPanel(QWidget):
         # Run discovery in a worker thread to avoid blocking the UI thread
         self._discovery_worker = DiscoveryWorker(
             self.mavlink_service,
-            timeout_secs=2.0,
+            timeout_secs=5.0,
             parent=self,
         )
         self._discovery_worker.devices_discovered.connect(self._run_discovery)
@@ -376,28 +376,58 @@ class MavlinkPanel(QWidget):
             child = self.discovered_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
-        
+
         if not devices:
             no_devices = QLabel("No devices found. Make sure drones are powered on.")
             no_devices.setStyleSheet("color: #888;")
             self.discovered_layout.addWidget(no_devices)
         else:
             for device in devices:
-                row = QHBoxLayout()
-                label = QLabel(f"{device.connection_string}")
-                row.addWidget(label)
-                row.addStretch()
-                
+                card = QFrame()
+                card.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+                card.setLineWidth(1)
+                card_layout = QHBoxLayout(card)
+                card_layout.setSpacing(8)
+                card_layout.setContentsMargins(10, 8, 10, 8)
+
+                # --- Left: identification text block ---
+                text_block = QVBoxLayout()
+                text_block.setSpacing(2)
+
+                # Row 1: Firmware · Vehicle type  (most important identity info)
+                firmware = device.autopilot_name if device.autopilot >= 0 else "Unknown firmware"
+                vtype    = device.vehicle_type_name if device.vehicle_type >= 0 else "Unknown type"
+                armed_tag = "  <span style='color:#c00;font-size:9px;'>● ARMED</span>" if device.armed else ""
+                title = QLabel(f"<b>{firmware} · {vtype}</b>{armed_tag}")
+                title.setStyleSheet("font-size: 12px;")
+                text_block.addWidget(title)
+
+                # Row 2: SysID · IP:port
+                sys_str  = f"SysID {device.system_id}" if device.system_id > 0 else "SysID ?"
+                addr_str = f"{device.address}:{device.port}"
+                subtitle = QLabel(f"{sys_str}  ·  {addr_str}")
+                subtitle.setStyleSheet("color: #555; font-size: 10px;")
+                text_block.addWidget(subtitle)
+
+                # Row 3: MAVLink version (minor detail)
+                if device.mavlink_version:
+                    mv_label = QLabel(f"MAVLink v{device.mavlink_version}")
+                    mv_label.setStyleSheet("color: #999; font-size: 9px;")
+                    text_block.addWidget(mv_label)
+
+                card_layout.addLayout(text_block, stretch=1)
+
+                # --- Right: Use button ---
                 use_btn = QPushButton("Use")
+                use_btn.setFixedHeight(28)
+                use_btn.setFixedWidth(48)
                 use_btn.clicked.connect(
                     lambda checked, d=device: self._use_discovered_device(d)
                 )
-                row.addWidget(use_btn)
-                
-                row_widget = QWidget()
-                row_widget.setLayout(row)
-                self.discovered_layout.addWidget(row_widget)
-    
+                card_layout.addWidget(use_btn, alignment=Qt.AlignVCenter)
+
+                self.discovered_layout.addWidget(card)
+
     def _on_discovery_finished(self):
         """Re-enable discovery UI after the worker thread has finished."""
         self.discover_btn.setEnabled(True)
