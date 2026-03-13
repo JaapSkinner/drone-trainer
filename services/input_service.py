@@ -280,10 +280,10 @@ class InputService(ServiceBase):
             ]
             
             # Route through command panel to update setpoint (not position directly)
-            if self.command_panel is not None:
+            # Only apply deltas when Joystick mode is active
+            if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
                 self.command_panel.update_setpoint_from_joystick(pose_delta)
-            
-            self.input_updated.emit(obj)
+                self.input_updated.emit(obj)
 
     def _update_keyboard_wasd(self):
         """Update WASD keyboard input"""
@@ -319,10 +319,10 @@ class InputService(ServiceBase):
         ]
         
         # Route through command panel to update setpoint (not position directly)
-        if self.command_panel is not None:
+        # Only apply deltas when Joystick mode is active
+        if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
             self.command_panel.update_setpoint_from_joystick(pose_delta)
-        
-        self.input_updated.emit(obj)
+            self.input_updated.emit(obj)
 
     def _update_keyboard_arrows(self):
         """Update Arrow Keys keyboard input"""
@@ -358,10 +358,10 @@ class InputService(ServiceBase):
         ]
         
         # Route through command panel to update setpoint (not position directly)
-        if self.command_panel is not None:
+        # Only apply deltas when Joystick mode is active
+        if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
             self.command_panel.update_setpoint_from_joystick(pose_delta)
-        
-        self.input_updated.emit(obj)
+            self.input_updated.emit(obj)
 
     def set_controlled_object(self, obj):
         """
