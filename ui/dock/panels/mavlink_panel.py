@@ -44,7 +44,12 @@ class DiscoveryWorker(QThread):
 
 
 class ConnectionCard(QFrame):
-    """Widget representing a single MAVLink connection."""
+    """Widget representing a single MAVLink connection.
+    
+    The card stores a `connection_name` attribute that is the resolved name
+    used as the key in the connections list. All signals emit this name
+    to ensure consistency with the service's connection lookup.
+    """
     
     # Signals for connection actions
     action_clicked = pyqtSignal(str)  # connection_name - for connect/disconnect
@@ -52,9 +57,19 @@ class ConnectionCard(QFrame):
     test_clicked = pyqtSignal(str)  # connection_name
     edit_clicked = pyqtSignal(str)  # connection_name
 
-    def __init__(self, config: MavlinkConnectionConfig, is_active: bool = True, parent=None):
+    def __init__(self, config: MavlinkConnectionConfig, connection_name: str, is_active: bool = True, parent=None):
+        """Initialize a connection card.
+        
+        Args:
+            config: Connection configuration
+            connection_name: The resolved connection name used as dict key
+            is_active: Whether the connection is currently active
+            parent: Parent widget
+        """
         super().__init__(parent)
         self.config = config
+        # Store the resolved connection name for consistent signal emission
+        self.connection_name = connection_name
         self.is_active = is_active
         self._init_ui()
     
@@ -70,9 +85,8 @@ class ConnectionCard(QFrame):
         # Header row with name and status
         header = QHBoxLayout()
         
-        # Connection name (editable)
-        name = self.config.name or f"Connection-{self.config.system_id}"
-        self.name_label = QLabel(f"<b>{name}</b>")
+        # Connection name - use the resolved name for display
+        self.name_label = QLabel(f"<b>{self.connection_name}</b>")
         self.name_label.setStyleSheet("font-size: 12px;")
         header.addWidget(self.name_label)
         
@@ -110,38 +124,38 @@ class ConnectionCard(QFrame):
         buttons = QHBoxLayout()
         buttons.setSpacing(4)
         
-        # Link/Unlink object button
+        # Link/Unlink object button - emit resolved connection_name
         link_text = "Change Object" if linked else "Link Object"
         self.link_btn = QPushButton(link_text)
         self.link_btn.setFixedHeight(24)
-        self.link_btn.clicked.connect(lambda: self.link_object_clicked.emit(self.config.name))
+        self.link_btn.clicked.connect(lambda: self.link_object_clicked.emit(self.connection_name))
         buttons.addWidget(self.link_btn)
         
         if self.is_active:
-            # Test button
+            # Test button - emit resolved connection_name
             test_btn = QPushButton("Test")
             test_btn.setFixedHeight(24)
-            test_btn.clicked.connect(lambda: self.test_clicked.emit(self.config.name))
+            test_btn.clicked.connect(lambda: self.test_clicked.emit(self.connection_name))
             buttons.addWidget(test_btn)
             
-            # Disconnect button
+            # Disconnect button - emit resolved connection_name
             disconnect_btn = QPushButton("Disconnect")
             disconnect_btn.setFixedHeight(24)
             disconnect_btn.setStyleSheet("color: #c00;")
-            disconnect_btn.clicked.connect(lambda: self.action_clicked.emit(self.config.name))
+            disconnect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
             buttons.addWidget(disconnect_btn)
         else:
-            # Edit button for inactive connections only
+            # Edit button for inactive connections only - emit resolved connection_name
             edit_btn = QPushButton("Edit")
             edit_btn.setFixedHeight(24)
-            edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self.config.name))
+            edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self.connection_name))
             buttons.addWidget(edit_btn)
 
-            # Connect button for inactive connections
+            # Connect button for inactive connections - emit resolved connection_name
             connect_btn = QPushButton("Connect")
             connect_btn.setFixedHeight(24)
             connect_btn.setStyleSheet("color: #0a0;")
-            connect_btn.clicked.connect(lambda: self.action_clicked.emit(self.config.name))
+            connect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
             buttons.addWidget(connect_btn)
         
         layout.addLayout(buttons)
@@ -213,6 +227,10 @@ class MavlinkPanel(QWidget):
             self.mavlink_service.connection_changed.connect(self.on_connection_changed)
             self.mavlink_service.health_updated.connect(self.on_health_updated)
             self.mavlink_service.console_output.connect(self._on_console_output)
+            self.mavlink_service.connection_test_complete.connect(self._on_connection_test_complete)
+        
+        # Track pending single-connection test
+        self._pending_test_connection_name = None
 
     def init_ui(self):
         """Initialize the user interface."""
@@ -452,9 +470,10 @@ class MavlinkPanel(QWidget):
             self.system_id_input.setValue(device.system_id)
     
     def on_test_connection_clicked(self):
-        """Run a connection quality test.
+        """Run a connection quality test (non-blocking).
         
         Tests packet rate by sending a burst of messages and measuring response times.
+        Results are received via the _on_connection_test_complete callback.
         """
         if self.mavlink_service is None:
             return
@@ -467,48 +486,59 @@ class MavlinkPanel(QWidget):
         self.test_results_label.setText("<span style='color: orange;'>Testing connection quality...</span>")
         self.test_connection_btn.setEnabled(False)
         
-        # Get test results from service
-        try:
-            test_results = self.mavlink_service.run_connection_test()
+        # Clear pending single-connection test marker (this is test all)
+        self._pending_test_connection_name = None
+        
+        # Start non-blocking test - results delivered via signal
+        self.mavlink_service.run_connection_test()
+    
+    def _on_connection_test_complete(self, test_results: dict):
+        """Handle connection test results from the service (non-blocking callback).
+        
+        Args:
+            test_results: Dictionary mapping system_id to test result metrics
+        """
+        # Check if this was a single-connection test
+        if self._pending_test_connection_name is not None:
+            self._show_single_connection_test_result(test_results)
+            self._pending_test_connection_name = None
+            return
+        
+        # Multi-connection test result display
+        result_text = "<b>Test Results:</b><br>"
+        for sys_id, result in test_results.items():
+            rate_hz = result.get('rate_hz', 0)
+            latency_ms = result.get('latency_ms', 0)
+            lost_packets = result.get('lost_packets', 0)
+            messages_sent = result.get('messages_sent', 0)
+            messages_received = result.get('messages_received', 0)
+
+            # Color code based on quality thresholds
+            if rate_hz >= self.GOOD_RATE_HZ and latency_ms < self.GOOD_LATENCY_MS and lost_packets == 0:
+                color = 'green'
+                status = '✓ Good'
+            elif rate_hz >= self.FAIR_RATE_HZ and latency_ms < self.FAIR_LATENCY_MS:
+                color = 'orange'
+                status = '◐ Fair'
+            else:
+                color = 'red'
+                status = '✗ Poor'
             
-            result_text = "<b>Test Results:</b><br>"
-            for sys_id, result in test_results.items():
-                rate_hz = result.get('rate_hz', 0)
-                latency_ms = result.get('latency_ms', 0)
-                lost_packets = result.get('lost_packets', 0)
-                messages_sent = result.get('messages_sent', 0)
-                messages_received = result.get('messages_received', 0)
+            result_text += f"<span style='color: {color};'><b>ID {sys_id}:</b> {status}</span><br>"
+            result_text += f"  • Rate: {rate_hz:.0f} Hz (messages/second)<br>"
+            result_text += f"  • Sent: {messages_sent:,} | Received: {messages_received:,}<br>"
 
-                # Color code based on quality thresholds
-                if rate_hz >= self.GOOD_RATE_HZ and latency_ms < self.GOOD_LATENCY_MS and lost_packets == 0:
-                    color = 'green'
-                    status = '✓ Good'
-                elif rate_hz >= self.FAIR_RATE_HZ and latency_ms < self.FAIR_LATENCY_MS:
-                    color = 'orange'
-                    status = '◐ Fair'
-                else:
-                    color = 'red'
-                    status = '✗ Poor'
-                
-                result_text += f"<span style='color: {color};'><b>ID {sys_id}:</b> {status}</span><br>"
-                result_text += f"  • Rate: {rate_hz:.0f} Hz (messages/second)<br>"
-                result_text += f"  • Sent: {messages_sent:,} | Received: {messages_received:,}<br>"
+            # Always show latency
+            result_text += f"  • Latency: {latency_ms:.1f} ms (round-trip time)<br>"
 
-                # Always show latency
-                result_text += f"  • Latency: {latency_ms:.1f} ms (round-trip time)<br>"
+            # Show dropped packets as ratio of total
+            total_expected = messages_received + lost_packets
+            result_text += f"  • Dropped: {lost_packets} out of {total_expected:,} packet(s)<br>"
 
-                # Show dropped packets as ratio of total
-                total_expected = messages_received + lost_packets
-                result_text += f"  • Dropped: {lost_packets} out of {total_expected:,} packet(s)<br>"
+            result_text += "<br>"
 
-                result_text += "<br>"
-
-            self.test_results_label.setText(result_text)
-            
-        except Exception as e:
-            self.test_results_label.setText(f"<span style='color: red;'>Test failed: {str(e)}</span>")
-        finally:
-            self.test_connection_btn.setEnabled(True)
+        self.test_results_label.setText(result_text)
+        self.test_connection_btn.setEnabled(True)
     
     def _create_telemetry_tab(self) -> QWidget:
         """Create the telemetry display tab with compact organized layout and plots."""
@@ -886,7 +916,8 @@ class MavlinkPanel(QWidget):
             conn = self.mavlink_service.get_connection_by_name(name)
             is_active = conn is not None and conn.is_connected
             
-            card = ConnectionCard(config, is_active=is_active)
+            # Pass the resolved name to ensure consistent signal emission
+            card = ConnectionCard(config, connection_name=name, is_active=is_active)
             card.action_clicked.connect(self._on_connection_action)
             card.link_object_clicked.connect(self._on_link_object_clicked)
             card.test_clicked.connect(self._on_test_single_connection)
@@ -989,7 +1020,11 @@ class MavlinkPanel(QWidget):
                 self.object_link_requested.emit(connection_name, selected_name)
     
     def _on_test_single_connection(self, connection_name: str):
-        """Test a single connection."""
+        """Test a single connection (non-blocking).
+        
+        Starts the test and stores the connection name. Results are handled
+        in _on_connection_test_complete via the service signal.
+        """
         if self.mavlink_service is None:
             return
         
@@ -997,11 +1032,32 @@ class MavlinkPanel(QWidget):
         if conn is None:
             return
         
-        results = self.mavlink_service.run_connection_test()
+        # Store which connection we're testing for the callback
+        self._pending_test_connection_name = connection_name
+        
+        # Start non-blocking test - results delivered via signal
+        self.mavlink_service.run_connection_test()
+    
+    def _show_single_connection_test_result(self, test_results: dict):
+        """Show test result dialog for a single connection.
+        
+        Called from _on_connection_test_complete when a single-connection test finishes.
+        
+        Args:
+            test_results: Dictionary mapping system_id to test result metrics
+        """
+        connection_name = self._pending_test_connection_name
+        if connection_name is None:
+            return
+        
+        conn = self.mavlink_service.get_connection_by_name(connection_name)
+        if conn is None:
+            return
+        
         sys_id = conn.config.system_id
         
-        if sys_id in results:
-            result = results[sys_id]
+        if sys_id in test_results:
+            result = test_results[sys_id]
             quality = result.get('quality', 'unknown')
             rate = result.get('rate_hz', 0)
             latency = result.get('latency_ms', 0)
@@ -1126,9 +1182,8 @@ class MavlinkPanel(QWidget):
                     linked_object_name=old_linked_object
                 )
 
-                # Remove old saved connection (by old name)
-                if hasattr(self.mavlink_service, '_saved_connections') and connection_name in self.mavlink_service._saved_connections:
-                    del self.mavlink_service._saved_connections[connection_name]
+                # Remove old saved connection (by old name) using public API
+                self.mavlink_service.remove_saved_connection(connection_name)
 
                 # Save updated config with new name
                 self.mavlink_service.save_connection_config(updated_config)
@@ -1336,7 +1391,11 @@ class MavlinkPanel(QWidget):
         return super().eventFilter(obj, event)
 
     def _console_refresh_connections(self):
-        """Repopulate the connection dropdown with currently active connections."""
+        """Repopulate the connection dropdown with currently active connections.
+        
+        Uses the public get_active_connections() API instead of accessing
+        internal _connections attribute directly.
+        """
         if not hasattr(self, '_console_conn_combo'):
             return
 
@@ -1347,8 +1406,10 @@ class MavlinkPanel(QWidget):
         if self.mavlink_service is None:
             self._console_conn_combo.addItem("No service", userData=None)
         else:
+            # Use public API to get active connections
+            all_connections = self.mavlink_service.get_active_connections()
             active = {
-                sid: conn for sid, conn in self.mavlink_service._connections.items()
+                sid: conn for sid, conn in all_connections.items()
                 if conn.is_connected
             }
             if not active:

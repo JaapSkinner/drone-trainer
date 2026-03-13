@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, List, Callable
 from enum import Enum
 
-from PyQt5.QtCore import pyqtSignal, QTimer
+from PyQt5.QtCore import pyqtSignal, QTimer, QThread
 
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from models.structs import (
@@ -102,6 +102,42 @@ class ConnectionState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     ERROR = "error"
+
+
+class ConnectionTestWorker(QThread):
+    """Worker thread to run connection tests off the UI thread.
+    
+    This prevents the UI from freezing during the test duration.
+    Results are emitted via the test_complete signal.
+    """
+    
+    test_complete = pyqtSignal(object)  # dict of test results
+    error = pyqtSignal(str)
+    
+    def __init__(self, mavlink_service, duration_secs: float = 2.0, parent=None):
+        """Initialize the connection test worker.
+        
+        Args:
+            mavlink_service: MavlinkService instance to test
+            duration_secs: Test duration in seconds
+            parent: Parent QObject
+        """
+        super().__init__(parent)
+        self._mavlink_service = mavlink_service
+        self._duration_secs = duration_secs
+    
+    def run(self):
+        """Run the connection test in a background thread."""
+        if self._mavlink_service is None:
+            self.error.emit("MAVLink service not available")
+            return
+        
+        try:
+            # Use the synchronous test method
+            results = self._mavlink_service._run_connection_test_sync(self._duration_secs)
+            self.test_complete.emit(results)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 @dataclass
@@ -649,6 +685,7 @@ class MavlinkService(ServiceBase):
     connection_changed = pyqtSignal(int, bool)   # system_id, connected
     health_updated = pyqtSignal(float, int)      # rate_hz, active_connections
     console_output = pyqtSignal(int, str)        # system_id, text line
+    connection_test_complete = pyqtSignal(object)  # dict of test results
 
     # Service update rates
     TELEMETRY_UPDATE_INTERVAL_MS = 50   # 20Hz for telemetry (low priority)
@@ -711,16 +748,14 @@ class MavlinkService(ServiceBase):
         """Update global MAVLink settings.
         
         Updates the service configuration including setpoint limits and rates.
+        Settings are stored in self._global_settings and read on-demand by
+        methods like _sanitize_setpoint() rather than being copied to
+        class-level constants.
         
         Args:
             settings: New global settings to apply
         """
         self._global_settings = settings
-        
-        # Update service parameters from settings
-        self.MAX_POSITION_MAGNITUDE = settings.max_position_magnitude
-        self.MAX_VELOCITY_MAGNITUDE = settings.max_velocity_magnitude
-        self.MAX_YAW_RATE = settings.max_yaw_rate
         
         # Helper to safely calculate interval (avoid division by zero)
         def rate_to_interval(rate_hz: float, default_ms: int) -> int:
@@ -1309,6 +1344,34 @@ class MavlinkService(ServiceBase):
         
         return sorted(names)
     
+    def get_active_connections(self) -> Dict[int, 'MavlinkConnection']:
+        """Get dictionary of currently active connections.
+        
+        Returns a copy of the active connections dictionary. Use this public
+        method instead of accessing the internal _connections attribute.
+        
+        Returns:
+            Dictionary mapping system_id to MavlinkConnection
+        """
+        return dict(self._connections)
+    
+    def remove_saved_connection(self, name: str) -> bool:
+        """Remove a saved connection configuration by name.
+        
+        Use this public method instead of accessing the internal
+        _saved_connections attribute directly.
+        
+        Args:
+            name: Name of the saved connection to remove
+            
+        Returns:
+            True if removed, False if not found
+        """
+        if name in self._saved_connections:
+            del self._saved_connections[name]
+            return True
+        return False
+    
     def discover_devices(self, timeout_secs: float = 3.0) -> List:
         """Discover MAVLink devices on the network.
 
@@ -1339,11 +1402,27 @@ class MavlinkService(ServiceBase):
         # --- Build a minimal MAVLink v1 GCS HEARTBEAT packet by hand ---
         # This avoids needing an active mavutil connection at this point and
         # lets us probe each port before binding a listener to it.
-        # MAVLink v1 HEARTBEAT: magic=0xFE, len=9, seq=0, sys=255, comp=0,
-        # msg_id=0 (HEARTBEAT), type=6 (GCS), autopilot=8 (INVALID),
-        # base_mode=0, custom_mode=0, system_status=0, mavlink_version=3
-        _HEARTBEAT_PAYLOAD = bytes([6, 8, 0, 0, 0, 0, 3])  # 7 bytes
+        # 
+        # MAVLink v1 HEARTBEAT layout:
+        #   Header: magic(1) + len(1) + seq(1) + sys(1) + comp(1) + msg_id(1)
+        #   Payload (9 bytes):
+        #     - custom_mode: uint32 (4 bytes, little-endian)
+        #     - type: uint8 (1 byte) - MAV_TYPE_GCS = 6
+        #     - autopilot: uint8 (1 byte) - MAV_AUTOPILOT_INVALID = 8
+        #     - base_mode: uint8 (1 byte) - 0
+        #     - system_status: uint8 (1 byte) - MAV_STATE_UNINIT = 0
+        #     - mavlink_version: uint8 (1 byte) - 3
+        #   Checksum: CRC-16/MCRF4XX (2 bytes)
+        _HEARTBEAT_PAYLOAD = bytes([
+            0, 0, 0, 0,  # custom_mode (uint32 little-endian)
+            6,           # type (MAV_TYPE_GCS)
+            8,           # autopilot (MAV_AUTOPILOT_INVALID)
+            0,           # base_mode
+            0,           # system_status (MAV_STATE_UNINIT)
+            3,           # mavlink_version
+        ])  # 9 bytes total
         _crc_extra = 50  # HEARTBEAT CRC extra byte
+        
         # CRC-16/MCRF4XX over (len, seq, sys, comp, msg_id) + payload + crc_extra
         def _mavlink_crc(data: bytes) -> int:
             crc = 0xFFFF
@@ -1497,11 +1576,54 @@ class MavlinkService(ServiceBase):
 
         return discovered
     
-    def run_connection_test(self, duration_secs: float = 2.0) -> dict:
-        """Run a connection quality test for all active connections.
+    def run_connection_test(self, duration_secs: float = 2.0):
+        """Run a connection quality test for all active connections (non-blocking).
         
-        Sends ping messages to measure round-trip time and collects current metrics.
-
+        Spawns a worker thread to run the test and emits results via the
+        connection_test_complete signal. This prevents UI freezing during tests.
+        
+        Args:
+            duration_secs: Duration of test in seconds
+        """
+        # Clean up any previous worker to avoid memory leaks
+        if hasattr(self, '_test_worker') and self._test_worker is not None:
+            if self._test_worker.isRunning():
+                self._test_worker.wait(1000)  # Wait up to 1 second for completion
+            self._test_worker.deleteLater()
+            self._test_worker = None
+        
+        # Create and start worker thread
+        self._test_worker = ConnectionTestWorker(self, duration_secs, parent=self)
+        self._test_worker.test_complete.connect(self._on_connection_test_complete)
+        self._test_worker.error.connect(self._on_connection_test_error)
+        self._test_worker.finished.connect(self._on_test_worker_finished)
+        self._test_worker.start()
+    
+    def _on_connection_test_error(self, error_msg: str):
+        """Handle connection test error from worker thread.
+        
+        Emits empty results with error information.
+        """
+        self.log(f"Connection test error: {error_msg}", DebugLevel.LOG)
+        # Emit empty results to signal completion with error
+        self.connection_test_complete.emit({})
+    
+    def _on_test_worker_finished(self):
+        """Clean up worker after completion."""
+        if hasattr(self, '_test_worker') and self._test_worker is not None:
+            self._test_worker.deleteLater()
+            self._test_worker = None
+    
+    def _on_connection_test_complete(self, results: dict):
+        """Handle connection test completion from worker thread."""
+        self.connection_test_complete.emit(results)
+    
+    def _run_connection_test_sync(self, duration_secs: float = 2.0) -> dict:
+        """Run a connection quality test synchronously (blocks caller).
+        
+        This is the internal implementation called by ConnectionTestWorker.
+        Do not call from UI thread - use run_connection_test() instead.
+        
         Args:
             duration_secs: Duration of test in seconds
             
@@ -1574,6 +1696,7 @@ class MavlinkService(ServiceBase):
         """Validate and sanitize a setpoint before sending.
         
         Performs safety checks on setpoint values to prevent dangerous commands.
+        Uses limits from global settings (self._global_settings) for configurability.
         
         Args:
             setpoint: Setpoint to validate
@@ -1581,20 +1704,25 @@ class MavlinkService(ServiceBase):
         Returns:
             True if setpoint is valid, False if it should be rejected
         """
+        # Get limits from global settings (configurable per-session)
+        max_pos = self._global_settings.max_position_magnitude
+        max_vel = self._global_settings.max_velocity_magnitude
+        max_yaw = self._global_settings.max_yaw_rate
+        
         # Check position magnitude
         pos_magnitude = (setpoint.x**2 + setpoint.y**2 + setpoint.z**2) ** 0.5
-        if pos_magnitude > self.MAX_POSITION_MAGNITUDE:
+        if pos_magnitude > max_pos:
             return False
         
         # Check velocity magnitude if specified
         if setpoint.vx is not None and setpoint.vy is not None and setpoint.vz is not None:
             vel_magnitude = (setpoint.vx**2 + setpoint.vy**2 + setpoint.vz**2) ** 0.5
-            if vel_magnitude > self.MAX_VELOCITY_MAGNITUDE:
+            if vel_magnitude > max_vel:
                 return False
         
         # Check yaw rate if specified
         if setpoint.yaw_rate is not None:
-            if abs(setpoint.yaw_rate) > self.MAX_YAW_RATE:
+            if abs(setpoint.yaw_rate) > max_yaw:
                 return False
         
         return True

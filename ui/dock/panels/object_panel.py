@@ -273,6 +273,12 @@ class ObjectPanel(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             selected_name = combo.currentData()
 
+            # IMPORTANT: Capture the old linked connection name BEFORE modifying
+            # the object config. This is needed to properly unlink the old connection.
+            old_linked = None
+            if hasattr(obj, 'mavlink_config') and obj.mavlink_config is not None:
+                old_linked = obj.mavlink_config.linked_connection_name
+
             # Update object config
             if hasattr(obj, 'mavlink_config'):
                 obj.mavlink_config.linked_connection_name = selected_name
@@ -289,13 +295,13 @@ class ObjectPanel(QWidget):
 
             # Update mavlink service bidirectional link
             if self.mavlink_service:
+                # First unlink the old connection if there was one and it's different
+                if old_linked and old_linked != selected_name:
+                    self.mavlink_service.unlink_connection_from_object(old_linked)
+                
+                # Then link the new connection if one was selected
                 if selected_name:
                     self.mavlink_service.link_connection_to_object(selected_name, obj.name)
-                else:
-                    # Find and unlink the old connection
-                    old_linked = getattr(obj, 'mavlink_config', MavlinkObjectConfig()).linked_connection_name
-                    if old_linked:
-                        self.mavlink_service.unlink_connection_from_object(old_linked)
 
     def _on_mavlink_enabled_toggled(self, obj, enabled, options_container):
         """Handle MAVLink enabled state change with UI update.
