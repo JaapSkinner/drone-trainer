@@ -39,6 +39,9 @@ coverage.xml
 *.~ 
 *.ipynb_checkpoints
 
+# Persistent storage data (user-specific, regenerated at runtime)
+storage_data/
+
 # IDE workspace files (editor-local, avoid merge conflicts)
 *.code-workspace
 

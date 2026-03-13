@@ -6,10 +6,12 @@ from services.input_service import InputService, InputType
 from services.object_service import ObjectService
 from services.status_service import StatusService
 from services.mavlink_service import MavlinkService
+from services.storage_service import StorageService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
-from models.structs import PositionData
+from models.structs import PositionData, MavlinkGlobalSettings, MavlinkConnectionConfig
+from models.storage_models import AppSettings, ConnectionEntry
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
 from ui.status_panel.status_panel import StatusPanel
@@ -35,6 +37,9 @@ class MainWindow(QMainWindow):
             self.setFont(QFont(family, 11))
             QApplication.setFont(QFont(family, 11))
 
+        # --- Persistent storage (loaded synchronously before other services) ---
+        self.storage_service = StorageService()
+        self.storage_service.on_start()  # load data from disk immediately
 
         # self.vicon = vicon
 
@@ -43,11 +48,20 @@ class MainWindow(QMainWindow):
         self.glWidget = None
         self.initUI()
 
-        # Initialize input service with default settings
+        # --- Apply persisted settings to UI and services ---
+        saved = self.storage_service.get_settings()
+
+        # Resolve input type from stored string
+        input_type_map = {t.value.lower(): t for t in InputType}
+        restored_input_type = input_type_map.get(
+            saved.input_type.lower(), InputType.CONTROLLER
+        )
+
+        # Initialize input service with persisted settings
         self.input_service = InputService(
             self.glWidget,
-            input_type=InputType.CONTROLLER,
-            sensitivity=1.0
+            input_type=restored_input_type,
+            sensitivity=saved.input_sensitivity
         )
         self.object_service.load_input_service(self.input_service)
         
@@ -61,9 +75,37 @@ class MainWindow(QMainWindow):
         # TODO: Validate DTRG-Mavlink dialect presence at runtime, wire any remaining custom DTRG
         #       message handling, and surface a UI warning when DTRG_DIALECT_BUILT is False.
         self.mavlink_service = MavlinkService()
+
+        # Apply persisted MAVLink global settings
+        mavlink_settings = self._build_mavlink_settings(saved)
+        self.mavlink_service.update_global_settings(mavlink_settings)
+
+        # Restore saved connections into the mavlink service
+        for entry in self.storage_service.list_connections():
+            config = MavlinkConnectionConfig(
+                connection_string=entry.connection_string,
+                system_id=entry.system_id,
+                component_id=entry.component_id,
+                source_system=entry.source_system,
+                source_component=entry.source_component,
+                heartbeat_interval=entry.heartbeat_interval,
+                mocap_rate_hz=entry.mocap_rate_hz,
+                name=entry.name,
+                linked_object_name=entry.linked_object_name,
+            )
+            self.mavlink_service.save_connection_config(config)
         
         # Connect mavlink service to dock panel
         self.dock.set_mavlink_service(self.mavlink_service)
+
+        # Apply persisted viewport zoom sensitivity
+        if hasattr(self, 'glWidget') and self.glWidget:
+            self.glWidget.set_zoom_sensitivity(saved.zoom_sensitivity)
+        # Sync the settings panel slider
+        self.settings_panel.zoom_sensitivity_slider.blockSignals(True)
+        self.settings_panel.zoom_sensitivity_slider.setValue(int(saved.zoom_sensitivity * 100))
+        self.settings_panel.zoom_sensitivity_label.setText(f"{saved.zoom_sensitivity:.1f}x")
+        self.settings_panel.zoom_sensitivity_slider.blockSignals(False)
 
         self.status_service = StatusService(
             self.status_panel,
@@ -81,8 +123,15 @@ class MainWindow(QMainWindow):
         
         # self.vicon.position_updated.connect(self.update_vicon_position)
         
+        # --- Wire auto-save hooks ---
+        self.settings_panel.zoom_sensitivity_changed.connect(self._on_save_zoom_sensitivity)
+        self.settings_panel.mavlink_settings_changed.connect(self._on_save_mavlink_settings)
+        self.mavlink_service.connection_changed.connect(self._on_connection_changed)
 
-        
+        # Pass storage service to mavlink panel so connection edits/deletes
+        # are automatically persisted.
+        self.dock.mavlink_panel.set_storage_service(self.storage_service)
+
         self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
 
 
@@ -185,12 +234,22 @@ class MainWindow(QMainWindow):
         """Handle input type change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_input_type(input_type)
+        # Persist input type
+        if hasattr(self, 'storage_service'):
+            settings = self.storage_service.get_settings()
+            settings.input_type = input_type.value if hasattr(input_type, 'value') else str(input_type)
+            self.storage_service.update_settings(settings)
     
     @pyqtSlot(float)
     def on_sensitivity_changed(self, sensitivity):
         """Handle sensitivity change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_sensitivity(sensitivity)
+        # Persist input sensitivity
+        if hasattr(self, 'storage_service'):
+            settings = self.storage_service.get_settings()
+            settings.input_sensitivity = sensitivity
+            self.storage_service.update_settings(settings)
 
     @pyqtSlot(float)
     def on_zoom_sensitivity_changed(self, sensitivity):
@@ -231,6 +290,92 @@ class MainWindow(QMainWindow):
                 # Disable joystick control - set controlled object to None
                 self.input_service.set_controlled_object(None)
         
+    # ------------------------------------------------------------------
+    # Storage auto-save hooks
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_mavlink_settings(saved: AppSettings) -> MavlinkGlobalSettings:
+        """Create a MavlinkGlobalSettings from persisted AppSettings."""
+        return MavlinkGlobalSettings(
+            default_connection_string=saved.default_connection_string,
+            default_mocap_rate_hz=saved.default_mocap_rate_hz,
+            default_setpoint_rate_hz=saved.default_setpoint_rate_hz,
+            telemetry_rate_hz=saved.telemetry_rate_hz,
+            heartbeat_interval=saved.heartbeat_interval,
+            connection_timeout=saved.connection_timeout,
+            enable_setpoint_sanitization=saved.enable_setpoint_sanitization,
+            max_position_magnitude=saved.max_position_magnitude,
+            max_velocity_magnitude=saved.max_velocity_magnitude,
+            max_yaw_rate=saved.max_yaw_rate,
+            source_system_id=saved.source_system_id,
+            source_component_id=saved.source_component_id,
+            auto_reconnect=saved.auto_reconnect,
+            reconnect_interval=saved.reconnect_interval,
+            auto_connect_discovered=saved.auto_connect_discovered,
+        )
+
+    def _on_save_zoom_sensitivity(self, value: float):
+        """Persist zoom sensitivity when the slider changes."""
+        settings = self.storage_service.get_settings()
+        settings.zoom_sensitivity = value
+        self.storage_service.update_settings(settings)
+
+    def _on_save_mavlink_settings(self, mavlink_settings):
+        """Persist MAVLink global settings when any field changes."""
+        settings = self.storage_service.get_settings()
+        settings.default_connection_string = mavlink_settings.default_connection_string
+        settings.default_mocap_rate_hz = mavlink_settings.default_mocap_rate_hz
+        settings.default_setpoint_rate_hz = mavlink_settings.default_setpoint_rate_hz
+        settings.telemetry_rate_hz = mavlink_settings.telemetry_rate_hz
+        settings.heartbeat_interval = mavlink_settings.heartbeat_interval
+        settings.connection_timeout = mavlink_settings.connection_timeout
+        settings.enable_setpoint_sanitization = mavlink_settings.enable_setpoint_sanitization
+        settings.max_position_magnitude = mavlink_settings.max_position_magnitude
+        settings.max_velocity_magnitude = mavlink_settings.max_velocity_magnitude
+        settings.max_yaw_rate = mavlink_settings.max_yaw_rate
+        settings.source_system_id = mavlink_settings.source_system_id
+        settings.source_component_id = mavlink_settings.source_component_id
+        settings.auto_reconnect = mavlink_settings.auto_reconnect
+        settings.reconnect_interval = mavlink_settings.reconnect_interval
+        settings.auto_connect_discovered = mavlink_settings.auto_connect_discovered
+        self.storage_service.update_settings(settings)
+
+    def _on_connection_changed(self, system_id: int, connected: bool):
+        """Persist connection configs whenever a connection is added or removed.
+        
+        This is triggered by the mavlink_service.connection_changed signal.
+        After a connect, the active connection config is upserted.
+        After a disconnect, the mavlink_service already saves the config in
+        _saved_connections; we mirror that to persistent storage.
+        """
+        self._sync_connections_to_storage()
+
+    def _sync_connections_to_storage(self):
+        """Write the current set of known connections to persistent storage."""
+        all_conns = self.mavlink_service.get_all_connections()
+        # Build the set of connection names we want to keep
+        current_names = set()
+        for name, config in all_conns.items():
+            entry = ConnectionEntry(
+                name=name,
+                connection_string=config.connection_string,
+                system_id=config.system_id,
+                component_id=config.component_id,
+                source_system=config.source_system,
+                source_component=config.source_component,
+                heartbeat_interval=config.heartbeat_interval,
+                mocap_rate_hz=config.mocap_rate_hz,
+                linked_object_name=config.linked_object_name,
+            )
+            self.storage_service.upsert_connection(entry)
+            current_names.add(name)
+
+        # Remove any entries no longer known to the mavlink service
+        for stored in self.storage_service.list_connections():
+            if stored.name not in current_names:
+                self.storage_service.delete_connection(stored.name)
+
     def changeEvent(self, event):
         """Handle window state changes, including focus loss."""
         from PyQt5.QtCore import QEvent as _QEvent
@@ -247,6 +392,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Properly stop all services before closing the application."""
+        # Persist latest connection state before shutting down
+        if hasattr(self, 'storage_service') and hasattr(self, 'mavlink_service'):
+            self._sync_connections_to_storage()
+
         # Stop services to ensure timers are stopped in their own threads
         if hasattr(self, 'status_service'):
             self.status_service.stop()

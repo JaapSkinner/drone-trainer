@@ -218,6 +218,7 @@ class MavlinkPanel(QWidget):
         self._telemetry_data: dict = {}  # system_id -> TelemetryData
         self._connection_cards: dict = {}  # connection_name -> ConnectionCard
         self._telemetry_labels: dict = {}
+        self._storage_service = None  # Set via set_storage_service()
         
         self.init_ui()
         
@@ -1188,6 +1189,24 @@ class MavlinkPanel(QWidget):
                 # Save updated config with new name
                 self.mavlink_service.save_connection_config(updated_config)
 
+                # Persist the edit to storage
+                if self._storage_service is not None:
+                    from models.storage_models import ConnectionEntry
+                    # Remove old entry if name changed
+                    if connection_name != updated_config.name:
+                        self._storage_service.delete_connection(connection_name)
+                    self._storage_service.upsert_connection(ConnectionEntry(
+                        name=updated_config.name,
+                        connection_string=updated_config.connection_string,
+                        system_id=updated_config.system_id,
+                        component_id=updated_config.component_id,
+                        source_system=updated_config.source_system,
+                        source_component=updated_config.source_component,
+                        heartbeat_interval=updated_config.heartbeat_interval,
+                        mocap_rate_hz=updated_config.mocap_rate_hz,
+                        linked_object_name=updated_config.linked_object_name,
+                    ))
+
             # Refresh the connections list
             self._refresh_connections_list()
 
@@ -1281,6 +1300,14 @@ class MavlinkPanel(QWidget):
             object_service: Object service instance
         """
         self.object_service = object_service
+
+    def set_storage_service(self, storage_service):
+        """Set the storage service reference for persisting connection edits.
+
+        Args:
+            storage_service: StorageService instance
+        """
+        self._storage_service = storage_service
 
     # ------------------------------------------------------------------
     # Console tab
