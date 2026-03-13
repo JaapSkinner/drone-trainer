@@ -13,6 +13,7 @@ or when setpoint is applied via "Send Position".
 Ghost mode shows a "Next Setpoint" column for visualizing planned movements.
 """
 
+import numpy as np
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
     QGroupBox, QFormLayout, QPushButton, QDoubleSpinBox,
@@ -20,8 +21,8 @@ from PyQt5.QtWidgets import (
     QSlider
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont
 from models.debug_text import DebugText
+from models.scene_object import SceneObject
 from services.input_service import InputType
 
 
@@ -1147,9 +1148,38 @@ class CommandPanel(QWidget):
         # Determine which setpoint to update
         target = self.next_setpoint if self.ghost_mode else self.setpoint
         
-        # Apply delta to target setpoint
-        for i in range(7):
+        # Apply position delta directly (additive)
+        for i in range(3):
             target[i] += pose_delta[i]
+        
+        # Apply rotation delta using quaternion multiplication and normalize
+        # This prevents quaternion drift away from unit length
+        if any(pose_delta[3:7]):  # Only if there's rotation delta
+            # Current quaternion: [qw, qx, qy, qz]
+            current_quat = np.array(target[3:7])
+            # Delta quaternion: [dqw, dqx, dqy, dqz]
+            delta_quat = np.array(pose_delta[3:7])
+            
+            # Add delta to create incremental rotation quaternion
+            # For small deltas, this approximates an incremental rotation
+            incremental_quat = np.array([1.0, 0.0, 0.0, 0.0]) + delta_quat
+            
+            # Normalize the incremental quaternion
+            norm = np.linalg.norm(incremental_quat)
+            if norm > 1e-6:
+                incremental_quat /= norm
+            
+            # Multiply: new_quat = incremental_quat * current_quat
+            new_quat = SceneObject.quat_mult(incremental_quat, current_quat)
+            
+            # Normalize result to ensure unit quaternion
+            norm = np.linalg.norm(new_quat)
+            if norm > 1e-6:
+                new_quat /= norm
+            
+            # Update target quaternion
+            for i in range(4):
+                target[3 + i] = new_quat[i]
         
         # If not in ghost mode, also update the object position
         if not self.ghost_mode:
