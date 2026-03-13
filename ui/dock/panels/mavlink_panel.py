@@ -13,11 +13,34 @@ from PyQt5.QtWidgets import (
     QSpinBox, QTabWidget, QGridLayout, QComboBox, QMessageBox,
     QProgressBar, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer, QThread
 from PyQt5.QtGui import QFont
 import math
 
 from models.structs import MavlinkConnectionConfig, MavlinkTelemetryData
+
+
+class DiscoveryWorker(QThread):
+    """Worker thread to perform MAVLink device discovery off the UI thread."""
+
+    devices_discovered = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, mavlink_service, timeout_secs: float = 2.0, parent=None):
+        super().__init__(parent)
+        self._mavlink_service = mavlink_service
+        self._timeout_secs = timeout_secs
+
+    def run(self):
+        if self._mavlink_service is None:
+            self.error.emit("MAVLink service not available")
+            return
+
+        try:
+            devices = self._mavlink_service.discover_devices(timeout_secs=self._timeout_secs)
+            self.devices_discovered.emit(devices)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class ConnectionCard(QFrame):
@@ -335,50 +358,52 @@ class MavlinkPanel(QWidget):
         progress.setStyleSheet("color: #666;")
         self.discovered_layout.addWidget(progress)
         
-        # Use a timer to make UI responsive
-        QTimer.singleShot(100, self._run_discovery)
+        # Run discovery in a worker thread to avoid blocking the UI thread
+        self._discovery_worker = DiscoveryWorker(
+            self.mavlink_service,
+            timeout_secs=2.0,
+            parent=self,
+        )
+        self._discovery_worker.devices_discovered.connect(self._run_discovery)
+        self._discovery_worker.error.connect(self._show_discovery_error)
+        self._discovery_worker.finished.connect(self._on_discovery_finished)
+        self._discovery_worker.start()
     
-    def _run_discovery(self):
-        """Run device discovery in background."""
-        if self.mavlink_service is None:
-            self._show_discovery_error("MAVLink service not available")
-            return
+    def _run_discovery(self, devices):
+        """Update UI with discovery results (called when worker completes)."""
+        # Clear layout
+        while self.discovered_layout.count() > 0:
+            child = self.discovered_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
         
-        try:
-            devices = self.mavlink_service.discover_devices(timeout_secs=2.0)
-
-            # Clear layout
-            while self.discovered_layout.count() > 0:
-                child = self.discovered_layout.takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-            
-            if not devices:
-                no_devices = QLabel("No devices found. Make sure drones are powered on.")
-                no_devices.setStyleSheet("color: #888;")
-                self.discovered_layout.addWidget(no_devices)
-            else:
-                for device in devices:
-                    row = QHBoxLayout()
-                    label = QLabel(f"{device.connection_string}")
-                    row.addWidget(label)
-                    row.addStretch()
-                    
-                    use_btn = QPushButton("Use")
-                    use_btn.clicked.connect(
-                        lambda checked, d=device: self._use_discovered_device(d)
-                    )
-                    row.addWidget(use_btn)
-                    
-                    row_widget = QWidget()
-                    row_widget.setLayout(row)
-                    self.discovered_layout.addWidget(row_widget)
-            
-        except Exception as e:
-            self._show_discovery_error(str(e))
-        finally:
-            self.discover_btn.setEnabled(True)
-            self.discover_btn.setText("Discover Devices")
+        if not devices:
+            no_devices = QLabel("No devices found. Make sure drones are powered on.")
+            no_devices.setStyleSheet("color: #888;")
+            self.discovered_layout.addWidget(no_devices)
+        else:
+            for device in devices:
+                row = QHBoxLayout()
+                label = QLabel(f"{device.connection_string}")
+                row.addWidget(label)
+                row.addStretch()
+                
+                use_btn = QPushButton("Use")
+                use_btn.clicked.connect(
+                    lambda checked, d=device: self._use_discovered_device(d)
+                )
+                row.addWidget(use_btn)
+                
+                row_widget = QWidget()
+                row_widget.setLayout(row)
+                self.discovered_layout.addWidget(row_widget)
+    
+    def _on_discovery_finished(self):
+        """Re-enable discovery UI after the worker thread has finished."""
+        self.discover_btn.setEnabled(True)
+        self.discover_btn.setText("Discover Devices")
+        # Drop the reference to allow the worker to be garbage collected
+        self._discovery_worker = None
     
     def _show_discovery_error(self, message: str):
         """Show discovery error message."""
