@@ -207,6 +207,13 @@ class MavlinkConnection:
                 return False
             
             self.status.system_id = msg.get_srcSystem()
+            # Align config.system_id with the actual system ID from the first heartbeat
+            # to ensure all subsequent operations target the correct drone.
+            try:
+                self.config.system_id = self.status.system_id
+            except AttributeError:
+                # If config has no system_id attribute, safely ignore to avoid breaking existing code.
+                pass
             self.status.connected = True
             self.status.last_heartbeat = time.time()
             self._state = ConnectionState.CONNECTED
