@@ -1,11 +1,14 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider, 
-                             QGroupBox, QFormLayout, QPushButton, QComboBox)
+                             QGroupBox, QFormLayout, QPushButton, QComboBox,
+                             QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
+                             QScrollArea)
 from PyQt5.QtCore import Qt, pyqtSignal
 from models.debug_text import DebugText
+from models.structs import MavlinkGlobalSettings
 
 
 class SettingsPanel(QWidget):
-    """Settings panel for viewport and application settings."""
+    """Settings panel for viewport, application, and MAVLink settings."""
     NavTag = "settings"
     
     # Signals to notify when viewport settings change
@@ -13,22 +16,52 @@ class SettingsPanel(QWidget):
     reset_camera_requested = pyqtSignal()
     lock_object_changed = pyqtSignal(object)  # Emits SceneObject or None
     
-    def __init__(self, parent=None, object_service=None):
+    # Signal for MAVLink settings changes
+    mavlink_settings_changed = pyqtSignal(object)  # Emits MavlinkGlobalSettings
+    
+    def __init__(self, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
         self.object_service = object_service
+        self.mavlink_service = mavlink_service
+        self._mavlink_settings = MavlinkGlobalSettings()
         self.init_ui()
     
     def init_ui(self):
         """Initialize the user interface."""
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignTop)
+        main_layout = QVBoxLayout(self)
+        main_layout.setAlignment(Qt.AlignTop)
         
         # Title
         title = QLabel("Settings")
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
+        main_layout.addWidget(title)
+        
+        # Scroll area for all settings
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setAlignment(Qt.AlignTop)
         
         # Viewport Settings Group
+        viewport_group = self._create_viewport_group()
+        layout.addWidget(viewport_group)
+        
+        # MAVLink Settings Group
+        mavlink_group = self._create_mavlink_settings_group()
+        layout.addWidget(mavlink_group)
+        
+        # Viewport Controls Info Group
+        info_group = self._create_info_group()
+        layout.addWidget(info_group)
+        
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+    
+    def _create_viewport_group(self):
+        """Create the viewport settings group."""
         viewport_group = QGroupBox("Viewport Controls")
         viewport_layout = QFormLayout()
         
@@ -62,9 +95,160 @@ class SettingsPanel(QWidget):
         viewport_layout.addRow("", self.reset_camera_btn)
         
         viewport_group.setLayout(viewport_layout)
-        layout.addWidget(viewport_group)
+        return viewport_group
+    
+    def _create_mavlink_settings_group(self):
+        """Create the MAVLink global settings group."""
+        group = QGroupBox("MAVLink Global Settings")
+        layout = QFormLayout()
         
-        # Viewport Controls Info Group
+        # Default connection string
+        self.mavlink_conn_edit = QLineEdit(self._mavlink_settings.default_connection_string)
+        self.mavlink_conn_edit.setPlaceholderText("udpin:0.0.0.0:14550")
+        self.mavlink_conn_edit.textChanged.connect(
+            lambda text: self._update_mavlink_setting('default_connection_string', text)
+        )
+        layout.addRow("Default Connection:", self.mavlink_conn_edit)
+        
+        # Source System ID
+        self.source_system_spin = QSpinBox()
+        self.source_system_spin.setRange(1, 255)
+        self.source_system_spin.setValue(self._mavlink_settings.source_system_id)
+        self.source_system_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('source_system_id', val)
+        )
+        layout.addRow("Source System ID:", self.source_system_spin)
+        
+        # Source Component ID
+        self.source_component_spin = QSpinBox()
+        self.source_component_spin.setRange(0, 255)
+        self.source_component_spin.setValue(self._mavlink_settings.source_component_id)
+        self.source_component_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('source_component_id', val)
+        )
+        layout.addRow("Source Component ID:", self.source_component_spin)
+        
+        # Default MoCap Rate
+        self.mocap_rate_spin = QDoubleSpinBox()
+        self.mocap_rate_spin.setRange(1, 200)
+        self.mocap_rate_spin.setValue(self._mavlink_settings.default_mocap_rate_hz)
+        self.mocap_rate_spin.setSuffix(" Hz")
+        self.mocap_rate_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('default_mocap_rate_hz', val)
+        )
+        layout.addRow("Default MoCap Rate:", self.mocap_rate_spin)
+        
+        # Default Setpoint Rate
+        self.setpoint_rate_spin = QDoubleSpinBox()
+        self.setpoint_rate_spin.setRange(1, 100)
+        self.setpoint_rate_spin.setValue(self._mavlink_settings.default_setpoint_rate_hz)
+        self.setpoint_rate_spin.setSuffix(" Hz")
+        self.setpoint_rate_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('default_setpoint_rate_hz', val)
+        )
+        layout.addRow("Default Setpoint Rate:", self.setpoint_rate_spin)
+        
+        # Telemetry Rate
+        self.telemetry_rate_spin = QDoubleSpinBox()
+        self.telemetry_rate_spin.setRange(1, 50)
+        self.telemetry_rate_spin.setValue(self._mavlink_settings.telemetry_rate_hz)
+        self.telemetry_rate_spin.setSuffix(" Hz")
+        self.telemetry_rate_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('telemetry_rate_hz', val)
+        )
+        layout.addRow("Telemetry Rate:", self.telemetry_rate_spin)
+        
+        # Heartbeat Interval
+        self.heartbeat_spin = QDoubleSpinBox()
+        self.heartbeat_spin.setRange(0.5, 5.0)
+        self.heartbeat_spin.setValue(self._mavlink_settings.heartbeat_interval)
+        self.heartbeat_spin.setSuffix(" s")
+        self.heartbeat_spin.setSingleStep(0.5)
+        self.heartbeat_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('heartbeat_interval', val)
+        )
+        layout.addRow("Heartbeat Interval:", self.heartbeat_spin)
+        
+        # Connection Timeout
+        self.timeout_spin = QDoubleSpinBox()
+        self.timeout_spin.setRange(1, 30)
+        self.timeout_spin.setValue(self._mavlink_settings.connection_timeout)
+        self.timeout_spin.setSuffix(" s")
+        self.timeout_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('connection_timeout', val)
+        )
+        layout.addRow("Connection Timeout:", self.timeout_spin)
+        
+        # Setpoint Sanitization
+        self.sanitize_cb = QCheckBox()
+        self.sanitize_cb.setChecked(self._mavlink_settings.enable_setpoint_sanitization)
+        self.sanitize_cb.stateChanged.connect(
+            lambda state: self._update_mavlink_setting('enable_setpoint_sanitization', state == 2)
+        )
+        layout.addRow("Enable Setpoint Checks:", self.sanitize_cb)
+        
+        # Max Position Magnitude
+        self.max_pos_spin = QDoubleSpinBox()
+        self.max_pos_spin.setRange(1, 1000)
+        self.max_pos_spin.setValue(self._mavlink_settings.max_position_magnitude)
+        self.max_pos_spin.setSuffix(" m")
+        self.max_pos_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('max_position_magnitude', val)
+        )
+        layout.addRow("Max Position:", self.max_pos_spin)
+        
+        # Max Velocity Magnitude
+        self.max_vel_spin = QDoubleSpinBox()
+        self.max_vel_spin.setRange(0.1, 50)
+        self.max_vel_spin.setValue(self._mavlink_settings.max_velocity_magnitude)
+        self.max_vel_spin.setSuffix(" m/s")
+        self.max_vel_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('max_velocity_magnitude', val)
+        )
+        layout.addRow("Max Velocity:", self.max_vel_spin)
+        
+        # Max Yaw Rate
+        self.max_yaw_spin = QDoubleSpinBox()
+        self.max_yaw_spin.setRange(0.1, 10)
+        self.max_yaw_spin.setValue(self._mavlink_settings.max_yaw_rate)
+        self.max_yaw_spin.setSuffix(" rad/s")
+        self.max_yaw_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('max_yaw_rate', val)
+        )
+        layout.addRow("Max Yaw Rate:", self.max_yaw_spin)
+        
+        # Auto Reconnect
+        self.auto_reconnect_cb = QCheckBox()
+        self.auto_reconnect_cb.setChecked(self._mavlink_settings.auto_reconnect)
+        self.auto_reconnect_cb.stateChanged.connect(
+            lambda state: self._update_mavlink_setting('auto_reconnect', state == 2)
+        )
+        layout.addRow("Auto Reconnect:", self.auto_reconnect_cb)
+        
+        # Reconnect Interval
+        self.reconnect_spin = QDoubleSpinBox()
+        self.reconnect_spin.setRange(1, 60)
+        self.reconnect_spin.setValue(self._mavlink_settings.reconnect_interval)
+        self.reconnect_spin.setSuffix(" s")
+        self.reconnect_spin.valueChanged.connect(
+            lambda val: self._update_mavlink_setting('reconnect_interval', val)
+        )
+        layout.addRow("Reconnect Interval:", self.reconnect_spin)
+        
+        # Auto Connect Discovered
+        self.auto_connect_cb = QCheckBox()
+        self.auto_connect_cb.setChecked(self._mavlink_settings.auto_connect_discovered)
+        self.auto_connect_cb.setToolTip("Automatically connect to MAVLink devices found during discovery")
+        self.auto_connect_cb.stateChanged.connect(
+            lambda state: self._update_mavlink_setting('auto_connect_discovered', state == 2)
+        )
+        layout.addRow("Auto Connect Discovered:", self.auto_connect_cb)
+        
+        group.setLayout(layout)
+        return group
+    
+    def _create_info_group(self):
+        """Create the viewport controls info group."""
         info_group = QGroupBox("Viewport Controls Info")
         info_layout = QVBoxLayout()
         
@@ -84,7 +268,71 @@ class SettingsPanel(QWidget):
         info_layout.addWidget(info_text)
         
         info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
+        return info_group
+    
+    def _update_mavlink_setting(self, param, value):
+        """Update a MAVLink global setting and emit signal."""
+        setattr(self._mavlink_settings, param, value)
+        self.mavlink_settings_changed.emit(self._mavlink_settings)
+        
+        # Also update the service if available
+        if self.mavlink_service is not None:
+            self.mavlink_service.update_global_settings(self._mavlink_settings)
+    
+    def set_mavlink_service(self, mavlink_service):
+        """Set the mavlink service reference.
+        
+        Args:
+            mavlink_service: MAVLink service instance
+        """
+        self.mavlink_service = mavlink_service
+        
+        # Load settings from service if available
+        if mavlink_service is not None:
+            self._mavlink_settings = mavlink_service.get_global_settings()
+            self._refresh_mavlink_ui()
+    
+    def _refresh_mavlink_ui(self):
+        """Refresh the MAVLink UI with current settings."""
+        s = self._mavlink_settings
+        
+        # Block signals during refresh
+        widgets = [
+            self.mavlink_conn_edit, self.source_system_spin, self.source_component_spin,
+            self.mocap_rate_spin, self.setpoint_rate_spin, self.telemetry_rate_spin,
+            self.heartbeat_spin, self.timeout_spin, self.sanitize_cb, self.max_pos_spin,
+            self.max_vel_spin, self.max_yaw_spin, self.auto_reconnect_cb, self.reconnect_spin,
+            self.auto_connect_cb
+        ]
+        for w in widgets:
+            w.blockSignals(True)
+        
+        self.mavlink_conn_edit.setText(s.default_connection_string)
+        self.source_system_spin.setValue(s.source_system_id)
+        self.source_component_spin.setValue(s.source_component_id)
+        self.mocap_rate_spin.setValue(s.default_mocap_rate_hz)
+        self.setpoint_rate_spin.setValue(s.default_setpoint_rate_hz)
+        self.telemetry_rate_spin.setValue(s.telemetry_rate_hz)
+        self.heartbeat_spin.setValue(s.heartbeat_interval)
+        self.timeout_spin.setValue(s.connection_timeout)
+        self.sanitize_cb.setChecked(s.enable_setpoint_sanitization)
+        self.max_pos_spin.setValue(s.max_position_magnitude)
+        self.max_vel_spin.setValue(s.max_velocity_magnitude)
+        self.max_yaw_spin.setValue(s.max_yaw_rate)
+        self.auto_reconnect_cb.setChecked(s.auto_reconnect)
+        self.reconnect_spin.setValue(s.reconnect_interval)
+        self.auto_connect_cb.setChecked(s.auto_connect_discovered)
+        
+        for w in widgets:
+            w.blockSignals(False)
+    
+    def get_mavlink_settings(self) -> MavlinkGlobalSettings:
+        """Get the current MAVLink global settings.
+        
+        Returns:
+            Current MAVLink global settings
+        """
+        return self._mavlink_settings
     
     def set_object_service(self, object_service):
         """Set the object service and populate the lock object dropdown."""

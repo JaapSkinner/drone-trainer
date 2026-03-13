@@ -38,3 +38,10 @@ coverage.xml
 *.tmp
 *.~ 
 *.ipynb_checkpoints
+
+# IDE workspace files (editor-local, avoid merge conflicts)
+*.code-workspace
+
+# Generated MAVLink dialect files (regenerate with scripts/build_mavlink.py)
+libs/dtrg-mavlink/pymavlink/dialects/v20/*.py
+!libs/dtrg-mavlink/pymavlink/dialects/v20/__init__.py

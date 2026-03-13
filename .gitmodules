@@ -1,0 +1,3 @@
+[submodule "libs/dtrg-mavlink"]
+	path = libs/dtrg-mavlink
+	url = https://github.com/UoA-DTRG/dtrg-mavlink.git

@@ -4,9 +4,35 @@ from OpenGL.GLU import *
 from math import sin, cos
 import numpy as np
 from abc import ABC, abstractmethod
+from models.structs import MavlinkObjectConfig
+
 
 class SceneObject(ABC):
-    def __init__(self, pose=None, name=None, rendered=True, shaded=True, controllable=True):
+    """Base class for all scene objects.
+    
+    Attributes:
+        pose: Position and orientation tuple (x, y, z, qw, qx, qy, qz)
+        name: Human-readable name for the object
+        tracked: Whether this object is being tracked by motion capture
+        tracking_id: Vicon/mocap ID for tracking
+        rendered: Whether to render this object
+        shaded: Whether to apply shading
+        controllable: Whether this object can be controlled by user input
+        mavlink_config: MAVLink configuration for this object
+    """
+    
+    def __init__(self, pose=None, name=None, rendered=True, shaded=True, controllable=True,
+                 mavlink_enabled=False):
+        """Initialize a scene object.
+        
+        Args:
+            pose: Initial pose tuple (x, y, z, qw, qx, qy, qz)
+            name: Object name
+            rendered: Whether to render
+            shaded: Whether to apply shading
+            controllable: Whether user can control this object
+            mavlink_enabled: Whether MAVLink is enabled for this object
+        """
         self.pose = pose if pose else (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0) # Default pose: position, quaternion (x, y, z, qw, qx, qy, qz)
         self.name = name if name else "Unnamed Object"
         self.tracked = False
@@ -16,6 +42,9 @@ class SceneObject(ABC):
         self.controllable = controllable
 
         self.pose_delta = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # (dx, dy, dz, dqw, dqx, dqy, dqz)
+        
+        # MAVLink configuration for this object
+        self.mavlink_config = MavlinkObjectConfig(enabled=mavlink_enabled)
 
     def set_name(self, name):
         """Set the name of the object."""
@@ -76,6 +105,39 @@ class SceneObject(ABC):
             [2*(x*z - y*w),       2*(y*z + x*w),     1 - 2*(x*x + y*y), 0],
             [0, 0, 0, 1]
         ], dtype=np.float32).T
+
+    # MAVLink configuration methods
+    def set_mavlink_enabled(self, enabled: bool):
+        """Enable or disable MAVLink for this object.
+        
+        Args:
+            enabled: Whether MAVLink should be enabled
+        """
+        self.mavlink_config.enabled = enabled
+    
+    def is_mavlink_enabled(self) -> bool:
+        """Check if MAVLink is enabled for this object.
+        
+        Returns:
+            True if MAVLink is enabled
+        """
+        return self.mavlink_config.enabled
+    
+    def set_mavlink_config(self, config: MavlinkObjectConfig):
+        """Set the MAVLink configuration for this object.
+        
+        Args:
+            config: MAVLink configuration to apply
+        """
+        self.mavlink_config = config
+    
+    def get_mavlink_config(self) -> MavlinkObjectConfig:
+        """Get the MAVLink configuration for this object.
+        
+        Returns:
+            Current MAVLink configuration
+        """
+        return self.mavlink_config
 
     @abstractmethod
     def _draw(self):

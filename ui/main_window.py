@@ -5,6 +5,7 @@ from PyQt5.QtGui import QFontDatabase, QFont
 from services.input_service import InputService, InputType
 from services.object_service import ObjectService
 from services.status_service import StatusService
+from services.mavlink_service import MavlinkService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
@@ -15,6 +16,15 @@ from ui.status_panel.status_panel import StatusPanel
 
 
 class MainWindow(QMainWindow):
+    """Main application window for the Drone Trainer.
+    
+    Integrates all services and UI components including:
+    - Object service for scene management
+    - Input service for controller/keyboard input
+    - MAVLink service for drone communication
+    - Status service for health monitoring
+    """
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         # Load and set global font
@@ -47,16 +57,28 @@ class MainWindow(QMainWindow):
         # Connect input service to command panel for setpoint-based control
         self.input_service.set_command_panel(self.command_panel)
 
+        # Initialize MAVLink service for drone communication
+        # TODO: Validate DTRG-Mavlink dialect presence at runtime, wire any remaining custom DTRG
+        #       message handling, and surface a UI warning when DTRG_DIALECT_BUILT is False.
+        self.mavlink_service = MavlinkService()
+        
+        # Connect mavlink service to dock panel
+        self.dock.set_mavlink_service(self.mavlink_service)
+
         self.status_service = StatusService(
             self.status_panel,
             self.input_service,
-            None  # Placeholder for mavlink service
+            self.mavlink_service
         )
         self.status_service.start()
         
         
         self.input_service.input_updated.connect(self.on_input_update)
         self.input_service.start()
+        
+        # Start mavlink service
+        self.mavlink_service.start()
+        
         # self.vicon.position_updated.connect(self.update_vicon_position)
         
 
@@ -81,11 +103,11 @@ class MainWindow(QMainWindow):
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service)
-        self.object_panel = self.dock.panels[4]
-        self.config_panel = self.dock.panels[3]  # Config panel is at index 3
-        self.settings_panel = self.dock.panels[5]  # Settings panel is at index 5
-        self.command_panel = self.dock.panels[6]  # Command panel is at index 6
-        
+        self.config_panel = self.dock.panels[3]   # Config panel
+        self.object_panel = self.dock.panels[5]   # Object/Live Data panel
+        self.settings_panel = self.dock.panels[6]  # Settings panel
+        self.command_panel = self.dock.panels[7]   # Command panel
+
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
         splitter.addWidget(self.glWidget)
@@ -230,6 +252,8 @@ class MainWindow(QMainWindow):
             self.status_service.stop()
         if hasattr(self, 'input_service'):
             self.input_service.stop()
+        if hasattr(self, 'mavlink_service'):
+            self.mavlink_service.stop()
         
         # Stop the GL widget timer
         if hasattr(self, 'glWidget') and self.glWidget and hasattr(self.glWidget, 'timer'):
