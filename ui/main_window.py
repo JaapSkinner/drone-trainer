@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
         
         # Connect GL widget to input service for keyboard events
         self.glWidget.set_input_service(self.input_service)
+        
+        # Connect input service to command panel for setpoint-based control
+        self.input_service.set_command_panel(self.command_panel)
 
         # Initialize MAVLink service for drone communication
         # TODO: Connect to DTRG-Mavlink custom message definitions when submodule is added
@@ -102,6 +105,7 @@ class MainWindow(QMainWindow):
         self.object_panel = self.dock.panels[4]
         self.config_panel = self.dock.panels[3]  # Config panel is at index 3
         self.settings_panel = self.dock.panels[5]  # Settings panel is at index 5
+        self.command_panel = self.dock.panels[6]  # Command panel is at index 6
         
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -111,13 +115,17 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(0, False)  # Prevent dock collapsing
         splitter.setCollapsible(1, False)  # Prevent GL collapsing
         self.glWidget.setMinimumWidth(200)
-        self.dock.setMinimumWidth(250)
+        self.dock.setMinimumWidth(380)  # Increased to prevent horizontal scroll and button clipping
         
         self.navbar.panel_selected.connect(self.dock.set_active_panel)
         
         # Connect config panel signals to input service
         self.config_panel.input_type_changed.connect(self.on_input_type_changed)
         self.config_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
+        
+        # Connect command panel signals to input service (joystick settings moved here)
+        self.command_panel.input_type_changed.connect(self.on_input_type_changed)
+        self.command_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
         
         # Connect settings panel signals to viewport
         self.settings_panel.zoom_sensitivity_changed.connect(self.on_zoom_sensitivity_changed)
@@ -129,6 +137,12 @@ class MainWindow(QMainWindow):
         
         # Populate settings panel with objects after they're created
         self.settings_panel.refresh_object_list()
+        
+        # Populate command panel with objects after they're created
+        self.command_panel.refresh_object_list()
+        
+        # Connect command panel joystick control signal
+        self.command_panel.joystick_control_enabled.connect(self.on_joystick_control_enabled)
         
         # === Overlay container ===
         self.overlay = QWidget(central_widget)
@@ -160,17 +174,20 @@ class MainWindow(QMainWindow):
     def on_input_update(self, obj):
         """Handle input device updates (replaces on_joystick_update)"""
         self.object_panel.refresh()
+        # Update command panel position display live
+        if hasattr(self, 'command_panel'):
+            self.command_panel.refresh()
         self.glWidget.update()
     
     @pyqtSlot(object)
     def on_input_type_changed(self, input_type):
-        """Handle input type change from config panel"""
+        """Handle input type change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_input_type(input_type)
     
     @pyqtSlot(float)
     def on_sensitivity_changed(self, sensitivity):
-        """Handle sensitivity change from config panel"""
+        """Handle sensitivity change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_sensitivity(sensitivity)
 
@@ -191,7 +208,37 @@ class MainWindow(QMainWindow):
         """Handle lock object change from settings panel"""
         if hasattr(self, 'glWidget') and self.glWidget:
             self.glWidget.set_locked_object(obj)
+    
+    @pyqtSlot(bool)
+    def on_joystick_control_enabled(self, enabled):
+        """Handle joystick control enable/disable from command panel.
         
+        Joystick is now always live when in Joystick mode. Ghost mode affects
+        whether it updates next_setpoint (preview) or setpoint directly.
+        """
+        if hasattr(self, 'input_service') and self.input_service:
+            if enabled:
+                # Enable joystick control - set controlled object
+                if hasattr(self, 'object_service') and self.object_service:
+                    obj = self.object_service.get_controlled_object()
+                    if obj is not None:
+                        self.input_service.set_controlled_object(obj)
+                # Return focus to viewport so controller/keyboard input works immediately
+                if hasattr(self, 'glWidget') and self.glWidget:
+                    self.glWidget.setFocus()
+            else:
+                # Disable joystick control - set controlled object to None
+                self.input_service.set_controlled_object(None)
+        
+    def changeEvent(self, event):
+        """Handle window state changes, including focus loss."""
+        from PyQt5.QtCore import QEvent as _QEvent
+        super().changeEvent(event)
+        if event.type() == _QEvent.ActivationChange and not self.isActiveWindow():
+            # Window lost focus — clear keyboard states to avoid stuck keys
+            if hasattr(self, 'input_service') and self.input_service:
+                self.input_service.clear_key_states()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())

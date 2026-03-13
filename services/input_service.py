@@ -4,10 +4,31 @@ Refactored from JoystickService to support multiple input types.
 """
 import numpy as np
 import pygame
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import pyqtSignal, Qt, QObject, QEvent
+from PyQt5.QtWidgets import QApplication
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from PyQt5.QtCore import QTimer
 from enum import Enum
+
+
+class _KeyboardEventFilter(QObject):
+    """Application-level event filter that intercepts key events globally.
+
+    This allows keyboard-driven input modes (WASD, Arrow Keys) to work
+    regardless of which widget currently has keyboard focus.
+    """
+
+    def __init__(self, input_service):
+        super().__init__()
+        self._input_service = input_service
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and not event.isAutoRepeat():
+            self._input_service.handle_key_press(event.key())
+        elif event.type() == QEvent.KeyRelease and not event.isAutoRepeat():
+            self._input_service.handle_key_release(event.key())
+        # Never consume the event — let normal Qt processing continue.
+        return False
 
 
 class InputType(Enum):
@@ -23,6 +44,9 @@ class InputService(ServiceBase):
     - Controller/Gamepad (Xbox, PlayStation, etc.)
     - WASD keyboard input
     - Arrow Keys keyboard input
+    
+    The service calculates pose deltas and routes them through the command panel
+    to update setpoint/next_setpoint instead of directly modifying object position.
     """
     input_updated = pyqtSignal(object)  # emits the updated object state
 
@@ -60,8 +84,12 @@ class InputService(ServiceBase):
         }
         
         self.controlled_object = None
+        self.command_panel = None  # Reference to command panel for setpoint updates
         self.timer = None
-    
+
+        # Global key event filter (installed for keyboard input modes)
+        self._key_event_filter = None
+
     @staticmethod
     def _apply_deadzone(value, threshold=0.1):
         """
@@ -84,10 +112,30 @@ class InputService(ServiceBase):
             # For keyboard input, we just need to set up the status
             self.status_label = f"{self.input_type.value}"
             self.status = ServiceLevel.RUNNING
+            self._install_key_filter()
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
+
+    def _install_key_filter(self):
+        """Install an application-level event filter to capture key events globally."""
+        if self._key_event_filter is None:
+            self._key_event_filter = _KeyboardEventFilter(self)
+            app = QApplication.instance()
+            if app is not None:
+                app.installEventFilter(self._key_event_filter)
+
+    def _uninstall_key_filter(self):
+        """Remove the application-level key event filter and reset all key states."""
+        if self._key_event_filter is not None:
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self._key_event_filter)
+            self._key_event_filter = None
+        # Reset all key states to avoid stuck keys
+        for key in self.key_states:
+            self.key_states[key] = False
 
     def _init_controller(self):
         """Initialize pygame for controller input"""
@@ -111,6 +159,7 @@ class InputService(ServiceBase):
             self.timer = None
         if self.input_type == InputType.CONTROLLER:
             pygame.quit()
+        self._uninstall_key_filter()
 
     def set_input_type(self, input_type: InputType):
         """
@@ -123,15 +172,19 @@ class InputService(ServiceBase):
             # Clean up old input type
             if self.input_type == InputType.CONTROLLER:
                 pygame.quit()
-            
+            else:
+                # Switching away from a keyboard mode — remove the global filter
+                self._uninstall_key_filter()
+
             self.input_type = input_type
-            
+
             # Initialize new input type
             if input_type == InputType.CONTROLLER:
                 self._init_controller()
             else:
                 self.status_label = f"{input_type.value}"
                 self.status = ServiceLevel.RUNNING
+                self._install_key_filter()
 
     def set_sensitivity(self, sensitivity: float):
         """
@@ -160,6 +213,11 @@ class InputService(ServiceBase):
             key: Qt key code
         """
         if key in self.key_states:
+            self.key_states[key] = False
+
+    def clear_key_states(self):
+        """Reset all tracked key states to False (e.g. when window loses focus)."""
+        for key in self.key_states:
             self.key_states[key] = False
 
     def update(self):
@@ -210,15 +268,22 @@ class InputService(ServiceBase):
 
         obj = self.controlled_object
         if obj is not None:
-            obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                                (rb - lb) * 0.1 * self.sensitivity,
-                                ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-            obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                          obj.pose[1] + obj.pose_delta[1],
-                          obj.pose[2] + obj.pose_delta[2],
-                          1, ry * 0.03 * self.sensitivity, -rz * 0.03 * self.sensitivity, -rx * 0.03 * self.sensitivity])
+            # Calculate pose delta
+            pose_delta = [
+                lx * 0.1 * self.sensitivity,
+                (rb - lb) * 0.1 * self.sensitivity,
+                ly * 0.1 * self.sensitivity,
+                0,  # qw delta (not used)
+                ry * 0.03 * self.sensitivity,
+                -rz * 0.03 * self.sensitivity,
+                -rx * 0.03 * self.sensitivity
+            ]
             
-            self.input_updated.emit(obj)
+            # Route through command panel to update setpoint (not position directly)
+            # Only apply deltas when Joystick mode is active
+            if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
+                self.command_panel.update_setpoint_from_joystick(pose_delta)
+                self.input_updated.emit(obj)
 
     def _update_keyboard_wasd(self):
         """Update WASD keyboard input"""
@@ -241,15 +306,23 @@ class InputService(ServiceBase):
         ly = -strafe * np.sin(np.radians(cam_angle_y)) + forward * np.cos(np.radians(cam_angle_y))
         
         obj = self.controlled_object
-        obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                            vertical * 0.1 * self.sensitivity,
-                            ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-        obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                      obj.pose[1] + obj.pose_delta[1],
-                      obj.pose[2] + obj.pose_delta[2],
-                      1, 0, 0, -rot_x * 0.03 * self.sensitivity])
         
-        self.input_updated.emit(obj)
+        # Calculate pose delta
+        pose_delta = [
+            lx * 0.1 * self.sensitivity,
+            vertical * 0.1 * self.sensitivity,
+            ly * 0.1 * self.sensitivity,
+            0,  # qw delta (not used)
+            0,
+            0,
+            -rot_x * 0.03 * self.sensitivity
+        ]
+        
+        # Route through command panel to update setpoint (not position directly)
+        # Only apply deltas when Joystick mode is active
+        if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
+            self.command_panel.update_setpoint_from_joystick(pose_delta)
+            self.input_updated.emit(obj)
 
     def _update_keyboard_arrows(self):
         """Update Arrow Keys keyboard input"""
@@ -272,15 +345,23 @@ class InputService(ServiceBase):
         ly = -strafe * np.sin(np.radians(cam_angle_y)) + forward * np.cos(np.radians(cam_angle_y))
         
         obj = self.controlled_object
-        obj.set_pose_delta([lx * 0.1 * self.sensitivity,
-                            vertical * 0.1 * self.sensitivity,
-                            ly * 0.1 * self.sensitivity, 0, 0, 0, 0])
-        obj.set_pose([obj.pose[0] + obj.pose_delta[0],
-                      obj.pose[1] + obj.pose_delta[1],
-                      obj.pose[2] + obj.pose_delta[2],
-                      1, 0, 0, -rot_x * 0.03 * self.sensitivity])
         
-        self.input_updated.emit(obj)
+        # Calculate pose delta
+        pose_delta = [
+            lx * 0.1 * self.sensitivity,
+            vertical * 0.1 * self.sensitivity,
+            ly * 0.1 * self.sensitivity,
+            0,  # qw delta (not used)
+            0,
+            0,
+            -rot_x * 0.03 * self.sensitivity
+        ]
+        
+        # Route through command panel to update setpoint (not position directly)
+        # Only apply deltas when Joystick mode is active
+        if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
+            self.command_panel.update_setpoint_from_joystick(pose_delta)
+            self.input_updated.emit(obj)
 
     def set_controlled_object(self, obj):
         """
@@ -290,3 +371,12 @@ class InputService(ServiceBase):
             obj: The scene object to control
         """
         self.controlled_object = obj
+    
+    def set_command_panel(self, command_panel):
+        """
+        Set the command panel reference for routing setpoint updates.
+        
+        Args:
+            command_panel: The CommandPanel instance
+        """
+        self.command_panel = command_panel

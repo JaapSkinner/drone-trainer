@@ -1,24 +1,23 @@
-from PyQt5.QtWidgets import (QWidget, QScrollArea, QVBoxLayout, QFormLayout, 
+from PyQt5.QtWidgets import (QWidget, QScrollArea, QVBoxLayout, QFormLayout,
                              QGroupBox, QLabel, QLineEdit, QComboBox, QCheckBox,
                              QSpinBox, QDoubleSpinBox, QHBoxLayout, QPushButton,
                              QDialog, QDialogButtonBox)
 from PyQt5.QtCore import pyqtSignal
 from models.structs import MavlinkObjectConfig
 
-
 class ObjectPanel(QWidget):
     """Panel for viewing and editing scene object properties.
-    
+
     Includes MAVLink configuration for each object.
-    
+
     Signals:
         mavlink_config_changed: Emitted when an object's MAVLink config changes
     """
     NavTag = "live_data"
-    
+
     # Signal emitted when mavlink config changes (object, config)
     mavlink_config_changed = pyqtSignal(object, object)
-    
+
     def __init__(self, gl_widget, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
         self.gl_widget = gl_widget
@@ -27,10 +26,6 @@ class ObjectPanel(QWidget):
         self.mavlink_service = mavlink_service
 
         layout = QVBoxLayout(self)
-        self.combo_box = QComboBox()
-        self.combo_box.currentIndexChanged.connect(self.on_object_selected)
-        layout.addWidget(QLabel("Select Controlled Object"))
-        layout.addWidget(self.combo_box)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -47,7 +42,6 @@ class ObjectPanel(QWidget):
     def populate(self):
         """Populate the panel with all objects from the object service."""
         self.input_fields.clear()
-        self.combo_box.clear()
         # clear layout
         while self.scroll_layout.count():
             child = self.scroll_layout.takeAt(0)
@@ -55,7 +49,6 @@ class ObjectPanel(QWidget):
                 child.widget().deleteLater()
 
         for i, obj in enumerate(self.object_service.get_objects()):
-            self.combo_box.addItem(obj.name, obj)
 
             group_box = QGroupBox(f"Object {i} - {obj.name}")
             form_layout = QFormLayout()
@@ -100,7 +93,7 @@ class ObjectPanel(QWidget):
 
             group_box.setLayout(form_layout)
             self.scroll_layout.addWidget(group_box)
-            
+
             # Add MAVLink configuration group for controllable objects
             if getattr(obj, 'controllable', False):
                 mavlink_group = self._create_mavlink_group(obj, i)
@@ -112,27 +105,27 @@ class ObjectPanel(QWidget):
                 # 'color': color, 'size': size,
                 # 'length': length, 'transparency': trans
             })
-    
+
     def _create_mavlink_group(self, obj, index):
         """Create a MAVLink configuration group for an object.
-        
+
         Args:
             obj: The scene object
             index: Object index in the list
-            
+
         Returns:
             QGroupBox with MAVLink configuration widgets
         """
         group = QGroupBox(f"MAVLink - {obj.name}")
         layout = QFormLayout()
-        
+
         config = getattr(obj, 'mavlink_config', MavlinkObjectConfig())
-        
+
         # Container widget for all non-enabled options (for hiding/showing)
         options_container = QWidget()
         options_layout = QFormLayout(options_container)
         options_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Enable MAVLink checkbox
         enabled_cb = QCheckBox()
         enabled_cb.setChecked(config.enabled)
@@ -140,27 +133,27 @@ class ObjectPanel(QWidget):
             lambda state, o=obj, c=options_container: self._on_mavlink_enabled_toggled(o, state == 2, c)
         )
         layout.addRow("MAVLink Enabled:", enabled_cb)
-        
+
         # === Link Connection Section ===
         # Show linked connection name
         linked_name = config.linked_connection_name or "(Not linked)"
         linked_label = QLabel(linked_name)
         linked_label.setStyleSheet("color: #666;" if not config.linked_connection_name else "color: green; font-weight: bold;")
-        
+
         # Store reference for updating
         if not hasattr(self, '_linked_labels'):
             self._linked_labels = {}
         self._linked_labels[obj.name] = linked_label
-        
+
         # Link button
         link_btn = QPushButton("Link Connection" if not config.linked_connection_name else "Change Connection")
         link_btn.clicked.connect(lambda checked, o=obj: self._on_link_connection_clicked(o))
-        
+
         link_row = QHBoxLayout()
         link_row.addWidget(linked_label)
         link_row.addWidget(link_btn)
         options_layout.addRow("Linked Connection:", link_row)
-        
+
         # Use global connection checkbox
         use_global_cb = QCheckBox()
         use_global_cb.setChecked(config.use_global_connection)
@@ -168,7 +161,7 @@ class ObjectPanel(QWidget):
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'use_global_connection', state == 2)
         )
         options_layout.addRow("Use Global Connection:", use_global_cb)
-        
+
         # Connection string (only visible if not using global)
         conn_edit = QLineEdit(config.connection_string)
         conn_edit.setEnabled(not config.use_global_connection)
@@ -179,7 +172,7 @@ class ObjectPanel(QWidget):
             lambda state: conn_edit.setEnabled(state != 2)
         )
         options_layout.addRow("Connection String:", conn_edit)
-        
+
         # System ID
         system_id_spin = QSpinBox()
         system_id_spin.setRange(1, 255)
@@ -188,7 +181,7 @@ class ObjectPanel(QWidget):
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'system_id', val)
         )
         options_layout.addRow("System ID:", system_id_spin)
-        
+
         # Component ID
         component_id_spin = QSpinBox()
         component_id_spin.setRange(1, 255)
@@ -197,7 +190,7 @@ class ObjectPanel(QWidget):
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'component_id', val)
         )
         options_layout.addRow("Component ID:", component_id_spin)
-        
+
         # Send Mocap checkbox
         send_mocap_cb = QCheckBox()
         send_mocap_cb.setChecked(config.send_mocap)
@@ -205,7 +198,7 @@ class ObjectPanel(QWidget):
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'send_mocap', state == 2)
         )
         options_layout.addRow("Send MoCap Data:", send_mocap_cb)
-        
+
         # Receive Setpoints checkbox
         recv_sp_cb = QCheckBox()
         recv_sp_cb.setChecked(config.receive_setpoints)
@@ -213,7 +206,7 @@ class ObjectPanel(QWidget):
             lambda state, o=obj: self._on_mavlink_param_changed(o, 'receive_setpoints', state == 2)
         )
         options_layout.addRow("Receive Setpoints:", recv_sp_cb)
-        
+
         # Mocap Rate
         mocap_rate_spin = QDoubleSpinBox()
         mocap_rate_spin.setRange(0, 200)
@@ -224,67 +217,67 @@ class ObjectPanel(QWidget):
             lambda val, o=obj: self._on_mavlink_param_changed(o, 'mocap_rate_hz', val)
         )
         options_layout.addRow("MoCap Rate (0=default):", mocap_rate_spin)
-        
+
         # Add options container to main layout
         layout.addRow(options_container)
-        
+
         # Initially hide/show options based on enabled state
         options_container.setVisible(config.enabled)
-        
+
         group.setLayout(layout)
         return group
-    
+
     def _on_link_connection_clicked(self, obj):
         """Handle link connection button click for an object."""
         if self.mavlink_service is None:
             return
-        
+
         # Get available connection names
         connection_names = self.mavlink_service.get_available_connection_names()
-        
+
         if not connection_names:
             from PyQt5.QtWidgets import QMessageBox
             QMessageBox.information(
-                self, 
-                "No Connections", 
+                self,
+                "No Connections",
                 "No MAVLink connections available. Create a connection in the MAVLink panel first."
             )
             return
-        
+
         # Create selection dialog
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Link MAVLink Connection - {obj.name}")
         dialog_layout = QVBoxLayout(dialog)
-        
+
         dialog_layout.addWidget(QLabel("Select a connection to link:"))
-        
+
         combo = QComboBox()
         combo.addItem("(None - Unlink)", "")
         for name in connection_names:
             combo.addItem(name, name)
-        
+
         # Pre-select current linked connection
         current_linked = getattr(obj, 'mavlink_config', MavlinkObjectConfig()).linked_connection_name
         if current_linked:
             idx = combo.findData(current_linked)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
-        
+
         dialog_layout.addWidget(combo)
-        
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         dialog_layout.addWidget(buttons)
-        
+
         if dialog.exec_() == QDialog.Accepted:
             selected_name = combo.currentData()
-            
+
             # Update object config
             if hasattr(obj, 'mavlink_config'):
                 obj.mavlink_config.linked_connection_name = selected_name
                 self.mavlink_config_changed.emit(obj, obj.mavlink_config)
-            
+
             # Update linked label display
             if obj.name in self._linked_labels:
                 if selected_name:
@@ -293,7 +286,7 @@ class ObjectPanel(QWidget):
                 else:
                     self._linked_labels[obj.name].setText("(Not linked)")
                     self._linked_labels[obj.name].setStyleSheet("color: #666;")
-            
+
             # Update mavlink service bidirectional link
             if self.mavlink_service:
                 if selected_name:
@@ -303,10 +296,10 @@ class ObjectPanel(QWidget):
                     old_linked = getattr(obj, 'mavlink_config', MavlinkObjectConfig()).linked_connection_name
                     if old_linked:
                         self.mavlink_service.unlink_connection_from_object(old_linked)
-    
+
     def _on_mavlink_enabled_toggled(self, obj, enabled, options_container):
         """Handle MAVLink enabled state change with UI update.
-        
+
         Args:
             obj: Scene object
             enabled: New enabled state
@@ -314,13 +307,13 @@ class ObjectPanel(QWidget):
         """
         options_container.setVisible(enabled)
         self._on_mavlink_enabled_changed(obj, enabled)
-    
+
     def _on_mavlink_enabled_changed(self, obj, enabled):
         """Handle MAVLink enabled state change for an object."""
         if hasattr(obj, 'mavlink_config'):
             obj.mavlink_config.enabled = enabled
             self.mavlink_config_changed.emit(obj, obj.mavlink_config)
-    
+
     def _on_mavlink_param_changed(self, obj, param, value):
         """Handle MAVLink parameter change for an object."""
         if hasattr(obj, 'mavlink_config'):
@@ -339,11 +332,6 @@ class ObjectPanel(QWidget):
             setattr(self.gl_widget.objects[i], attr, val)
         except:
             pass
-
-    def on_object_selected(self, index):
-        obj = self.combo_box.itemData(index)
-        if obj is not None:
-            self.object_service.set_controlled_object(obj=obj)
 
     def refresh(self):
         # TODO: implement this with new object service features
