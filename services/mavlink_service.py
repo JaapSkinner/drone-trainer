@@ -151,6 +151,7 @@ class MavlinkConnection:
         self._last_heartbeat_sent = 0.0
         self._message_count_window: List[float] = []
         self._lock = threading.Lock()
+        self._console_output_callback = None  # set via set_console_output_callback()
 
         # Packet loss tracking
         self._last_seq_num = None  # Last received sequence number
@@ -524,8 +525,107 @@ class MavlinkConnection:
         elif msg_type == 'ESTIMATOR_STATUS':
             self.telemetry.estimator_status = msg.flags
             return True
-        
+
+        elif msg_type == 'STATUSTEXT':
+            # Forward status text to console output callback if set
+            text = msg.text if hasattr(msg, 'text') else ''
+            if callable(self._console_output_callback):
+                self._console_output_callback(f"[STATUS] {text.rstrip()}")
+            return True
+
+        elif msg_type == 'SERIAL_CONTROL':
+            # Response from the NuttX shell (MAVLink console)
+            if hasattr(msg, 'data') and hasattr(msg, 'count') and msg.count > 0:
+                try:
+                    text = bytes(msg.data[:msg.count]).decode('utf-8', errors='replace')
+                    if callable(self._console_output_callback):
+                        self._console_output_callback(text)
+                except Exception:
+                    pass
+            return True
+
         return False
+
+    def set_console_output_callback(self, callback):
+        """Register a callback to receive console output lines.
+
+        Args:
+            callback: Callable that accepts a single str argument.
+        """
+        self._console_output_callback = callback
+
+    def send_command_long(self, command: int, params: list = None) -> bool:
+        """Send a MAV_CMD via COMMAND_LONG.
+
+        Args:
+            command: MAV_CMD id (e.g. mavutil.mavlink.MAV_CMD_DO_SET_MODE)
+            params:  Up to 7 float parameters (padded with 0.0 if shorter)
+
+        Returns:
+            True if sent successfully.
+        """
+        if self._connection is None:
+            return False
+        p = list(params or [])
+        p += [0.0] * (7 - len(p))
+        try:
+            self._connection.mav.command_long_send(
+                self.status.system_id or self.config.system_id,
+                self.config.component_id,
+                command,
+                0,          # confirmation
+                p[0], p[1], p[2], p[3], p[4], p[5], p[6],
+            )
+            self.status.messages_sent += 1
+            return True
+        except Exception as e:
+            print(f"[MavlinkConnection] ERROR sending COMMAND_LONG: {e}")
+            return False
+
+    def send_serial_control(self, text: str) -> bool:
+        """Send a shell command to the drone via SERIAL_CONTROL (NuttX console).
+
+        This is how the QGC MAVLink console works — it tunnels stdin/stdout
+        through SERIAL_CONTROL messages on the SERIAL_CONTROL_DEV_SHELL device.
+
+        Args:
+            text: Command text to send (newline appended automatically)
+
+        Returns:
+            True if the message was sent successfully.
+        """
+        if self._connection is None:
+            return False
+
+        # SERIAL_CONTROL flags (bitmask):
+        #   REPLY     = 1  — marks THIS message as a reply (don't set when sending commands)
+        #   RESPOND   = 2  — ask the FC to send a reply back to us
+        #   EXCLUSIVE = 4  — take exclusive ownership of the shell port
+        #   BLOCKING  = 8  — block on writes
+        #   MULTI     = 16 — keep sending replies until port is drained
+        _SERIAL_CONTROL_DEV_SHELL = 10
+        _FLAGS = 2 | 4 | 16   # RESPOND | EXCLUSIVE | MULTI
+
+        line = (text.rstrip('\n') + '\n').encode('utf-8')
+
+        chunk_size = 70
+        try:
+            for i in range(0, max(1, len(line)), chunk_size):
+                chunk = line[i:i + chunk_size]
+                data = list(chunk) + [0] * (chunk_size - len(chunk))
+                self._connection.mav.serial_control_send(
+                    _SERIAL_CONTROL_DEV_SHELL,
+                    _FLAGS,
+                    0,           # timeout ms
+                    0,           # baud rate (unused for shell)
+                    len(chunk),  # count
+                    data,
+                )
+                self.status.messages_sent += 1
+            return True
+        except Exception as e:
+            print(f"[MavlinkConnection] ERROR sending SERIAL_CONTROL: {e}")
+            return False
 
 
 class MavlinkService(ServiceBase):
@@ -548,7 +648,8 @@ class MavlinkService(ServiceBase):
     telemetry_updated = pyqtSignal(int, object)  # system_id, MavlinkTelemetryData
     connection_changed = pyqtSignal(int, bool)   # system_id, connected
     health_updated = pyqtSignal(float, int)      # rate_hz, active_connections
-    
+    console_output = pyqtSignal(int, str)        # system_id, text line
+
     # Service update rates
     TELEMETRY_UPDATE_INTERVAL_MS = 50   # 20Hz for telemetry (low priority)
     SETPOINT_UPDATE_INTERVAL_MS = 20    # 50Hz for setpoints (medium priority)
@@ -808,7 +909,13 @@ class MavlinkService(ServiceBase):
         if connection.connect():
             self._connections[connection.status.system_id] = connection
             self._active_connections = len(self._connections)
-            
+
+            # Wire console output from this connection back through our signal
+            sys_id = connection.status.system_id
+            connection.set_console_output_callback(
+                lambda text, sid=sys_id: self.console_output.emit(sid, text)
+            )
+
             # Remove from saved connections if it was there (by name or by matching connection string)
             # This prevents duplicates when reconnecting with a different auto-generated name
             if config.name in self._saved_connections:
@@ -933,13 +1040,49 @@ class MavlinkService(ServiceBase):
     
     def register_setpoint_source(self, system_id: int, setpoint: SetpointData):
         """Register a setpoint to be continuously sent to a drone.
-        
+
         Args:
             system_id: Target drone's system ID
             setpoint: Setpoint data to send continuously
         """
         self._setpoint_sources[system_id] = setpoint
-    
+
+    def send_console_command(self, system_id: int, text: str) -> bool:
+        """Send a shell command to the drone's MAVLink console (SERIAL_CONTROL/SHELL).
+
+        Mirrors the QGC MAVLink Console — tunnels stdin over SERIAL_CONTROL
+        messages so the NuttX shell on the flight controller receives the command
+        and streams stdout back as further SERIAL_CONTROL messages (routed to
+        the console_output signal).
+
+        Args:
+            system_id: Target drone's system ID
+            text: Command string to send
+
+        Returns:
+            True if the message was sent successfully.
+        """
+        conn = self._connections.get(system_id)
+        if conn is not None and conn.is_connected:
+            return conn.send_serial_control(text)
+        return False
+
+    def send_command_long(self, system_id: int, command: int, params: list = None) -> bool:
+        """Send a MAV_CMD via COMMAND_LONG to a specific drone.
+
+        Args:
+            system_id: Target drone's system ID
+            command: MAV_CMD id
+            params: Up to 7 float parameters
+
+        Returns:
+            True if sent successfully.
+        """
+        conn = self._connections.get(system_id)
+        if conn is not None and conn.is_connected:
+            return conn.send_command_long(command, params)
+        return False
+
     def unregister_setpoint_source(self, system_id: int):
         """Unregister a setpoint source.
         

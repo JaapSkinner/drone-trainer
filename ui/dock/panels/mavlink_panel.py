@@ -8,10 +8,10 @@ This panel provides:
 - Connection health monitoring and testing
 """
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, 
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGroupBox,
     QFormLayout, QPushButton, QLineEdit, QScrollArea, QFrame,
     QSpinBox, QTabWidget, QGridLayout, QComboBox, QMessageBox,
-    QProgressBar, QSizePolicy
+    QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer, QThread
 from PyQt5.QtGui import QFont
@@ -212,34 +212,30 @@ class MavlinkPanel(QWidget):
             self.mavlink_service.telemetry_updated.connect(self.on_telemetry_updated)
             self.mavlink_service.connection_changed.connect(self.on_connection_changed)
             self.mavlink_service.health_updated.connect(self.on_health_updated)
-    
+            self.mavlink_service.console_output.connect(self._on_console_output)
+
     def init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignTop)
-        
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
         # Title
         title = QLabel("MAVLink Control")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 8px 8px 4px 8px;")
         layout.addWidget(title)
-        
-        # Tab widget for different sections
-        tabs = QTabWidget()
-        
-        # Connection tab
-        connection_tab = self._create_connection_tab()
-        tabs.addTab(connection_tab, "Connections")
-        
-        # Telemetry tab
-        telemetry_tab = self._create_telemetry_tab()
-        tabs.addTab(telemetry_tab, "Telemetry")
-        
-        # Status tab
-        status_tab = self._create_status_tab()
-        tabs.addTab(status_tab, "Status")
-        
-        layout.addWidget(tabs)
-    
+
+        # Tab widget — fills all remaining space
+        self._tabs = QTabWidget()
+        self._tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self._tabs.addTab(self._create_connection_tab(), "Connections")
+        self._tabs.addTab(self._create_telemetry_tab(),  "Telemetry")
+        self._tabs.addTab(self._create_status_tab(),     "Status")
+        self._tabs.addTab(self._create_console_tab(),    "Console")
+
+        layout.addWidget(self._tabs, stretch=1)
+
     def _create_connection_tab(self) -> QWidget:
         """Create the connection management tab with discovery and object linking."""
         widget = QWidget()
@@ -1179,9 +1175,9 @@ class MavlinkPanel(QWidget):
     @pyqtSlot(int, bool)
     def on_connection_changed(self, system_id: int, connected: bool):
         """Handle connection state change."""
-        # Refresh connections list to reflect new state
         self._refresh_connections_list()
-    
+        self._console_refresh_connections()
+
     @pyqtSlot(float, int)
     def on_health_updated(self, rate_hz: float, active_connections: int):
         """Handle health metrics update."""
@@ -1217,14 +1213,226 @@ class MavlinkPanel(QWidget):
             mavlink_service.telemetry_updated.connect(self.on_telemetry_updated)
             mavlink_service.connection_changed.connect(self.on_connection_changed)
             mavlink_service.health_updated.connect(self.on_health_updated)
-            
+            mavlink_service.console_output.connect(self._on_console_output)
+
             # Refresh the connections list
             self._refresh_connections_list()
-    
+            self._console_refresh_connections()
+
     def set_object_service(self, object_service):
         """Set the object service reference for object linking.
-        
+
         Args:
             object_service: Object service instance
         """
         self.object_service = object_service
+
+    # ------------------------------------------------------------------
+    # Console tab
+    # ------------------------------------------------------------------
+
+    def _create_console_tab(self) -> QWidget:
+        """Create the MAVLink console tab.
+
+        Mirrors the QGC MAVLink Console — sends shell commands via
+        SERIAL_CONTROL and displays stdout + STATUSTEXT in a scrolling log.
+        """
+        from PyQt5.QtGui import QTextCursor, QColor
+        widget = QWidget()
+        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(6)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        # --- Connection selector ---
+        top_row = QHBoxLayout()
+        top_row.addWidget(QLabel("Connection:"))
+
+        self._console_conn_combo = QComboBox()
+        self._console_conn_combo.setMinimumWidth(160)
+        top_row.addWidget(self._console_conn_combo, stretch=1)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setFixedWidth(52)
+        clear_btn.clicked.connect(self._on_console_clear)
+        top_row.addWidget(clear_btn)
+
+        layout.addLayout(top_row)
+
+        # --- Output area ---
+        from PyQt5.QtWidgets import QPlainTextEdit
+        self._console_output = QPlainTextEdit()
+        self._console_output.setReadOnly(True)
+        self._console_output.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self._console_output.setMaximumBlockCount(2000)
+        self._console_output.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background-color: #f5f5f5;"
+            "  color: #1a1a1a;"
+            "  font-family: 'Monospace', 'Courier New', monospace;"
+            "  font-size: 11px;"
+            "  border: 1px solid #ccc;"
+            "  border-radius: 3px;"
+            "}"
+        )
+        layout.addWidget(self._console_output, stretch=1)
+
+        # --- Input row ---
+        input_row = QHBoxLayout()
+        input_row.setSpacing(4)
+
+        prompt = QLabel("$")
+        prompt.setStyleSheet("font-family: monospace; font-weight: bold; color: #555;")
+        input_row.addWidget(prompt)
+
+        self._console_input = QLineEdit()
+        self._console_input.setPlaceholderText("Enter shell command…")
+        self._console_input.setStyleSheet(
+            "QLineEdit {"
+            "  font-family: 'Monospace', 'Courier New', monospace;"
+            "  font-size: 11px;"
+            "}"
+        )
+        self._console_input.returnPressed.connect(self._on_console_send)
+        input_row.addWidget(self._console_input, stretch=1)
+
+        send_btn = QPushButton("Send")
+        send_btn.setFixedWidth(52)
+        send_btn.clicked.connect(self._on_console_send)
+        input_row.addWidget(send_btn)
+
+        layout.addLayout(input_row)
+
+        # Command history (↑/↓ navigation like a real terminal)
+        self._console_history: list = []
+        self._console_history_idx: int = -1
+        self._console_input.installEventFilter(self)
+
+        # Populate dropdown with any already-connected drones
+        self._console_refresh_connections()
+
+        return widget
+
+    def eventFilter(self, obj, event):
+        """Intercept Up/Down arrow keys in the console input for history navigation."""
+        from PyQt5.QtCore import QEvent
+        from PyQt5.QtGui import QKeyEvent
+        from PyQt5.QtCore import Qt as _Qt
+        if obj is self._console_input and event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key == _Qt.Key_Up:
+                if self._console_history:
+                    self._console_history_idx = max(0, self._console_history_idx - 1)
+                    self._console_input.setText(self._console_history[self._console_history_idx])
+                return True
+            elif key == _Qt.Key_Down:
+                if self._console_history:
+                    self._console_history_idx = min(
+                        len(self._console_history) - 1,
+                        self._console_history_idx + 1
+                    )
+                    self._console_input.setText(self._console_history[self._console_history_idx])
+                return True
+        return super().eventFilter(obj, event)
+
+    def _console_refresh_connections(self):
+        """Repopulate the connection dropdown with currently active connections."""
+        if not hasattr(self, '_console_conn_combo'):
+            return
+
+        prev = self._console_conn_combo.currentData()
+        self._console_conn_combo.blockSignals(True)
+        self._console_conn_combo.clear()
+
+        if self.mavlink_service is None:
+            self._console_conn_combo.addItem("No service", userData=None)
+        else:
+            active = {
+                sid: conn for sid, conn in self.mavlink_service._connections.items()
+                if conn.is_connected
+            }
+            if not active:
+                self._console_conn_combo.addItem("No active connections", userData=None)
+            else:
+                for sid, conn in active.items():
+                    label = conn.config.name or f"SysID {sid}"
+                    self._console_conn_combo.addItem(label, userData=sid)
+
+        # Restore previous selection if still present
+        if prev is not None:
+            idx = self._console_conn_combo.findData(prev)
+            if idx >= 0:
+                self._console_conn_combo.setCurrentIndex(idx)
+
+        self._console_conn_combo.blockSignals(False)
+
+    def _on_console_send(self):
+        """Send the current input line to the selected drone's shell."""
+        if not hasattr(self, '_console_input'):
+            return
+
+        text = self._console_input.text().strip()
+        if not text:
+            return
+
+        # Echo the command to the output
+        self._console_append(f"$ {text}", color="#1565c0")
+
+        # History bookkeeping
+        if not self._console_history or self._console_history[-1] != text:
+            self._console_history.append(text)
+        self._console_history_idx = len(self._console_history)
+
+        self._console_input.clear()
+
+        # Resolve selected system_id
+        sys_id = self._console_conn_combo.currentData()
+        if sys_id is None or self.mavlink_service is None:
+            self._console_append("[No active connection selected]", color="#c62828")
+            return
+
+        ok = self.mavlink_service.send_console_command(sys_id, text)
+        if not ok:
+            self._console_append("[Send failed — is the drone connected?]", color="#c62828")
+
+    def _on_console_clear(self):
+        """Clear the console output area."""
+        if hasattr(self, '_console_output'):
+            self._console_output.clear()
+
+    @pyqtSlot(int, str)
+    def _on_console_output(self, system_id: int, text: str):
+        """Receive output from the drone and append it to the console.
+
+        Only shown if the system_id matches the currently selected connection,
+        so output from multiple drones doesn't interleave.
+        """
+        if not hasattr(self, '_console_conn_combo'):
+            return
+
+        selected_sid = self._console_conn_combo.currentData()
+        if selected_sid is not None and selected_sid != system_id:
+            return  # Output is from a different drone — ignore
+
+        # STATUSTEXT lines get a distinct colour; raw shell output is near-black
+        if text.startswith("[STATUS]"):
+            self._console_append(text, color="#00695c")
+        else:
+            self._console_append(text, color="#1a1a1a")
+
+    def _console_append(self, text: str, color: str = "#1a1a1a"):
+        """Append styled text to the console output, then scroll to bottom."""
+        from PyQt5.QtGui import QTextCursor
+        cursor = self._console_output.textCursor()
+        cursor.movePosition(QTextCursor.End)
+
+        fmt = cursor.charFormat()
+        fmt.setForeground(
+            __import__('PyQt5.QtGui', fromlist=['QColor']).QColor(color)
+        )
+        cursor.setCharFormat(fmt)
+        cursor.insertText(text if text.endswith('\n') else text + '\n')
+
+        self._console_output.setTextCursor(cursor)
+        self._console_output.ensureCursorVisible()
+
