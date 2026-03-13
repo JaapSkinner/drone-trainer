@@ -19,7 +19,7 @@ import os
 import sys
 import time
 import threading
-from queue import Queue, Empty, PriorityQueue
+from queue import PriorityQueue
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Callable
 from enum import Enum
@@ -1219,8 +1219,8 @@ class MavlinkService(ServiceBase):
             if conn.is_connected:
                 conn.send_ping()
 
-        # Wait a bit for pings to return (give time for RTT measurement)
-        time.sleep(0.1)
+        # Wait for pings to return and metrics to stabilize over the requested duration
+        time.sleep(duration_secs)
 
         for sys_id, conn in self._connections.items():
             if not conn.is_connected:
