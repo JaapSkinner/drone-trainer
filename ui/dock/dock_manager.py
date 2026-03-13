@@ -62,9 +62,9 @@ class DockManager(QDockWidget):
             LeaderboardPanel(self),
             ConfigPanel(self),
             # ViconPanel(self, vicon),
-            self.mavlink_panel,  # Add mavlink panel
-            ObjectPanel(gl_widget, self, object_service=object_service),
-            SettingsPanel(self, object_service=object_service),
+            self.mavlink_panel,
+            self.object_panel,
+            self.settings_panel,
             CommandPanel(self, object_service=object_service)
         ]
         for panel in self.panels:

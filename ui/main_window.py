@@ -102,11 +102,11 @@ class MainWindow(QMainWindow):
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service)
-        self.object_panel = self.dock.panels[4]
-        self.config_panel = self.dock.panels[3]  # Config panel is at index 3
-        self.settings_panel = self.dock.panels[5]  # Settings panel is at index 5
-        self.command_panel = self.dock.panels[6]  # Command panel is at index 6
-        
+        self.config_panel = self.dock.panels[3]   # Config panel
+        self.object_panel = self.dock.panels[5]   # Object/Live Data panel
+        self.settings_panel = self.dock.panels[6]  # Settings panel
+        self.command_panel = self.dock.panels[7]   # Command panel
+
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
         splitter.addWidget(self.glWidget)
