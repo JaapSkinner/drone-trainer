@@ -635,7 +635,7 @@ class CommandPanel(QWidget):
         Note: Rotation values displayed are quaternion components (qx, qy, qz),
         not Euler angles. The pose format is (x, y, z, qw, qx, qy, qz).
         """
-        group = QGroupBox("Position Info (m)")
+        group = QGroupBox("Pose Info")
         main_layout = QVBoxLayout(group)
         
         # Header row
