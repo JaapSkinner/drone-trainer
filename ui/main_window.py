@@ -58,7 +58,8 @@ class MainWindow(QMainWindow):
         self.input_service.set_command_panel(self.command_panel)
 
         # Initialize MAVLink service for drone communication
-        # TODO: Connect to DTRG-Mavlink custom message definitions when submodule is added
+        # TODO: Validate DTRG-Mavlink dialect presence at runtime, wire any remaining custom DTRG
+        #       message handling, and surface a UI warning when DTRG_DIALECT_BUILT is False.
         self.mavlink_service = MavlinkService()
         
         # Connect mavlink service to dock panel
