@@ -104,7 +104,7 @@ class SettingsPanel(QWidget):
         
         # Default connection string
         self.mavlink_conn_edit = QLineEdit(self._mavlink_settings.default_connection_string)
-        self.mavlink_conn_edit.setPlaceholderText("udp:127.0.0.1:14550")
+        self.mavlink_conn_edit.setPlaceholderText("udpin:0.0.0.0:14550")
         self.mavlink_conn_edit.textChanged.connect(
             lambda text: self._update_mavlink_setting('default_connection_string', text)
         )
