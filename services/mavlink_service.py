@@ -344,10 +344,14 @@ class MavlinkConnection:
             return False
         
         try:
+            # Prefer the system ID learned from heartbeat if available, fall back to configured ID
+            target_system = self.status.system_id or self.config.system_id
+            target_component = self.config.component_id
+
             self._connection.mav.set_position_target_local_ned_send(
                 0,  # time_boot_ms (not used)
-                self.config.system_id,
-                self.config.component_id,
+                target_system,
+                target_component,
                 setpoint.coordinate_frame,
                 setpoint.type_mask,
                 setpoint.x, setpoint.y, setpoint.z,
