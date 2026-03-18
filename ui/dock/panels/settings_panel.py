@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider, 
                              QGroupBox, QFormLayout, QPushButton, QComboBox,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
-                             QScrollArea)
+                             QScrollArea, QHBoxLayout)
 from PyQt5.QtCore import Qt, pyqtSignal
 from models.debug_text import DebugText
 from models.structs import MavlinkGlobalSettings
@@ -18,7 +18,10 @@ class SettingsPanel(QWidget):
     
     # Signal for MAVLink settings changes
     mavlink_settings_changed = pyqtSignal(object)  # Emits MavlinkGlobalSettings
-    
+    # Signals for import/export actions requested from the UI
+    import_settings_requested = pyqtSignal()
+    export_settings_requested = pyqtSignal()
+
     def __init__(self, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
         self.object_service = object_service
@@ -49,6 +52,10 @@ class SettingsPanel(QWidget):
         viewport_group = self._create_viewport_group()
         layout.addWidget(viewport_group)
         
+        # Import / Export Group
+        io_group = self._create_io_group()
+        layout.addWidget(io_group)
+
         # MAVLink Settings Group
         mavlink_group = self._create_mavlink_settings_group()
         layout.addWidget(mavlink_group)
@@ -97,6 +104,24 @@ class SettingsPanel(QWidget):
         viewport_group.setLayout(viewport_layout)
         return viewport_group
     
+    def _create_io_group(self):
+        """Create a small group containing Import / Export buttons."""
+        group = QGroupBox("Import / Export")
+        layout = QHBoxLayout()
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(8)
+
+        self.import_btn = QPushButton("Import Settings")
+        self.export_btn = QPushButton("Export Settings")
+        self.import_btn.clicked.connect(self._on_import_clicked)
+        self.export_btn.clicked.connect(self._on_export_clicked)
+
+        layout.addStretch(1)
+        layout.addWidget(self.import_btn)
+        layout.addWidget(self.export_btn)
+        group.setLayout(layout)
+        return group
+
     def _create_mavlink_settings_group(self):
         """Create the MAVLink global settings group."""
         group = QGroupBox("MAVLink Global Settings")
@@ -404,3 +429,11 @@ class SettingsPanel(QWidget):
     def get_zoom_sensitivity(self):
         """Get the current zoom sensitivity value."""
         return self.zoom_sensitivity_slider.value() / 100.0
+
+    def _on_import_clicked(self):
+        """Emit a request to import settings (MainWindow handles the dialog)."""
+        self.import_settings_requested.emit()
+
+    def _on_export_clicked(self):
+        """Emit a request to export settings (MainWindow handles the dialog)."""
+        self.export_settings_requested.emit()

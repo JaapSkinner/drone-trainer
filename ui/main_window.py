@@ -1,6 +1,7 @@
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication
+from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication, QFileDialog, QMessageBox, QDialog, QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout, QLabel
 from PyQt5.QtGui import QFontDatabase, QFont
+import json
 
 from services.input_service import InputService, InputType
 from services.object_service import ObjectService
@@ -269,6 +270,16 @@ class MainWindow(QMainWindow):
         self.settings_panel.reset_camera_requested.connect(self.on_reset_camera_requested)
         self.settings_panel.lock_object_changed.connect(self.on_lock_object_changed)
         
+        # Wire import/export buttons from settings panel into the main handlers
+        self.settings_panel.import_settings_requested.connect(self._on_import_settings_triggered)
+        self.settings_panel.export_settings_requested.connect(self._on_export_settings_triggered)
+
+        # Give the settings panel access to the object service so it can populate lock list
+        try:
+            self.settings_panel.set_object_service(self.object_service)
+        except Exception:
+            pass
+
         # Connect GLWidget signals to settings panel for UI sync
         self.glWidget.camera_reset.connect(self.settings_panel.reset_ui_to_defaults)
         
@@ -599,3 +610,253 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         event.accept()
+
+    def _on_import_settings_triggered(self):
+        """Handle Import Settings menu action."""
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getOpenFileName(self, "Import Settings", "", "Settings Files (*.json);;All Files (*)", options=options)
+        if not file_name:
+            return  # User canceled
+
+        # Parse the file first and show preview
+        try:
+            with open(file_name, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+        except Exception as e:
+            QMessageBox.critical(self, "Import Settings", f"Failed to read/parse file:\n{str(e)}")
+            return
+
+        # Show preview dialog and ask user to confirm
+        if not self._show_import_preview(file_name, data):
+            return
+
+        # Perform the import
+        success = self.storage_service.import_from_file(file_name)
+
+        # Show result message
+        if success:
+            QMessageBox.information(self, "Import Settings", "Settings imported successfully.")
+            # Ensure storage service mirrors what's on disk (some imports write nested structure)
+            try:
+                new_settings = StorageService.load_settings_from_disk()
+                # Replace in-memory settings without triggering another disk write
+                try:
+                    self.storage_service._settings = new_settings
+                except Exception:
+                    # Fallback: update_settings (safe, small write)
+                    try:
+                        self.storage_service.update_settings(new_settings)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Apply imported settings to the running UI and services
+            try:
+                self._apply_imported_settings()
+            except Exception:
+                pass
+        else:
+            QMessageBox.critical(self, "Import Settings", "Failed to import settings. Please check the file and try again.")
+
+    def _show_import_preview(self, file_name: str, data) -> bool:
+        """Show a modal preview dialog for the import. Returns True if user confirms import."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Import Preview")
+        dlg.setModal(True)
+        layout = QVBoxLayout(dlg)
+
+        info_label = QLabel(f"Previewing: {file_name}")
+        layout.addWidget(info_label)
+
+        # Summarize content
+        try:
+            summary_lines = []
+            if isinstance(data, dict):
+                keys = list(data.keys())
+                summary_lines.append(f"Top-level keys: {', '.join(keys)}")
+                if 'connections' in data and isinstance(data['connections'], list):
+                    summary_lines.append(f"Connections: {len(data['connections'])} entries")
+            elif isinstance(data, list):
+                summary_lines.append(f"Connections list: {len(data)} entries")
+            else:
+                summary_lines.append(f"Data type: {type(data).__name__}")
+        except Exception:
+            summary_lines = ["Unable to summarize preview."]
+
+        summary_label = QLabel("\n".join(summary_lines))
+        layout.addWidget(summary_label)
+
+        # Show a truncated pretty JSON preview
+        try:
+            pretty = json.dumps(data, indent=2)
+            if len(pretty) > 10000:
+                pretty = pretty[:10000] + "\n... (truncated)"
+        except Exception:
+            pretty = str(data)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(pretty)
+        text.setMinimumSize(600, 300)
+        layout.addWidget(text)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        import_btn = QPushButton("Import")
+        cancel_btn = QPushButton("Cancel")
+        btn_layout.addStretch(1)
+        btn_layout.addWidget(import_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        result = {'confirmed': False}
+
+        def on_import():
+            result['confirmed'] = True
+            dlg.accept()
+
+        def on_cancel():
+            dlg.reject()
+
+        import_btn.clicked.connect(on_import)
+        cancel_btn.clicked.connect(on_cancel)
+
+        dlg.exec_()
+        return result['confirmed']
+
+    def _apply_imported_settings(self):
+        """Apply settings currently stored in StorageService to the running UI/services
+
+        This mirrors the startup restore logic and is intentionally conservative
+        (wrapped in try/except to avoid crashing the UI on malformed imports).
+        """
+        if not hasattr(self, 'storage_service'):
+            return
+        s = self.storage_service.get_settings()
+
+        # Apply viewport and UI preferences
+        try:
+            if hasattr(self, 'glWidget') and self.glWidget:
+                self.glWidget.set_zoom_sensitivity(s.zoom_sensitivity)
+                try:
+                    if getattr(s, 'camera_distance', None) is not None:
+                        self.glWidget.camera_distance = float(s.camera_distance)
+                        self.glWidget.camera_angle_x = float(s.camera_angle_x)
+                        self.glWidget.camera_angle_y = float(s.camera_angle_y)
+                except Exception:
+                    pass
+                try:
+                    if getattr(s, 'splitter_sizes', None) and hasattr(self, 'splitter'):
+                        self.splitter.setSizes(list(s.splitter_sizes))
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        # Update settings panel UI (zoom slider)
+        try:
+            self.settings_panel.zoom_sensitivity_slider.blockSignals(True)
+            self.settings_panel.zoom_sensitivity_slider.setValue(int(s.zoom_sensitivity * 100))
+            self.settings_panel.zoom_sensitivity_label.setText(f"{s.zoom_sensitivity:.1f}x")
+            self.settings_panel.zoom_sensitivity_slider.blockSignals(False)
+        except Exception:
+            pass
+
+        # Apply MAVLink global settings
+        try:
+            mav_settings = self._build_mavlink_settings(s)
+            if hasattr(self, 'mavlink_service') and self.mavlink_service:
+                self.mavlink_service.update_global_settings(mav_settings)
+                # Also refresh the settings panel UI so the MAVLink controls reflect the new values
+                try:
+                    if hasattr(self, 'settings_panel') and getattr(self.settings_panel, '_refresh_mavlink_ui', None):
+                        self.settings_panel._mavlink_settings = mav_settings
+                        self.settings_panel._refresh_mavlink_ui()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Load connections from storage into mavlink service
+        try:
+            if hasattr(self, 'mavlink_service') and self.mavlink_service:
+                for entry in self.storage_service.list_connections():
+                    try:
+                        config = MavlinkConnectionConfig(
+                            connection_string=entry.connection_string,
+                            system_id=entry.system_id,
+                            component_id=entry.component_id,
+                            source_system=entry.source_system,
+                            source_component=entry.source_component,
+                            heartbeat_interval=entry.heartbeat_interval,
+                            mocap_rate_hz=entry.mocap_rate_hz,
+                            name=entry.name,
+                            linked_object_name=entry.linked_object_name,
+                        )
+                        self.mavlink_service.save_connection_config(config)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # Restore active panel and locked object
+        try:
+            if getattr(s, 'active_panel', None) and hasattr(self.dock, 'set_active_panel'):
+                self.dock.set_active_panel(s.active_panel)
+        except Exception:
+            pass
+        try:
+            if getattr(s, 'last_locked_object', None):
+                for obj in self.object_service.get_objects():
+                    if getattr(obj, 'name', None) == s.last_locked_object:
+                        self.glWidget.set_locked_object(obj)
+                        break
+        except Exception:
+            pass
+
+        # Restore window maximized and font size
+        try:
+            if getattr(s, 'window_maximized', False):
+                self.showMaximized()
+        except Exception:
+            pass
+        try:
+            if getattr(s, 'font_point_size', None):
+                f = QApplication.font()
+                f.setPointSize(int(s.font_point_size))
+                QApplication.setFont(f)
+        except Exception:
+            pass
+
+    def _on_export_settings_triggered(self):
+        """Handle Export Settings menu action."""
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getSaveFileName(self, "Export Settings", "", "Settings Files (*.json);;All Files (*)", options=options)
+        if not file_name:
+            return  # User canceled
+
+        # Confirm export action
+        confirm = QMessageBox.question(self, "Confirm Export", f"Are you sure you want to export settings to:\n{file_name}?",
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if confirm != QMessageBox.Yes:
+            return  # User canceled
+
+        # Ensure current connections are synced into storage before exporting
+        try:
+            self._sync_connections_to_storage()
+        except Exception:
+            pass
+
+        # Use StorageService.export_to_file to write a full settings+connections file
+        try:
+            ok = False
+            if hasattr(self, 'storage_service') and self.storage_service:
+                ok = self.storage_service.export_to_file(file_name)
+            if ok:
+                QMessageBox.information(self, "Export Settings", "Settings exported successfully.")
+            else:
+                QMessageBox.critical(self, "Export Settings", "Failed to export settings. See console for details.")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Settings", f"Failed to export settings: {str(e)}")

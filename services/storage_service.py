@@ -28,6 +28,7 @@ import os
 from typing import Dict, List, Optional
 
 from PyQt5.QtCore import pyqtSignal
+from dataclasses import fields
 
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from models.storage_models import AppSettings, ConnectionEntry
@@ -239,6 +240,98 @@ class StorageService(ServiceBase):
                 json.dump(entries, fh, indent=2)
         except OSError as exc:
             print(f"[StorageService] ERROR: Could not write {path}: {exc}")
+
+    def import_from_file(self, file_path: str) -> bool:
+        """Import settings and/or connections from a JSON file.
+
+        The file may contain:
+          - a dict with AppSettings fields (will replace current settings),
+          - a dict with a 'connections' key containing a list of connection dicts,
+          - a top-level list which will be treated as connections.
+
+        Returns True on success, False on error.
+        """
+        if not os.path.exists(file_path):
+            print(f"[StorageService] ERROR: Import file not found: {file_path}")
+            return False
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            print(f"[StorageService] ERROR: Failed to parse import file: {exc}")
+            return False
+
+        try:
+            # If it's a list, treat as connections list
+            if isinstance(data, list):
+                for item in data:
+                    try:
+                        entry = ConnectionEntry.from_dict(item)
+                        self.upsert_connection(entry)
+                    except Exception:
+                        continue
+                return True
+
+            # If dict contains 'connections', import them
+            if isinstance(data, dict):
+                # If caller exported via export_to_file, settings may be nested under 'settings'
+                if 'settings' in data and isinstance(data['settings'], dict):
+                    try:
+                        sdict = data['settings']
+                        settings = AppSettings.from_dict(sdict)
+                        self.update_settings(settings)
+                    except Exception as e:
+                        print(f"[StorageService] WARNING: Could not import nested settings: {e}")
+
+                # Import settings if present (or if dict looks like settings)
+                # Heuristic: if any AppSettings field exists in the dict, treat it as settings
+                settings_keys = {f.name for f in fields(AppSettings)}
+                if any(k in data for k in settings_keys):
+                    try:
+                        sdict = {k: v for k, v in data.items() if k in settings_keys}
+                        settings = AppSettings.from_dict(sdict)
+                        self.update_settings(settings)
+                    except Exception as e:
+                        print(f"[StorageService] WARNING: Could not import settings: {e}")
+
+                # Import connections key if present
+                if 'connections' in data and isinstance(data['connections'], list):
+                    for item in data['connections']:
+                        try:
+                            entry = ConnectionEntry.from_dict(item)
+                            self.upsert_connection(entry)
+                        except Exception:
+                            continue
+
+                return True
+
+        except Exception as exc:
+            print(f"[StorageService] ERROR: Import failed: {exc}")
+            return False
+
+        return False
+
+    def export_to_file(self, file_path: str) -> bool:
+        """Export current settings and connections to a JSON file.
+
+        Writes a dict with keys 'settings' (full AppSettings dict) and
+        'connections' (list of connection dicts).
+        Returns True on success, False on error.
+        """
+        try:
+            data = {
+                'settings': self._settings.to_dict(),
+                'connections': [c.to_dict() for c in self._connections.values()]
+            }
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path) or '.', exist_ok=True)
+            with open(file_path, 'w', encoding='utf-8') as fh:
+                json.dump(data, fh, indent=2)
+            return True
+        except Exception as exc:
+            print(f"[StorageService] ERROR: Failed to export to {file_path}: {exc}")
+            return False
 
     # ------------------------------------------------------------------
     # Synchronous file-based loaders (safe to call from main thread)
