@@ -911,14 +911,19 @@ class MavlinkService(ServiceBase):
         self._telemetry_timer = None
         self._mocap_timer = None
         self._setpoint_timer = None
-        
-        # Disconnect all connections
-        for conn in self._connections.values():
-            conn.disconnect()
-        self._connections.clear()
-        
-        self.set_status(ServiceLevel.STOPPED, "MAVLink: Stopped")
-    
+
+        # If a connection test worker is running, try to stop it cleanly
+        if hasattr(self, '_test_worker') and self._test_worker is not None:
+            try:
+                if self._test_worker.isRunning():
+                    # Wait briefly for it to finish
+                    self._test_worker.wait(1000)
+                self._test_worker.deleteLater()
+            except Exception:
+                pass
+            finally:
+                self._test_worker = None
+
     def update(self):
         """Main update loop - not used as we use separate timers for priority handling."""
         pass

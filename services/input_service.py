@@ -4,11 +4,14 @@ Refactored from JoystickService to support multiple input types.
 """
 import numpy as np
 import pygame
-from PyQt5.QtCore import pyqtSignal, Qt, QObject, QEvent
+import logging
+from PyQt5.QtCore import pyqtSignal, Qt, QObject, QEvent, QThread
 from PyQt5.QtWidgets import QApplication
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from PyQt5.QtCore import QTimer
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class _KeyboardEventFilter(QObject):
@@ -106,6 +109,7 @@ class InputService(ServiceBase):
 
     def on_start(self):
         """Initialize the input service based on input type"""
+        logger.info("InputService.on_start() thread=%s", QThread.currentThread())
         if self.input_type == InputType.CONTROLLER:
             self._init_controller()
         else:
@@ -156,6 +160,7 @@ class InputService(ServiceBase):
 
     def on_stop(self):
         """Clean up resources"""
+        logger.info("InputService.on_stop()")
         if self.timer:
             self.timer.stop()
             self.timer.deleteLater()

@@ -512,7 +512,9 @@ class MainWindow(QMainWindow):
             pass
 
         # Stop services to ensure timers are stopped in their own threads
-        for svc_name in ('status_service', 'input_service', 'mavlink_service'):
+        # Include storage_service and object_service so their QThreads are
+        # cleanly stopped before the app tears down Qt objects.
+        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'storage_service', 'object_service'):
             svc = getattr(self, svc_name, None)
             if svc is not None:
                 try:
