@@ -109,6 +109,37 @@ class MainWindow(QMainWindow):
         # Apply persisted viewport zoom sensitivity
         if hasattr(self, 'glWidget') and self.glWidget:
             self.glWidget.set_zoom_sensitivity(saved.zoom_sensitivity)
+            # Restore camera position/angles if present
+            try:
+                if getattr(saved, 'camera_distance', None) is not None:
+                    self.glWidget.camera_distance = float(saved.camera_distance)
+                    self.glWidget.camera_angle_x = float(saved.camera_angle_x)
+                    self.glWidget.camera_angle_y = float(saved.camera_angle_y)
+            except Exception:
+                pass
+            # Restore splitter sizes if available
+            try:
+                if getattr(saved, 'splitter_sizes', None):
+                    # Ensure splitter exists and sizes look plausible
+                    sizes = list(saved.splitter_sizes)
+                    if hasattr(self, 'splitter') and sizes:
+                        self.splitter.setSizes(sizes)
+            except Exception:
+                pass
+            # Restore window maximized state
+            try:
+                if getattr(saved, 'window_maximized', False):
+                    self.showMaximized()
+            except Exception:
+                pass
+            # Restore application font size if present
+            try:
+                if getattr(saved, 'font_point_size', None):
+                    f = QApplication.font()
+                    f.setPointSize(int(saved.font_point_size))
+                    QApplication.setFont(f)
+            except Exception:
+                pass
         # Sync the settings panel slider
         self.settings_panel.zoom_sensitivity_slider.blockSignals(True)
         self.settings_panel.zoom_sensitivity_slider.setValue(int(saved.zoom_sensitivity * 100))
@@ -214,6 +245,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.glWidget)
         splitter.setStretchFactor(1, 1)  # let GLWidget expand
         main_layout.addWidget(splitter)
+        # Keep a reference to the main splitter so we can persist/restore sizes
+        self.splitter = splitter
         splitter.setCollapsible(0, False)  # Prevent dock collapsing
         splitter.setCollapsible(1, False)  # Prevent GL collapsing
         self.glWidget.setMinimumWidth(200)
@@ -407,6 +440,23 @@ class MainWindow(QMainWindow):
             system_id: System ID of the changed connection (unused; full sync performed).
             connected: Whether the connection was established or removed (unused).
         """
+        # Persist last active connection if one was just connected
+        try:
+            if connected and hasattr(self, 'mavlink_service') and hasattr(self, 'storage_service'):
+                all_conns = self.mavlink_service.get_all_connections()
+                # Find first connection matching system_id
+                for name, cfg in all_conns.items():
+                    try:
+                        if getattr(cfg, 'system_id', None) == system_id:
+                            s = self.storage_service.get_settings()
+                            s.last_active_connection = name
+                            self.storage_service.update_settings(s)
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         self._sync_connections_to_storage()
 
     def _sync_connections_to_storage(self):
@@ -497,6 +547,20 @@ class MainWindow(QMainWindow):
                 try:
                     s = self.storage_service.get_settings()
                     s.window_geometry = {'x': self.x(), 'y': self.y(), 'w': self.width(), 'h': self.height()}
+                    # Persist camera state if GL widget present
+                    try:
+                        if hasattr(self, 'glWidget') and self.glWidget is not None:
+                            s.camera_distance = float(getattr(self.glWidget, 'camera_distance', s.camera_distance))
+                            s.camera_angle_x = float(getattr(self.glWidget, 'camera_angle_x', s.camera_angle_x))
+                            s.camera_angle_y = float(getattr(self.glWidget, 'camera_angle_y', s.camera_angle_y))
+                    except Exception:
+                        pass
+                    # Persist splitter sizes if available
+                    try:
+                        if hasattr(self, 'splitter') and self.splitter is not None:
+                            s.splitter_sizes = self.splitter.sizes()
+                    except Exception:
+                        pass
                     cur = getattr(self.dock, 'current_widget', None)
                     if cur is not None and hasattr(cur, 'NavTag'):
                         s.active_panel = getattr(cur, 'NavTag')

@@ -69,6 +69,17 @@ class AppSettings:
     window_geometry: Optional[dict] = None
     active_panel: str = "home"
     last_locked_object: str = ""
+    # Camera state to restore viewport on next launch
+    camera_distance: float = 10.0
+    camera_angle_x: float = 30.0
+    camera_angle_y: float = 45.0
+    # Sizes for main splitter panes (list of ints) so layout can be restored
+    splitter_sizes: Optional[list] = None
+    # Additional UI preferences
+    window_maximized: bool = False
+    ui_theme: str = "default"
+    font_point_size: int = 11
+    last_active_connection: str = ""
     # Per-object minimal MAVLink configs: { object_name: {enabled: bool, linked_connection_name: str, system_id: int, send_mocap: bool} }
     object_mavlink_configs: dict = field(default_factory=dict)
 
