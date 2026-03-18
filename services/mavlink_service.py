@@ -873,25 +873,25 @@ class MavlinkService(ServiceBase):
             print(f"[MavlinkService] Using standard MAVLink dialect (DTRG not available)")
         
         # Heartbeat timer - runs at 10Hz to check all connections
-        self._heartbeat_timer = QTimer()
+        self._heartbeat_timer = QTimer(self)
         self._heartbeat_timer.setInterval(self.HEARTBEAT_CHECK_INTERVAL_MS)
         self._heartbeat_timer.timeout.connect(self.safe(self._process_heartbeats))
         self._heartbeat_timer.start()
         
         # Telemetry timer - lowest priority, 20Hz
-        self._telemetry_timer = QTimer()
+        self._telemetry_timer = QTimer(self)
         self._telemetry_timer.setInterval(self.TELEMETRY_UPDATE_INTERVAL_MS)
         self._telemetry_timer.timeout.connect(self.safe(self._process_telemetry))
         self._telemetry_timer.start()
         
         # Mocap timer - highest priority, 100Hz
-        self._mocap_timer = QTimer()
+        self._mocap_timer = QTimer(self)
         self._mocap_timer.setInterval(self.MOCAP_UPDATE_INTERVAL_MS)
         self._mocap_timer.timeout.connect(self.safe(self._process_mocap))
         self._mocap_timer.start()
         
         # Setpoint timer - medium priority, 50Hz
-        self._setpoint_timer = QTimer()
+        self._setpoint_timer = QTimer(self)
         self._setpoint_timer.setInterval(self.SETPOINT_UPDATE_INTERVAL_MS)
         self._setpoint_timer.timeout.connect(self.safe(self._process_setpoints))
         self._setpoint_timer.start()

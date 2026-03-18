@@ -46,6 +46,11 @@ class JoystickService(ServiceBase):
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
 
+        # Ensure the timer is parented to this QObject so it lives in the
+        # same thread affinity and does not cause cross-thread start/stop
+        # warnings. (Some environments create timers without a parent.)
+        self.timer.setParent(self)
+
     def on_stop(self):
         if self.timer:
             self.timer.stop()

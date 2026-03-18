@@ -53,6 +53,10 @@ class StorageService(ServiceBase):
 
     def __init__(self, storage_dir: str = None, debug_level: DebugLevel = None):
         super().__init__(debug_level=debug_level or DebugLevel.LOG)
+        # No thread affinity tweaks here — ServiceBase manages the service
+        # thread. For synchronous startup needs, use the static loader
+        # helpers below so the UI can read persisted state before starting
+        # threaded services.
         self._storage_dir = storage_dir or _STORAGE_DIR
         self._settings: AppSettings = AppSettings()
         self._connections: Dict[str, ConnectionEntry] = {}
@@ -235,3 +239,50 @@ class StorageService(ServiceBase):
                 json.dump(entries, fh, indent=2)
         except OSError as exc:
             print(f"[StorageService] ERROR: Could not write {path}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Synchronous file-based loaders (safe to call from main thread)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def load_settings_from_disk(storage_dir: str = None) -> AppSettings:
+        """Load AppSettings directly from disk without constructing the service.
+
+        This is intended for synchronous startup where the UI needs
+        persisted settings before threaded services are started.
+        """
+        _dir = storage_dir or _STORAGE_DIR
+        path = os.path.join(_dir, _SETTINGS_FILE)
+        if not os.path.exists(path):
+            return AppSettings()
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return AppSettings.from_dict(data)
+        except (json.JSONDecodeError, TypeError, KeyError, OSError) as exc:
+            print(f"[StorageService] WARNING: Could not parse {path}: {exc}")
+            return AppSettings()
+
+    @staticmethod
+    def load_connections_from_disk(storage_dir: str = None) -> List[ConnectionEntry]:
+        """Load connection entries directly from disk as a list.
+
+        Returns an empty list on error or if no file exists.
+        """
+        _dir = storage_dir or _STORAGE_DIR
+        path = os.path.join(_dir, _CONNECTIONS_FILE)
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            entries: List[ConnectionEntry] = []
+            for item in data:
+                try:
+                    entries.append(ConnectionEntry.from_dict(item))
+                except Exception:
+                    continue
+            return entries
+        except (json.JSONDecodeError, TypeError, KeyError, OSError) as exc:
+            print(f"[StorageService] WARNING: Could not parse {path}: {exc}")
+            return []
+

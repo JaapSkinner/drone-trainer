@@ -4,7 +4,7 @@ Defines the data structures used to serialize/deserialize application
 settings and connection configurations to/from JSON storage.
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from typing import Optional
 
 
@@ -36,6 +36,10 @@ class AppSettings:
         auto_reconnect: Auto-reconnect on connection loss
         reconnect_interval: Interval between reconnection attempts in seconds
         auto_connect_discovered: Auto-connect to discovered MAVLink devices
+        window_geometry: Optional window geometry dict {'x':..,'y':..,'w':..,'h':..}
+        active_panel: Tag of the active dock panel at shutdown
+        last_locked_object: Name of the object the viewport was locked to (or empty)
+        object_mavlink_configs: Mapping of scene object name to minimal MAVLink config dict
     """
     # Viewport
     zoom_sensitivity: float = 1.0
@@ -61,15 +65,27 @@ class AppSettings:
     reconnect_interval: float = 5.0
     auto_connect_discovered: bool = False
 
+    # UI / session state (new)
+    window_geometry: Optional[dict] = None
+    active_panel: str = "home"
+    last_locked_object: str = ""
+    # Per-object minimal MAVLink configs: { object_name: {enabled: bool, linked_connection_name: str, system_id: int, send_mocap: bool} }
+    object_mavlink_configs: dict = field(default_factory=dict)
+
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""
-        return asdict(self)
+        # Use asdict then prune non-serializable entries if necessary
+        data = asdict(self)
+        # Ensure None window_geometry becomes null in JSON (allowed)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "AppSettings":
         """Deserialize from a dictionary, ignoring unknown keys."""
-        known = {f.name for f in cls.__dataclass_fields__.values()}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        known = {f.name for f in fields(cls)}
+        # Copy only known keys
+        filtered = {k: v for k, v in data.items() if k in known}
+        return cls(**filtered)
 
 
 @dataclass
@@ -107,5 +123,5 @@ class ConnectionEntry:
     @classmethod
     def from_dict(cls, data: dict) -> "ConnectionEntry":
         """Deserialize from a dictionary, ignoring unknown keys."""
-        known = {f.name for f in cls.__dataclass_fields__.values()}
+        known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})

@@ -114,7 +114,10 @@ class InputService(ServiceBase):
             self.status = ServiceLevel.RUNNING
             self._install_key_filter()
 
-        self.timer = QTimer()
+        # Parent the timer to the service so it shares the service's
+        # QObject thread affinity. This prevents starting/stopping the
+        # timer from a different thread than the timer's owner.
+        self.timer = QTimer(self)
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
 
