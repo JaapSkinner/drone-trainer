@@ -211,6 +211,7 @@ class StorageService(ServiceBase):
     def _save_settings(self) -> None:
         path = self._settings_path()
         try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(self._settings.to_dict(), fh, indent=2)
         except OSError as exc:
@@ -236,6 +237,7 @@ class StorageService(ServiceBase):
         path = self._connections_path()
         try:
             entries = [e.to_dict() for e in self._connections.values()]
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(entries, fh, indent=2)
         except OSError as exc:
