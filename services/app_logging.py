@@ -50,6 +50,8 @@ def configure_logging(
     root_logger = logging.getLogger()
     if _LOGGING_CONFIGURED:
         root_logger.setLevel(level)
+        for handler in root_logger.handlers:
+            handler.setLevel(level)
         return get_log_file_path()
 
     os.makedirs(_LOG_DIR, exist_ok=True)
