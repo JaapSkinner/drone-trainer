@@ -2,11 +2,27 @@ import os
 import tempfile
 import unittest
 
+from PyQt5.QtCore import QThread
+
 from models.storage_models import AppSettings, ConnectionEntry
 from services.storage_service import StorageService
 
 
 class StorageServiceTests(unittest.TestCase):
+    def test_start_and_stop_remain_in_calling_thread(self):
+        storage = StorageService()
+        calling_thread = QThread.currentThread()
+
+        self.assertEqual(storage.thread(), calling_thread)
+
+        storage.start()
+        self.assertEqual(storage.status.name, "RUNNING")
+        self.assertEqual(storage.thread(), calling_thread)
+
+        storage.stop()
+        self.assertEqual(storage.status.name, "STOPPED")
+        self.assertEqual(storage.thread(), calling_thread)
+
     def test_settings_and_connections_persist_to_disk(self):
         with tempfile.TemporaryDirectory() as storage_dir:
             storage = StorageService(storage_dir=storage_dir)
