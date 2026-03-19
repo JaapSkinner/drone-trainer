@@ -1597,7 +1597,7 @@ class MavlinkService(ServiceBase):
                     sock.close()
             except Exception as e:
                 print(f"[MavlinkService] ERROR: Discovery error on port {port}: {e}")
-                logger.exception("Discovery error on port %s: %s", port, e)
+                logger.error("Discovery error on port %s: %s", port, e)
 
         logger.info("MAVLink discovery finished: %d device(s) found", len(discovered))
         return discovered

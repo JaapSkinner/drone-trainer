@@ -1,5 +1,6 @@
 import logging
 import os
+from collections import deque
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
@@ -316,12 +317,16 @@ class MainWindow(QMainWindow):
             log_path = get_log_file_path()
             if os.path.exists(log_path):
                 with open(log_path, "r", encoding="utf-8") as fh:
-                    recent = fh.readlines()[-200:]
+                    recent = deque(fh, maxlen=200)
                 if recent:
                     self.app_console_output.appendPlainText("--- recent log history ---")
                     self.app_console_output.appendPlainText("".join(recent).rstrip("\n"))
         except Exception:
-            logger.exception("Failed to preload recent log history into app console.")
+            logger.exception(
+                "Failed to preload recent log history into app console. "
+                "Live logging still works; full logs are available at %s",
+                get_log_file_path(),
+            )
 
     @pyqtSlot(str)
     def _append_log_console_message(self, message: str):
