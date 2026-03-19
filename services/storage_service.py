@@ -62,24 +62,6 @@ class StorageService(ServiceBase):
         self._settings: AppSettings = AppSettings()
         self._connections: Dict[str, ConnectionEntry] = {}
 
-    def start(self):
-        """Start storage service synchronously in the caller thread.
-
-        Storage has no timers or periodic background work. Running in a
-        dedicated worker thread makes direct UI-thread save calls unsafe and
-        can trigger Qt cross-thread timer warnings during settings updates.
-        """
-        if self.status == ServiceLevel.RUNNING:
-            return
-        self.on_start()
-
-    def stop(self):
-        """Stop storage service synchronously in the caller thread."""
-        if self.status == ServiceLevel.STOPPED:
-            return
-        self.on_stop()
-        self.set_status(ServiceLevel.STOPPED, "Storage: Stopped")
-
     # ------------------------------------------------------------------
     # ServiceBase lifecycle
     # ------------------------------------------------------------------
@@ -398,3 +380,4 @@ class StorageService(ServiceBase):
         except (json.JSONDecodeError, TypeError, KeyError, OSError) as exc:
             print(f"[StorageService] WARNING: Could not parse {path}: {exc}")
             return []
+

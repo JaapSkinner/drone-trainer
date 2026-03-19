@@ -2,26 +2,20 @@ import os
 import tempfile
 import unittest
 
-from PyQt5.QtCore import QThread
-
 from models.storage_models import AppSettings, ConnectionEntry
 from services.storage_service import StorageService
 
 
 class StorageServiceTests(unittest.TestCase):
-    def test_thread_affinity_remains_on_calling_thread(self):
-        storage = StorageService()
-        calling_thread = QThread.currentThread()
+    def test_update_settings_without_service_start_still_persists(self):
+        with tempfile.TemporaryDirectory() as storage_dir:
+            storage = StorageService(storage_dir=storage_dir)
 
-        self.assertEqual(storage.thread(), calling_thread)
+            storage.update_settings(AppSettings(input_type="Arrow Keys", input_sensitivity=1.3))
 
-        storage.start()
-        self.assertEqual(storage.status.name, "RUNNING")
-        self.assertEqual(storage.thread(), calling_thread)
-
-        storage.stop()
-        self.assertEqual(storage.status.name, "STOPPED")
-        self.assertEqual(storage.thread(), calling_thread)
+            loaded = StorageService.load_settings_from_disk(storage_dir)
+            self.assertEqual(loaded.input_type, "Arrow Keys")
+            self.assertAlmostEqual(loaded.input_sensitivity, 1.3)
 
     def test_settings_and_connections_persist_to_disk(self):
         with tempfile.TemporaryDirectory() as storage_dir:
