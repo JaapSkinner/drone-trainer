@@ -1,16 +1,21 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider, 
                              QGroupBox, QFormLayout, QPushButton, QComboBox,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
-                             QScrollArea, QHBoxLayout)
+                             QScrollArea, QHBoxLayout, QToolBox)
 from PyQt5.QtCore import Qt, pyqtSignal
 from models.debug_text import DebugText
 from models.structs import MavlinkGlobalSettings
+from services.input_service import InputType
 
 
 class SettingsPanel(QWidget):
     """Settings panel for viewport, application, and MAVLink settings."""
     NavTag = "settings"
     
+    # Signals to notify when input settings change
+    input_type_changed = pyqtSignal(object)  # Emits InputType
+    sensitivity_changed = pyqtSignal(float)  # Emits sensitivity value
+
     # Signals to notify when viewport settings change
     zoom_sensitivity_changed = pyqtSignal(float)
     reset_camera_requested = pyqtSignal()
@@ -47,25 +52,90 @@ class SettingsPanel(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignTop)
-        
-        # Viewport Settings Group
-        viewport_group = self._create_viewport_group()
-        layout.addWidget(viewport_group)
-        
-        # Import / Export Group
-        io_group = self._create_io_group()
-        layout.addWidget(io_group)
 
-        # MAVLink Settings Group
-        mavlink_group = self._create_mavlink_settings_group()
-        layout.addWidget(mavlink_group)
-        
-        # Viewport Controls Info Group
-        info_group = self._create_info_group()
-        layout.addWidget(info_group)
+        self.settings_toolbox = QToolBox()
+        self.settings_toolbox.addItem(
+            self._create_section_widget(
+                self._create_input_group(),
+                self._create_mapping_group()
+            ),
+            "Input Controls"
+        )
+        self.settings_toolbox.addItem(
+            self._create_section_widget(
+                self._create_viewport_group(),
+                self._create_info_group()
+            ),
+            "Viewport"
+        )
+        self.settings_toolbox.addItem(
+            self._create_section_widget(self._create_mavlink_settings_group()),
+            "MAVLink"
+        )
+        self.settings_toolbox.addItem(
+            self._create_section_widget(self._create_io_group()),
+            "Import / Export"
+        )
+        layout.addWidget(self.settings_toolbox)
+        layout.addStretch(1)
         
         scroll.setWidget(content)
         main_layout.addWidget(scroll)
+
+    def _create_section_widget(self, *widgets):
+        section = QWidget()
+        section_layout = QVBoxLayout(section)
+        section_layout.setContentsMargins(0, 0, 0, 0)
+        section_layout.setSpacing(8)
+        for widget in widgets:
+            section_layout.addWidget(widget)
+        section_layout.addStretch(1)
+        return section
+
+    def _create_input_group(self):
+        """Create the input device settings group."""
+        input_group = QGroupBox("Input Device Settings")
+        input_layout = QFormLayout()
+
+        self.input_type_combo = QComboBox()
+        self.input_type_combo.addItem("Controller", InputType.CONTROLLER)
+        self.input_type_combo.addItem("WASD Keys", InputType.WASD)
+        self.input_type_combo.addItem("Arrow Keys", InputType.ARROW_KEYS)
+        self.input_type_combo.currentIndexChanged.connect(self.on_input_type_changed)
+        input_layout.addRow("Input Type:", self.input_type_combo)
+
+        self.sensitivity_slider = QSlider(Qt.Horizontal)
+        self.sensitivity_slider.setMinimum(10)   # 0.1 * 100
+        self.sensitivity_slider.setMaximum(500)  # 5.0 * 100
+        self.sensitivity_slider.setValue(100)    # 1.0 * 100
+        self.sensitivity_slider.setTickPosition(QSlider.TicksBelow)
+        self.sensitivity_slider.setTickInterval(50)
+        self.sensitivity_slider.valueChanged.connect(self.on_sensitivity_changed)
+
+        self.sensitivity_label = QLabel("1.0x")
+        sensitivity_container = QWidget()
+        sensitivity_layout = QVBoxLayout(sensitivity_container)
+        sensitivity_layout.setContentsMargins(0, 0, 0, 0)
+        sensitivity_layout.addWidget(self.sensitivity_slider)
+        sensitivity_layout.addWidget(self.sensitivity_label)
+        input_layout.addRow("Sensitivity:", sensitivity_container)
+
+        input_group.setLayout(input_layout)
+        return input_group
+
+    def _create_mapping_group(self):
+        """Create the input mapping info group."""
+        mapping_group = QGroupBox("Input Mapping")
+        mapping_layout = QVBoxLayout()
+
+        self.mapping_info = QLabel()
+        self.mapping_info.setWordWrap(True)
+        self.mapping_info.setStyleSheet("font-size: 11px; color: #555;")
+        mapping_layout.addWidget(self.mapping_info)
+
+        mapping_group.setLayout(mapping_layout)
+        self.update_mapping_info(InputType.CONTROLLER)
+        return mapping_group
     
     def _create_viewport_group(self):
         """Create the viewport settings group."""
@@ -397,6 +467,69 @@ class SettingsPanel(QWidget):
         """Handle lock object selection change."""
         obj = self.lock_object_combo.currentData()
         self.lock_object_changed.emit(obj)
+
+    def on_input_type_changed(self, index):
+        """Handle input type selection change."""
+        input_type = self.input_type_combo.itemData(index)
+        self.update_mapping_info(input_type)
+        self.input_type_changed.emit(input_type)
+
+    def on_sensitivity_changed(self, value):
+        """Handle sensitivity slider change."""
+        sensitivity = value / 100.0
+        self.sensitivity_label.setText(f"{sensitivity:.1f}x")
+        self.sensitivity_changed.emit(sensitivity)
+
+    def update_mapping_info(self, input_type):
+        """Update mapping information for selected input type."""
+        if input_type == InputType.CONTROLLER:
+            info = """<b>Controller Mapping:</b><br>
+            • Left Stick: Move (X/Z)<br>
+            • Right Stick: Rotate<br>
+            • LB/RB: Move Up/Down<br>
+            • LT/RT: Rotate Z-axis"""
+        elif input_type == InputType.WASD:
+            info = """<b>WASD Mapping:</b><br>
+            • W/S: Forward/Backward<br>
+            • A/D: Strafe Left/Right<br>
+            • Q/E: Move Up/Down<br>
+            • R/F: Rotate"""
+        elif input_type == InputType.ARROW_KEYS:
+            info = """<b>Arrow Keys Mapping:</b><br>
+            • Up/Down: Forward/Backward<br>
+            • Left/Right: Strafe Left/Right<br>
+            • Page Up/Down: Move Up/Down<br>
+            • Home/End: Rotate"""
+        else:
+            info = "Unknown input type"
+
+        self.mapping_info.setText(info)
+
+    def set_input_type(self, input_type):
+        """Set the current input type selection without emitting signals."""
+        for i in range(self.input_type_combo.count()):
+            if self.input_type_combo.itemData(i) == input_type:
+                self.input_type_combo.blockSignals(True)
+                self.input_type_combo.setCurrentIndex(i)
+                self.input_type_combo.blockSignals(False)
+                self.update_mapping_info(input_type)
+                break
+
+    def set_input_sensitivity(self, sensitivity):
+        """Set input sensitivity without emitting signals."""
+        value = max(10, min(500, int(round(float(sensitivity) * 100))))
+        self.sensitivity_slider.blockSignals(True)
+        self.sensitivity_slider.setValue(value)
+        self.sensitivity_slider.blockSignals(False)
+        self.sensitivity_label.setText(f"{value / 100.0:.1f}x")
+
+    def get_current_input_type(self):
+        """Get the currently selected input type."""
+        return self.input_type_combo.currentData()
+
+    def get_current_sensitivity(self):
+        """Get the current input sensitivity value."""
+        return self.sensitivity_slider.value() / 100.0
     
     def on_zoom_sensitivity_changed(self, value):
         """Handle zoom sensitivity slider change."""
