@@ -1,5 +1,6 @@
-from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication, QFileDialog, QMessageBox, QDialog, QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout, QLabel
+import logging
+from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal
+from PyQt5.QtWidgets import QMainWindow, QSplitter, QHBoxLayout, QWidget, QApplication, QFileDialog, QMessageBox, QDialog, QTextEdit, QVBoxLayout, QPushButton, QLabel, QAction, QDockWidget, QPlainTextEdit
 from PyQt5.QtGui import QFontDatabase, QFont
 import json
 
@@ -28,8 +29,11 @@ class MainWindow(QMainWindow):
     - Status service for health monitoring
     """
     
+    log_message_received = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._root_log_handler = None
         # Load and set global font
         font_id = QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
         if font_id != -1:
@@ -217,6 +221,55 @@ class MainWindow(QMainWindow):
             pass
 
         self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
+        self.log_message_received.connect(self._append_log_console_message)
+        self._setup_app_console()
+
+    def _setup_app_console(self):
+        """Create a toggleable dock window that shows application logs."""
+        self.app_console_dock = QDockWidget("Application Console", self)
+        self.app_console_dock.setObjectName("applicationConsoleDock")
+        self.app_console_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+
+        self.app_console_output = QPlainTextEdit(self.app_console_dock)
+        self.app_console_output.setReadOnly(True)
+        self.app_console_output.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.app_console_output.setMaximumBlockCount(4000)
+        self.app_console_dock.setWidget(self.app_console_output)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.app_console_dock)
+        self.app_console_dock.hide()
+
+        self.toggle_console_action = QAction("Application Console", self)
+        self.toggle_console_action.setCheckable(True)
+        self.toggle_console_action.setShortcut("F12")
+        self.toggle_console_action.toggled.connect(self.app_console_dock.setVisible)
+        self.app_console_dock.visibilityChanged.connect(self.toggle_console_action.setChecked)
+        self.menuBar().addAction(self.toggle_console_action)
+
+        class _QtLogHandler(logging.Handler):
+            def __init__(self, emitter):
+                super().__init__()
+                self._emit_to_ui = emitter
+                self.setFormatter(
+                    logging.Formatter(
+                        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                        datefmt="%H:%M:%S",
+                    )
+                )
+
+            def emit(self, record):
+                try:
+                    self._emit_to_ui(self.format(record))
+                except Exception:
+                    pass
+
+        self._root_log_handler = _QtLogHandler(self.log_message_received.emit)
+        logging.getLogger().addHandler(self._root_log_handler)
+
+    @pyqtSlot(str)
+    def _append_log_console_message(self, message: str):
+        if not hasattr(self, "app_console_output") or self.app_console_output is None:
+            return
+        self.app_console_output.appendPlainText(message)
 
 
     def initUI(self):
@@ -596,6 +649,14 @@ class MainWindow(QMainWindow):
                     svc.stop()
                 except Exception:
                     pass
+
+        # Detach UI logging sink before Qt objects are torn down.
+        try:
+            if self._root_log_handler is not None:
+                logging.getLogger().removeHandler(self._root_log_handler)
+                self._root_log_handler = None
+        except Exception:
+            pass
 
         # Stop the GL widget timer if present
         try:
