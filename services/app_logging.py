@@ -40,8 +40,12 @@ def get_log_file_path() -> str:
     return os.path.join(_LOG_DIR, _LOG_FILE)
 
 
-def configure_logging(level: int = logging.INFO, redirect_stdio: bool = True) -> str:
-    """Configure app-wide logging for file + terminal + redirected prints."""
+def configure_logging(
+    level: int = logging.INFO,
+    redirect_stdio: bool = True,
+    stream_to_stderr: bool = False,
+) -> str:
+    """Configure app-wide logging for file logging + optional stderr + redirected prints."""
     global _LOGGING_CONFIGURED
     root_logger = logging.getLogger()
     if _LOGGING_CONFIGURED:
@@ -64,14 +68,14 @@ def configure_logging(level: int = logging.INFO, redirect_stdio: bool = True) ->
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    stream_handler = logging.StreamHandler(stream=sys.__stderr__)
-    stream_handler.setLevel(level)
-    stream_handler.setFormatter(formatter)
-
     root_logger.handlers.clear()
     root_logger.setLevel(level)
     root_logger.addHandler(file_handler)
-    root_logger.addHandler(stream_handler)
+    if stream_to_stderr:
+        stream_handler = logging.StreamHandler(stream=sys.__stderr__)
+        stream_handler.setLevel(level)
+        stream_handler.setFormatter(formatter)
+        root_logger.addHandler(stream_handler)
     _LOGGING_CONFIGURED = True
 
     if redirect_stdio:

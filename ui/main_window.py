@@ -38,6 +38,7 @@ from ui.status_panel.status_panel import StatusPanel
 from services.app_logging import get_log_file_path
 
 logger = logging.getLogger(__name__)
+_OBJECT_STATUS_DEBUG_PREFIX = "Debug text "
 
 class QtLogHandler(logging.Handler):
     def __init__(self, window):
@@ -369,6 +370,8 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str, int, str)
     def _on_service_status_changed(self, service_name: str, level: int, label: str):
+        if service_name == "ObjectService" and label.startswith(_OBJECT_STATUS_DEBUG_PREFIX):
+            return
         status_tuple = (level, label)
         if self._service_status_seen.get(service_name) == status_tuple:
             return
