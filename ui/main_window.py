@@ -260,13 +260,6 @@ class MainWindow(QMainWindow):
         # are automatically persisted.
         self.dock.mavlink_panel.set_storage_service(self.storage_service)
 
-        # Start the storage service thread now that UI wiring is done. The
-        # service will load again in its own thread and handle future saves.
-        try:
-            self.storage_service.start()
-        except Exception:
-            pass
-
         self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
         self.log_message_received.connect(self._append_log_console_message)
         self._setup_app_console()
