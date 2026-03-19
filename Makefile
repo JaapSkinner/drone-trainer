@@ -61,4 +61,4 @@ clean:
 # Run tests (placeholder)
 test:
 	@echo "=== Running Tests ==="
-	@echo "No tests configured yet"
+	python -m unittest discover -s tests -p "test_*.py" -v
