@@ -78,12 +78,10 @@ try:
             
             # The DTRG dialect can be used for encoding/decoding custom messages
             # For standard operations, we still use mavutil's default dialect
-            print(f"[MavlinkService] DTRG dialect loaded from {_DIALECTS_PATH}")
             logger.info("DTRG dialect loaded from %s", _DIALECTS_PATH)
             
         except ImportError as e:
             # If custom dialect loading fails, fall back to standard
-            print(f"[MavlinkService] Warning: Failed to import DTRG dialect: {e}")
             logger.warning("Failed to import DTRG dialect: %s", e)
             USING_DTRG_DIALECT = False
             mavlink_dialect = mavutil.mavlink
@@ -91,7 +89,6 @@ try:
         USING_DTRG_DIALECT = False
         mavlink_dialect = mavutil.mavlink
         if not DTRG_DIALECT_BUILT and DTRG_MAVLINK_AVAILABLE:
-            print("[MavlinkService] DTRG dialect not built. Run: python scripts/build_mavlink.py")
             logger.info("DTRG dialect not built; using standard dialect.")
         
 except ImportError:
