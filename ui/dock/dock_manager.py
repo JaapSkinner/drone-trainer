@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import QDockWidget
 from PyQt5.QtCore import Qt
 
 from ui.dock.panels.object_panel import ObjectPanel
-from ui.dock.panels.vicon_panel import ViconPanel
+from ui.dock.panels.vicon_panel import MotionCapturePanel
 from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
@@ -18,7 +18,7 @@ class DockManager(QDockWidget):
     including home, trainer, config, mavlink, object, and settings panels.
     """
 
-    def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None):
+    def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None, motion_capture_service=None):
         """Initialize the dock manager.
 
         Args:
@@ -37,6 +37,7 @@ class DockManager(QDockWidget):
         # Store service references
         self._mavlink_service = mavlink_service
         self._object_service = object_service
+        self._motion_capture_service = motion_capture_service
 
         # Create mavlink panel (can connect service later)
         self.mavlink_panel = MavlinkPanel(self, mavlink_service=mavlink_service)
@@ -61,7 +62,7 @@ class DockManager(QDockWidget):
             TrainerPanel(self),
             LeaderboardPanel(self),
             ConfigPanel(self),
-            # ViconPanel(self, vicon),
+            MotionCapturePanel(motion_capture_service=motion_capture_service, parent=self),
             self.mavlink_panel,
             self.object_panel,
             self.settings_panel,
@@ -80,6 +81,8 @@ class DockManager(QDockWidget):
         self.current_widget = widget
         
     def set_active_panel(self, tag):
+        if tag == "vicon":
+            tag = "motion_capture"
         for panel in self.panels:
             if getattr(panel, "NavTag", None) == tag:
                 self.set_content(panel)

@@ -1,3 +1,11 @@
+"""
+Backward-compatible alias module.
+
+Use MotionCaptureService from services.motion_capture_service.
+"""
+
+from services.motion_capture_service import MotionCaptureService as ViconConnection
+
 # import math
 # from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 # from multiprocessing import Process, Queue, TimeoutError as MPTimeoutError

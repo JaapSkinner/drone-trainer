@@ -53,7 +53,7 @@ class StatusPanel(QFrame):
         Args:
             level: ServiceLevel enum value
             label: Status label text
-            target: Target service identifier ('vicon', 'mavlink', 'input')
+            target: Target service identifier ('motion_capture'/'vicon', 'mavlink', 'input')
         """
         level_enum = ServiceLevel(level)
         text = label if label else level_enum.name.capitalize()
@@ -69,6 +69,7 @@ class StatusPanel(QFrame):
 
         label_map = {
             "vicon": (self.vicon_label, "Motion Capture"),
+            "motion_capture": (self.vicon_label, "Motion Capture"),
             "mavlink": (self.mavlink_label, "MAVLink"),
             "input": (self.input_label, "Input Device"),
             "joystick": (self.input_label, "Input Device"),  # Legacy compatibility

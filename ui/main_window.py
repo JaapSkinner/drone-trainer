@@ -27,6 +27,7 @@ from services.object_service import ObjectService
 from services.status_service import StatusService
 from services.mavlink_service import MavlinkService
 from services.storage_service import StorageService
+from services.motion_capture_service import MotionCaptureService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
         # Now instantiate the storage service (its QThread will be created
         # inside ServiceBase.__init__). We'll start it later after UI wiring.
         self.storage_service = StorageService()
+        self.motion_capture_service = MotionCaptureService()
 
         self.glWidget = None
         self.initUI()
@@ -129,6 +131,13 @@ class MainWindow(QMainWindow):
         # TODO: Validate DTRG-Mavlink dialect presence at runtime, wire any remaining custom DTRG
         #       message handling, and surface a UI warning when DTRG_DIALECT_BUILT is False.
         self.mavlink_service = MavlinkService()
+        self.motion_capture_service.position_updated.connect(self.update_motion_capture_position)
+        self.motion_capture_service.configure(
+            source=getattr(saved, "motion_capture_source", "vicon"),
+            address=getattr(saved, "motion_capture_address", "0.0.0.0"),
+            port=getattr(saved, "motion_capture_port", 51001),
+            frequency_hz=getattr(saved, "motion_capture_frequency_hz", 100.0),
+        )
 
         # Apply persisted MAVLink global settings
         mavlink_settings = self._build_mavlink_settings(saved)
@@ -195,7 +204,8 @@ class MainWindow(QMainWindow):
         self.status_service = StatusService(
             self.status_panel,
             self.input_service,
-            self.mavlink_service
+            self.mavlink_service,
+            self.motion_capture_service,
         )
         self.status_service.start()
         self._wire_service_logging()
@@ -204,6 +214,7 @@ class MainWindow(QMainWindow):
         self.input_service.input_updated.connect(self.on_input_update)
         self.input_service.start()
         self.mavlink_service.start()
+        self.motion_capture_service.start()
         
         # Apply persisted per-object MAVLink configs
         try:
@@ -362,6 +373,7 @@ class MainWindow(QMainWindow):
             ("ObjectService", self.object_service),
             ("InputService", self.input_service),
             ("MavlinkService", self.mavlink_service),
+            ("MotionCaptureService", self.motion_capture_service),
             ("StorageService", self.storage_service),
             ("StatusService", self.status_service),
         ]
@@ -400,11 +412,17 @@ class MainWindow(QMainWindow):
 
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
-        self.dock = DockManager(self.glWidget, self, self.object_service)
+        self.dock = DockManager(
+            self.glWidget,
+            self,
+            self.object_service,
+            motion_capture_service=self.motion_capture_service,
+        )
         self.config_panel = self.dock.panels[3]   # Config panel
-        self.object_panel = self.dock.panels[5]   # Object/Live Data panel
-        self.settings_panel = self.dock.panels[6]  # Settings panel
-        self.command_panel = self.dock.panels[7]   # Command panel
+        self.motion_capture_panel = self.dock.panels[4]  # Motion Capture panel
+        self.object_panel = self.dock.panels[6]   # Object/Live Data panel
+        self.settings_panel = self.dock.panels[7]  # Settings panel
+        self.command_panel = self.dock.panels[8]   # Command panel
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -473,14 +491,14 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(PositionData)
     def update_vicon_position(self, pos_data: PositionData):
+        self.update_motion_capture_position(pos_data)
+
+    @pyqtSlot(PositionData)
+    def update_motion_capture_position(self, pos_data: PositionData):
         for obj in self.glWidget.objects:
-            if obj.tracked and obj.name == pos_data.name:
-                obj.x_pos = pos_data.x
-                obj.y_pos = pos_data.y
-                obj.z_pos = pos_data.z
-                obj.x_rot = pos_data.x_rot
-                obj.y_rot = pos_data.y_rot
-                obj.z_rot = pos_data.z_rot
+            tracking_id = str(getattr(obj, "tracking_id", "") or "")
+            if obj.tracked and (obj.name == pos_data.name or tracking_id == pos_data.name):
+                obj.set_pose((pos_data.x, pos_data.y, pos_data.z, 1.0, pos_data.x_rot, pos_data.y_rot, pos_data.z_rot))
         self.object_panel.refresh()
 
     @pyqtSlot(object)
@@ -664,9 +682,17 @@ class MainWindow(QMainWindow):
 
     def _on_active_panel_changed(self, tag: str):
         """Persist the currently selected dock panel tag."""
+        if tag == "vicon":
+            tag = "motion_capture"
         if hasattr(self, 'storage_service'):
             settings = self.storage_service.get_settings()
             settings.active_panel = tag
+            if hasattr(self, "motion_capture_service") and self.motion_capture_service is not None:
+                cfg = self.motion_capture_service.get_config()
+                settings.motion_capture_source = cfg.get("source", "vicon")
+                settings.motion_capture_address = cfg.get("address", "0.0.0.0")
+                settings.motion_capture_port = int(cfg.get("port", 51001))
+                settings.motion_capture_frequency_hz = float(cfg.get("frequency_hz", 100.0))
             self.storage_service.update_settings(settings)
 
     def _on_object_mavlink_config_changed(self, obj, config):
@@ -741,6 +767,12 @@ class MainWindow(QMainWindow):
                     cur = getattr(self.dock, 'current_widget', None)
                     if cur is not None and hasattr(cur, 'NavTag'):
                         s.active_panel = getattr(cur, 'NavTag')
+                    if hasattr(self, "motion_capture_service") and self.motion_capture_service is not None:
+                        cfg = self.motion_capture_service.get_config()
+                        s.motion_capture_source = cfg.get("source", "vicon")
+                        s.motion_capture_address = cfg.get("address", "0.0.0.0")
+                        s.motion_capture_port = int(cfg.get("port", 51001))
+                        s.motion_capture_frequency_hz = float(cfg.get("frequency_hz", 100.0))
                     self.storage_service.update_settings(s)
                 except Exception:
                     pass
@@ -755,7 +787,7 @@ class MainWindow(QMainWindow):
         # Stop services to ensure timers are stopped in their own threads
         # Include storage_service and object_service so their QThreads are
         # cleanly stopped before the app tears down Qt objects.
-        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'storage_service', 'object_service'):
+        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'motion_capture_service', 'storage_service', 'object_service'):
             svc = getattr(self, svc_name, None)
             if svc is not None:
                 try:
