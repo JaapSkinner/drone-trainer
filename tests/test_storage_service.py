@@ -9,7 +9,7 @@ from services.storage_service import StorageService
 
 
 class StorageServiceTests(unittest.TestCase):
-    def test_start_and_stop_remain_in_calling_thread(self):
+    def test_thread_affinity_remains_on_calling_thread(self):
         storage = StorageService()
         calling_thread = QThread.currentThread()
 
