@@ -346,8 +346,13 @@ class MainWindow(QMainWindow):
         try:
             if hasattr(self, "console_toggle_button") and self.console_toggle_button:
                 margin = 20
-                x = self.width() - self.console_toggle_button.width() - margin
-                y = self.height() - self.console_toggle_button.height() - margin
+                # Use the parent widget's size to compute coordinates in the correct space
+                parent = self.console_toggle_button.parentWidget() or self.centralWidget() or self
+                x = parent.width() - self.console_toggle_button.width() - margin
+                y = parent.height() - self.console_toggle_button.height() - margin
+                # Ensure the button stays within the parent bounds
+                x = max(margin, x)
+                y = max(margin, y)
                 self.console_toggle_button.move(x, y)
         except Exception:
             pass
