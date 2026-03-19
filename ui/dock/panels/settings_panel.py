@@ -1,10 +1,88 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider, 
                              QGroupBox, QFormLayout, QPushButton, QComboBox,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
-                             QScrollArea, QHBoxLayout, QToolBox)
+                             QScrollArea, QHBoxLayout, QToolButton, QFrame, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QStyle, QApplication
 from models.debug_text import DebugText
 from models.structs import MavlinkGlobalSettings
+
+
+class CollapsibleBox(QWidget):
+    """A simple collapsible container with a header (box-like) and arrow.
+
+    Header acts as a toggle. Content is provided via setContentWidget.
+    """
+    def __init__(self, title: str = "", parent=None):
+        super().__init__(parent)
+        self._title = title
+        self.toggle_button = QToolButton()
+        # Use text-only button and include a simple caret glyph as the indicator
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.setAutoRaise(True)
+        self.toggle_button.setObjectName("SectionHeader")
+
+        # Make the header/button full-width and left-aligned
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # Ensure the text aligns to the left and give a bit of left padding so the caret isn't jammed
+        # Keep this minimal because the global QSS also styles SectionHeader
+        self.toggle_button.setStyleSheet("text-align: left; padding-left: 6px;")
+
+        # initial closed caret + title (with a small gap)
+        self._closed_caret = "▸"
+        self._open_caret = "▾"
+        self._update_button_text(False)
+
+        # Content area
+        self.content_area = QWidget()
+        self.content_area.setVisible(False)
+        self._content_layout = QVBoxLayout(self.content_area)
+        self._content_layout.setContentsMargins(8, 4, 8, 8)
+        self._content_layout.setSpacing(6)
+
+        # Layout for the whole widget
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(self.toggle_button)
+        main_layout.addWidget(self.content_area)
+
+        # Connect toggle
+        self.toggle_button.clicked.connect(self._on_toggled)
+
+        # Make header look like a box: wrap in a frame for styling if needed
+        self.header_frame = QFrame()
+        # ensure the header frame expands horizontally as well
+        self.header_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        header_layout = QHBoxLayout(self.header_frame)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.addWidget(self.toggle_button)
+        # replace toggle button in main layout with header frame for styling hook
+        main_layout.removeWidget(self.toggle_button)
+        main_layout.insertWidget(0, self.header_frame)
+
+    def _update_button_text(self, opened: bool):
+        caret = self._open_caret if opened else self._closed_caret
+        # two-space separation for clear visual gap
+        self.toggle_button.setText(f"{caret}  {self._title}")
+
+    def _on_toggled(self, checked: bool):
+        self.content_area.setVisible(checked)
+        self._update_button_text(checked)
+
+    def setContentWidget(self, widget: QWidget):
+        # Clear existing
+        while self._content_layout.count():
+            item = self._content_layout.takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+        self._content_layout.addWidget(widget)
+
+    def setTitle(self, title: str):
+        self._title = title
+        self._update_button_text(self.toggle_button.isChecked())
 
 
 class SettingsPanel(QWidget):
@@ -48,23 +126,26 @@ class SettingsPanel(QWidget):
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignTop)
 
-        self.settings_toolbox = QToolBox()
-        self.settings_toolbox.addItem(
-            self._create_section_widget(
-                self._create_viewport_group(),
-                self._create_info_group()
-            ),
-            "Viewport"
-        )
-        self.settings_toolbox.addItem(
-            self._create_section_widget(self._create_mavlink_settings_group()),
-            "MAVLink"
-        )
-        self.settings_toolbox.addItem(
-            self._create_section_widget(self._create_io_group()),
-            "Import / Export"
-        )
-        layout.addWidget(self.settings_toolbox)
+        # Create three collapsible boxes instead of a QToolBox
+        self.settings_groups = []
+
+        viewport_box = CollapsibleBox("Viewport")
+        viewport_box.setContentWidget(self._create_section_widget(
+            self._create_viewport_group(), self._create_info_group()
+        ))
+        layout.addWidget(viewport_box)
+        self.settings_groups.append(viewport_box)
+
+        mavlink_box = CollapsibleBox("MAVLink")
+        mavlink_box.setContentWidget(self._create_section_widget(self._create_mavlink_settings_group()))
+        layout.addWidget(mavlink_box)
+        self.settings_groups.append(mavlink_box)
+
+        io_box = CollapsibleBox("Import / Export")
+        io_box.setContentWidget(self._create_section_widget(self._create_io_group()))
+        layout.addWidget(io_box)
+        self.settings_groups.append(io_box)
+
         layout.addStretch(1)
         
         scroll.setWidget(content)
