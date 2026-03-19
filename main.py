@@ -1,15 +1,16 @@
 import sys
+import logging
 from PyQt5.QtWidgets import QApplication, QSplashScreen
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from OpenGL.GLUT import glutInit
+from services.app_logging import configure_logging
 from ui.main_window import MainWindow
 # from services.vicon_connection import ViconConnection
 
 def main():
     glutInit(sys.argv)
-    import logging
-    logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(name)s: %(message)s')
+    configure_logging(level=logging.INFO)
     app = QApplication(sys.argv)
 
     # Show splash screen

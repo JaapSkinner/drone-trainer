@@ -153,10 +153,12 @@ class InputService(ServiceBase):
             self.joystick.init()
             self.status_label = f"{self.input_type.value}: {self.joystick.get_name()}"
             self.status = ServiceLevel.RUNNING
+            logger.info("Controller detected: %s", self.joystick.get_name())
         else:
             self.joystick = None
             self.status_label = f"{self.input_type.value}: Not Found"
             self.status = ServiceLevel.STOPPED
+            logger.info("Controller not detected.")
 
     def on_stop(self):
         """Clean up resources"""
@@ -185,6 +187,7 @@ class InputService(ServiceBase):
                 self._uninstall_key_filter()
 
             self.input_type = input_type
+            logger.info("Input type switched to %s", input_type.value)
 
             # Initialize new input type
             if input_type == InputType.CONTROLLER:
@@ -248,6 +251,7 @@ class InputService(ServiceBase):
                 self.joystick.init()
                 self.status_label = f"{self.input_type.value}: {self.joystick.get_name()}"
                 self.status = ServiceLevel.RUNNING
+                logger.info("Controller reconnected: %s", self.joystick.get_name())
             else:
                 self.joystick = None
                 self.status_label = f"{self.input_type.value}: Not Found"
@@ -255,6 +259,7 @@ class InputService(ServiceBase):
             return
         elif self.joystick.get_id() >= pygame.joystick.get_count():
             # Joystick was disconnected
+            logger.warning("Controller disconnected.")
             self.joystick = None
             self.status_label = f"{self.input_type.value}: Disconnected"
             self.status = ServiceLevel.STOPPED

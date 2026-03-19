@@ -1,5 +1,24 @@
-from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtWidgets import QMainWindow, QSplitter,QHBoxLayout, QWidget, QApplication, QFileDialog, QMessageBox, QDialog, QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout, QLabel
+import logging
+import os
+from collections import deque
+from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QDialog,
+    QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt5.QtGui import QFontDatabase, QFont
 import json
 
@@ -16,6 +35,28 @@ from models.storage_models import AppSettings, ConnectionEntry
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
 from ui.status_panel.status_panel import StatusPanel
+from services.app_logging import get_log_file_path
+
+logger = logging.getLogger(__name__)
+_OBJECT_STATUS_DEBUG_PREFIX = "Debug text "
+
+class QtLogHandler(logging.Handler):
+    def __init__(self, window):
+        super().__init__()
+        self._window = window
+        self.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+
+    def emit(self, record):
+        try:
+            message = self.format(record)
+            self._window.log_message_received.emit(message)
+        except Exception:
+            pass
 
 
 class MainWindow(QMainWindow):
@@ -28,8 +69,12 @@ class MainWindow(QMainWindow):
     - Status service for health monitoring
     """
     
+    log_message_received = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._root_log_handler = None
+        self._service_status_seen = {}
         # Load and set global font
         font_id = QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
         if font_id != -1:
@@ -153,6 +198,12 @@ class MainWindow(QMainWindow):
             self.mavlink_service
         )
         self.status_service.start()
+        self._wire_service_logging()
+
+        # Start input and MAVLink services after UI + service wiring.
+        self.input_service.input_updated.connect(self.on_input_update)
+        self.input_service.start()
+        self.mavlink_service.start()
         
         # Apply persisted per-object MAVLink configs
         try:
@@ -217,6 +268,120 @@ class MainWindow(QMainWindow):
             pass
 
         self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
+        self.log_message_received.connect(self._append_log_console_message)
+        self._setup_app_console()
+
+    def _setup_app_console(self):
+        """Create a toggleable console dock with floating overlay toggle button."""
+        self.app_console_dock = QDockWidget("Application Console", self)
+        self.app_console_dock.setObjectName("applicationConsoleDock")
+        self.app_console_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+
+        self.app_console_output = QPlainTextEdit(self.app_console_dock)
+        self.app_console_output.setReadOnly(True)
+        self.app_console_output.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.app_console_output.setMaximumBlockCount(4000)
+        self.app_console_dock.setWidget(self.app_console_output)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.app_console_dock)
+        self.app_console_dock.hide()
+
+        # Keep the top menubar hidden for this feature; use a floating overlay button.
+        self.menuBar().setVisible(False)
+        self.toggle_console_action = QAction("Application Console", self)
+        self.toggle_console_action.setShortcut("F12")
+        self.toggle_console_action.triggered.connect(self._toggle_app_console)
+        self.addAction(self.toggle_console_action)
+
+        self.console_toggle_button = QPushButton("Console", self.centralWidget())
+        self.console_toggle_button.setToolTip("Open/close application console")
+        self.console_toggle_button.clicked.connect(self._toggle_app_console)
+        self.console_toggle_button.setStyleSheet(
+            "QPushButton {"
+            " background: rgba(30, 30, 30, 180);"
+            " color: #ffffff;"
+            " border: 1px solid rgba(255,255,255,90);"
+            " border-radius: 14px;"
+            " padding: 6px 12px;"
+            "}"
+            "QPushButton:hover { background: rgba(40, 40, 40, 220); }"
+        )
+        self.console_toggle_button.adjustSize()
+        self.console_toggle_button.raise_()
+        self._position_overlay_widgets()
+
+        self._root_log_handler = QtLogHandler(self)
+        logging.getLogger().addHandler(self._root_log_handler)
+        logger.info("Application console initialized (F12 or Console button).")
+
+        # Seed the console with recent file logs so users see output immediately.
+        try:
+            log_path = get_log_file_path()
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as fh:
+                    recent = deque(fh, maxlen=200)
+                if recent:
+                    self.app_console_output.appendPlainText("--- recent log history ---")
+                    self.app_console_output.appendPlainText("".join(recent).rstrip("\n"))
+        except Exception:
+            logger.exception(
+                "Failed to preload recent log history into app console. "
+                "Live logging still works; full logs are available at %s",
+                get_log_file_path(),
+            )
+
+    @pyqtSlot(str)
+    def _append_log_console_message(self, message: str):
+        if not hasattr(self, "app_console_output") or self.app_console_output is None:
+            return
+        self.app_console_output.appendPlainText(message)
+
+    def _toggle_app_console(self):
+        self.app_console_dock.setVisible(not self.app_console_dock.isVisible())
+
+    def _position_overlay_widgets(self):
+        try:
+            self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "console_toggle_button") and self.console_toggle_button:
+                margin = 20
+                # Use the parent widget's size to compute coordinates in the correct space
+                parent = self.console_toggle_button.parentWidget() or self.centralWidget() or self
+                x = parent.width() - self.console_toggle_button.width() - margin
+                y = parent.height() - self.console_toggle_button.height() - margin
+                # Ensure the button stays within the parent bounds
+                x = max(margin, x)
+                y = max(margin, y)
+                self.console_toggle_button.move(x, y)
+        except Exception:
+            pass
+
+    def _wire_service_logging(self):
+        service_pairs = [
+            ("ObjectService", self.object_service),
+            ("InputService", self.input_service),
+            ("MavlinkService", self.mavlink_service),
+            ("StorageService", self.storage_service),
+            ("StatusService", self.status_service),
+        ]
+        for service_name, service in service_pairs:
+            try:
+                service.status_changed.connect(
+                    lambda level, label, svc=service_name: self._on_service_status_changed(svc, level, label)
+                )
+            except Exception:
+                logger.exception("Failed to bind status logging for %s", service_name)
+
+    @pyqtSlot(str, int, str)
+    def _on_service_status_changed(self, service_name: str, level: int, label: str):
+        if service_name == "ObjectService" and label.startswith(_OBJECT_STATUS_DEBUG_PREFIX):
+            return
+        status_tuple = (level, label)
+        if self._service_status_seen.get(service_name) == status_tuple:
+            return
+        self._service_status_seen[service_name] = status_tuple
+        logger.info("%s status changed: level=%s label=%s", service_name, level, label)
 
 
     def initUI(self):
@@ -332,6 +497,7 @@ class MainWindow(QMainWindow):
         """Handle input type change from config panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_input_type(input_type)
+            logger.info("Input method changed to: %s", getattr(input_type, "value", str(input_type)))
         # Persist input type
         if hasattr(self, 'storage_service'):
             settings = self.storage_service.get_settings()
@@ -543,7 +709,7 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.overlay.setGeometry(self.rect())
-            self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
+            self._position_overlay_widgets()
         except Exception:
             pass
 
@@ -596,6 +762,14 @@ class MainWindow(QMainWindow):
                     svc.stop()
                 except Exception:
                     pass
+
+        # Detach UI logging sink before Qt objects are torn down.
+        try:
+            if self._root_log_handler is not None:
+                logging.getLogger().removeHandler(self._root_log_handler)
+                self._root_log_handler = None
+        except Exception:
+            pass
 
         # Stop the GL widget timer if present
         try:
