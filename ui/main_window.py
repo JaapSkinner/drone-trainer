@@ -79,9 +79,6 @@ class MainWindow(QMainWindow):
         
         # Connect input service to command panel for setpoint-based control
         self.input_service.set_command_panel(self.command_panel)
-        # Sync settings panel input controls with restored values
-        self.settings_panel.set_input_type(restored_input_type)
-        self.settings_panel.set_input_sensitivity(saved.input_sensitivity)
 
         # Initialize MAVLink service for drone communication
         # TODO: Validate DTRG-Mavlink dialect presence at runtime, wire any remaining custom DTRG
@@ -261,10 +258,6 @@ class MainWindow(QMainWindow):
         # Persist active panel selection when the navbar changes
         self.navbar.panel_selected.connect(self._on_active_panel_changed)
 
-        # Connect settings panel input signals to input service
-        self.settings_panel.input_type_changed.connect(self.on_input_type_changed)
-        self.settings_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
-        
         # Connect command panel signals to input service (joystick settings moved here)
         self.command_panel.input_type_changed.connect(self.on_input_type_changed)
         self.command_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
