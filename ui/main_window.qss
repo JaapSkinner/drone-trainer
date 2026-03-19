@@ -2,3 +2,41 @@ QSplitter::handle {
     background-color: #ccc; /* subtle splitter handle */
     width: 10px;
 }
+
+/* Collapsible section header styling */
+QFrame > QToolButton#SectionHeader {
+    background: #f7f7f8;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #222;
+    font-weight: 600;
+    text-align: left;
+}
+
+QFrame > QToolButton#SectionHeader:hover {
+    background: #f0f0f2;
+}
+
+QFrame > QToolButton#SectionHeader:checked {
+    background: #ffffff;
+    border-color: #cfcfcf;
+}
+
+/* Keep existing minimal toolbox tweaks in case other parts use it */
+QToolBox::tab {
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    margin: 0px 2px;
+    color: #333;
+}
+
+QToolBox::tab:selected {
+    font-weight: bold;
+}
+
+/* Ensure the icon and text are aligned nicely */
+QToolBox::tab QLabel {
+    margin-left: 6px;
+}

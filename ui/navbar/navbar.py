@@ -42,7 +42,7 @@ class SideNavbar(QWidget):
         self.button_group.setExclusive(True)  # Only one checked
 
 
-        for name in ["Home","Command", "Leaderboard", "Config", "Vicon", "Live Data", "MAVLink"]:
+        for name in ["Home","Command", "Leaderboard", "Vicon", "Live Data", "MAVLink"]:
             key = name.lower().replace(" ", "_")
             name = " " + name
             btn = QPushButton(name)

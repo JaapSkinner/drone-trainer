@@ -401,10 +401,11 @@ class MainWindow(QMainWindow):
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service)
-        self.config_panel = self.dock.panels[3]   # Config panel
-        self.object_panel = self.dock.panels[5]   # Object/Live Data panel
-        self.settings_panel = self.dock.panels[6]  # Settings panel
-        self.command_panel = self.dock.panels[7]   # Command panel
+        self.object_panel = self.dock.object_panel      # Object/Live Data panel
+        self.settings_panel = self.dock.settings_panel  # Settings panel
+        self.command_panel = next(
+            panel for panel in self.dock.panels if getattr(panel, "NavTag", None) == "command"
+        )
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -422,10 +423,6 @@ class MainWindow(QMainWindow):
         # Persist active panel selection when the navbar changes
         self.navbar.panel_selected.connect(self._on_active_panel_changed)
 
-        # Connect config panel signals to input service
-        self.config_panel.input_type_changed.connect(self.on_input_type_changed)
-        self.config_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
-        
         # Connect command panel signals to input service (joystick settings moved here)
         self.command_panel.input_type_changed.connect(self.on_input_type_changed)
         self.command_panel.sensitivity_changed.connect(self.on_sensitivity_changed)
@@ -494,7 +491,7 @@ class MainWindow(QMainWindow):
     
     @pyqtSlot(object)
     def on_input_type_changed(self, input_type):
-        """Handle input type change from config panel or command panel"""
+        """Handle input type change from settings panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_input_type(input_type)
             logger.info("Input method changed to: %s", getattr(input_type, "value", str(input_type)))
@@ -506,7 +503,7 @@ class MainWindow(QMainWindow):
     
     @pyqtSlot(float)
     def on_sensitivity_changed(self, sensitivity):
-        """Handle sensitivity change from config panel or command panel"""
+        """Handle sensitivity change from settings panel or command panel"""
         if hasattr(self, 'input_service'):
             self.input_service.set_sensitivity(sensitivity)
         # Persist input sensitivity

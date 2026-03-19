@@ -6,7 +6,6 @@ from ui.dock.panels.vicon_panel import ViconPanel
 from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
-from ui.dock.panels.config_panel import ConfigPanel
 from ui.dock.panels.command_panel import CommandPanel
 from ui.dock.panels.settings_panel import SettingsPanel
 from ui.dock.panels.mavlink_panel import MavlinkPanel
@@ -15,7 +14,7 @@ class DockManager(QDockWidget):
     """Manager for dock panel widgets.
 
     Handles switching between different panels in the dock area,
-    including home, trainer, config, mavlink, object, and settings panels.
+    including home, trainer, mavlink, object, settings, and command panels.
     """
 
     def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None):
@@ -60,7 +59,6 @@ class DockManager(QDockWidget):
             HomePanel(self),
             TrainerPanel(self),
             LeaderboardPanel(self),
-            ConfigPanel(self),
             # ViconPanel(self, vicon),
             self.mavlink_panel,
             self.object_panel,
@@ -80,6 +78,8 @@ class DockManager(QDockWidget):
         self.current_widget = widget
         
     def set_active_panel(self, tag):
+        if tag == "config":
+            tag = "settings"
         for panel in self.panels:
             if getattr(panel, "NavTag", None) == tag:
                 self.set_content(panel)
