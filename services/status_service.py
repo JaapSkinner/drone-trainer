@@ -25,7 +25,7 @@ class StatusService(ServiceBase):
         mavlink_service: MAVLink service to monitor
     """
     
-    def __init__(self, status_panel, input_service, mavlink_service=None, debug_level=DebugLevel.LOG):
+    def __init__(self, status_panel, input_service, mavlink_service=None, motion_capture_service=None, debug_level=DebugLevel.LOG):
         """Initialize the status service.
         
         Args:
@@ -38,6 +38,7 @@ class StatusService(ServiceBase):
         self.status_panel = status_panel
         self.input_service = input_service
         self.mavlink_service = mavlink_service
+        self.motion_capture_service = motion_capture_service
         self.timer = None
 
     def on_start(self):
@@ -107,6 +108,15 @@ class StatusService(ServiceBase):
                     "",
                     "mavlink"
                 )
+
+        # Motion capture status
+        if self.motion_capture_service is not None:
+            mocap_svc = self.motion_capture_service
+            self.status_panel.handle_status_change(
+                mocap_svc.status.value,
+                getattr(mocap_svc, "_status_label", ""),
+                "motion_capture"
+            )
     
     def set_mavlink_service(self, mavlink_service):
         """Set or update the mavlink service reference.

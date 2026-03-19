@@ -42,7 +42,7 @@ class SideNavbar(QWidget):
         self.button_group.setExclusive(True)  # Only one checked
 
 
-        for name in ["Home","Command", "Leaderboard", "Config", "Vicon", "Live Data", "MAVLink"]:
+        for name in ["Home","Command", "Leaderboard", "Config", "Motion Capture", "Live Data", "MAVLink"]:
             key = name.lower().replace(" ", "_")
             name = " " + name
             btn = QPushButton(name)
@@ -50,6 +50,8 @@ class SideNavbar(QWidget):
             # Command reuses the trainer icon
             if key == "command":
                 icon_path = "ui/assets/icons/trainer.png"
+            elif key == "motion_capture":
+                icon_path = "ui/assets/icons/vicon.png"
             else:
                 icon_path = f"ui/assets/icons/{key}.png"
             btn.setIcon(QIcon(icon_path))
