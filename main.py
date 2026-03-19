@@ -8,6 +8,8 @@ from ui.main_window import MainWindow
 
 def main():
     glutInit(sys.argv)
+    import logging
+    logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(name)s: %(message)s')
     app = QApplication(sys.argv)
 
     # Show splash screen
@@ -22,6 +24,11 @@ def main():
     main_window.show()
     main_window.raise_()
     main_window.activateWindow()
+
+    # Ensure services are cleaned up on application quit even if the
+    # window isn't explicitly closed — this avoids QThreads being
+    # destroyed while still running.
+    app.aboutToQuit.connect(main_window.close)
 
     splash.finish(main_window)
     sys.exit(app.exec_())

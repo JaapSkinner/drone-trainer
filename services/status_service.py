@@ -5,8 +5,12 @@ This service periodically polls all registered services and updates
 the status panel with their current state and health metrics.
 """
 from PyQt5.QtCore import pyqtSignal, QTimer
+import logging
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from time import time
+
+
+logger = logging.getLogger(__name__)
 
 
 class StatusService(ServiceBase):
@@ -38,13 +42,18 @@ class StatusService(ServiceBase):
 
     def on_start(self):
         """Start the status monitoring timer."""
-        self.timer = QTimer()
+        parent = getattr(self, 'get_thread_parent', lambda: None)()
+        if parent is None:
+            parent = self
+        logger.info("StatusService.on_start() parent=%s", parent)
+        self.timer = QTimer(parent)
         self.timer.setInterval(1000)  # 1 Hz
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start()
 
     def on_stop(self):
         """Stop the status monitoring timer."""
+        logger.info("StatusService.on_stop()")
         if self.timer:
             self.timer.stop()
             self.timer.deleteLater()

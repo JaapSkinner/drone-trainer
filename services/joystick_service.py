@@ -17,6 +17,9 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
 from models.structs import PositionData
 from PyQt5.QtCore import QTimer
+import logging
+
+logger = logging.getLogger(__name__)
 
 class JoystickService(ServiceBase):
     joystick_updated = pyqtSignal(object)  # emits the updated object state or index
@@ -42,11 +45,21 @@ class JoystickService(ServiceBase):
             self.status_label = "Joystick: Not Found"
             self.status = ServiceLevel.STOPPED
 
-        self.timer = QTimer()
+        parent = getattr(self, 'get_thread_parent', lambda: None)()
+        if parent is None:
+            parent = self
+        logger.info("JoystickService.on_start() parent=%s", parent)
+        self.timer = QTimer(parent)
         self.timer.timeout.connect(self.safe(self.update))
         self.timer.start(self.update_interval)
 
+        # Ensure the timer is parented to this QObject so it lives in the
+        # same thread affinity and does not cause cross-thread start/stop
+        # warnings. (Some environments create timers without a parent.)
+        self.timer.setParent(self)
+
     def on_stop(self):
+        logger.info("JoystickService.on_stop()")
         if self.timer:
             self.timer.stop()
             self.timer.deleteLater()
