@@ -871,10 +871,8 @@ class MavlinkService(ServiceBase):
         # Log which dialect is being used
         dialect_info = self.get_dialect_info()
         if dialect_info['using_dtrg']:
-            print(f"[MavlinkService] Using DTRG dialect from {dialect_info['dtrg_path']}")
             logger.info("Using DTRG MAVLink dialect from %s", dialect_info['dtrg_path'])
         else:
-            print(f"[MavlinkService] Using standard MAVLink dialect (DTRG not available)")
             logger.info("Using standard MAVLink dialect.")
         
         # Heartbeat timer - runs at 10Hz to check all connections
