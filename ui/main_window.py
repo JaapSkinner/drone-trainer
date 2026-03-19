@@ -1,6 +1,22 @@
 import logging
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal
-from PyQt5.QtWidgets import QMainWindow, QSplitter, QHBoxLayout, QWidget, QApplication, QFileDialog, QMessageBox, QDialog, QTextEdit, QVBoxLayout, QPushButton, QLabel, QAction, QDockWidget, QPlainTextEdit
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QDialog,
+    QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt5.QtGui import QFontDatabase, QFont
 import json
 
@@ -17,6 +33,25 @@ from models.storage_models import AppSettings, ConnectionEntry
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
 from ui.status_panel.status_panel import StatusPanel
+
+
+class QtLogHandler(logging.Handler):
+    def __init__(self, window):
+        super().__init__()
+        self._window = window
+        self.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+
+    def emit(self, record):
+        try:
+            message = self.format(record)
+            self._window.log_message_received.emit(message)
+        except Exception:
+            pass
 
 
 class MainWindow(QMainWindow):
@@ -245,24 +280,7 @@ class MainWindow(QMainWindow):
         self.app_console_dock.visibilityChanged.connect(self.toggle_console_action.setChecked)
         self.menuBar().addAction(self.toggle_console_action)
 
-        class _QtLogHandler(logging.Handler):
-            def __init__(self, emitter):
-                super().__init__()
-                self._emit_to_ui = emitter
-                self.setFormatter(
-                    logging.Formatter(
-                        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                        datefmt="%H:%M:%S",
-                    )
-                )
-
-            def emit(self, record):
-                try:
-                    self._emit_to_ui(self.format(record))
-                except Exception:
-                    pass
-
-        self._root_log_handler = _QtLogHandler(self.log_message_received.emit)
+        self._root_log_handler = QtLogHandler(self)
         logging.getLogger().addHandler(self._root_log_handler)
 
     @pyqtSlot(str)

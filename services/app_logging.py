@@ -10,6 +10,7 @@ _LOG_DIR = os.path.join(
     "logs",
 )
 _LOG_FILE = "drone_trainer.log"
+_LOGGING_CONFIGURED = False
 
 
 class _StreamToLogger:
@@ -20,6 +21,7 @@ class _StreamToLogger:
         self._level = level
 
     def write(self, buf):
+        """Write stream data into logger records line by line."""
         if not isinstance(buf, str):
             buf = str(buf)
         text = buf.strip()
@@ -31,17 +33,18 @@ class _StreamToLogger:
                 self._logger.log(self._level, line)
 
     def flush(self):
-        return
+        pass
 
 
 def get_log_file_path() -> str:
     return os.path.join(_LOG_DIR, _LOG_FILE)
 
 
-def configure_logging(level: int = logging.INFO) -> str:
+def configure_logging(level: int = logging.INFO, redirect_stdio: bool = True) -> str:
     """Configure app-wide logging for file + terminal + redirected prints."""
+    global _LOGGING_CONFIGURED
     root_logger = logging.getLogger()
-    if getattr(root_logger, "_drone_trainer_logging_configured", False):
+    if _LOGGING_CONFIGURED:
         root_logger.setLevel(level)
         return get_log_file_path()
 
@@ -69,11 +72,12 @@ def configure_logging(level: int = logging.INFO) -> str:
     root_logger.setLevel(level)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(stream_handler)
-    root_logger._drone_trainer_logging_configured = True
+    _LOGGING_CONFIGURED = True
 
-    stdio_logger = logging.getLogger("stdio")
-    sys.stdout = _StreamToLogger(stdio_logger, logging.INFO)
-    sys.stderr = _StreamToLogger(stdio_logger, logging.ERROR)
+    if redirect_stdio:
+        stdio_logger = logging.getLogger("stdio")
+        sys.stdout = _StreamToLogger(stdio_logger, logging.INFO)
+        sys.stderr = _StreamToLogger(stdio_logger, logging.ERROR)
 
     root_logger.info("Logging configured. Log file: %s", get_log_file_path())
     return get_log_file_path()

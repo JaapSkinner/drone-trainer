@@ -5,12 +5,12 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from OpenGL.GLUT import glutInit
 from services.app_logging import configure_logging
+from ui.main_window import MainWindow
 # from services.vicon_connection import ViconConnection
 
 def main():
     glutInit(sys.argv)
     configure_logging(level=logging.INFO)
-    from ui.main_window import MainWindow
     app = QApplication(sys.argv)
 
     # Show splash screen
