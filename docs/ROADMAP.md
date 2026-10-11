@@ -10,8 +10,17 @@ single issue → single PR. Every WP lists its context, files, tasks, acceptance
 
 ## 0. Progress — 2026-10-12
 
-Phases 0, 1, 2, 3 and 5 are done on branch `claude/project-analysis-plan-fc019a` (not yet pushed).
-90 tests, including a headless boot of the full main window and real-pixel render checks.
+Phases 0, 1, 2, 3 and 5 are done on branch `claude/project-analysis-plan-fc019a` (not yet pushed),
+plus the remaining board items #33 and #6 and a motion capture calibration tool. 165 tests, including
+a headless boot of the full main window and real-pixel render checks.
+
+| Since the first pass | Status | Commit |
+|---|---|---|
+| Motion capture calibration (manual / origin & direction / reference points) | Done; verified live against a deliberately mis-aligned fake Vicon | `142f3ff` |
+| NatNet multicast on Linux | Fixed (SDK bound to the interface IP) | `8b3ddad` |
+| WP4.1 + WP4.2 / #33 Setpoint model, rendering, ghost mode | Done; untracked objects fly to setpoints as simulated vehicles | `795e1ce` |
+| Phase 6 / #6 Trainer games (gate race, hover hold), leaderboard, pilot name | Done (first version) | `8fb44cd` |
+| WP4.3 Setpoints → PX4, LAND, arm/offboard | **Not started** — safety critical, needs SITL first | — |
 
 | WP | Status | Commit |
 |---|---|---|
@@ -47,7 +56,17 @@ Found and fixed along the way (not in the original list):
    especially on Windows.
 5. **Real GPU window**: run `make run` and `python scripts/bench_render.py --min-fps 60` on the lab PC.
 
-### Ready for Phase 4 (setpoints / ghost mode)
+### Next: WP4.3 (commanding real vehicles)
+
+Setpoints now live in `services/control_service.py` (per object, plus the ghost). What's left is
+streaming the setpoint of a MAVLink-linked object to PX4 (`MavlinkService.register_setpoint_source`,
+converted with `models/frames.scene_pose_to_ned`), wiring LAND/ARM/OFFBOARD with confirmation, and
+stopping setpoints when mocap goes stale — tested in PX4 SITL before any real flight.
+
+Game ideas waiting on your input (Section 2): what other games, whether trainees fly real or virtual
+drones, and whether obstacles should be real tracked objects.
+
+### Phase 4 groundwork notes (from the first pass)
 
 - `Sphere` objects, a translucent render pass (single-layer, depth-sorted) and `gl_buffers.draw_lines`
   cover the red setpoint ball, its ghost copy, the object→setpoint line, and making an object translucent
