@@ -21,7 +21,6 @@ from PyQt5.QtWidgets import (
     QSlider
 )
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from models.debug_text import DebugText
 from models.scene_object import SceneObject
 from services.input_service import InputType
 
@@ -1105,8 +1104,7 @@ class CommandPanel(QWidget):
         for obj in self.object_service.get_objects():
             # Only include controllable objects, exclude debug/utility objects
             is_controllable = getattr(obj, 'controllable', False)
-            is_debug_text = isinstance(obj, DebugText)
-            if is_controllable and not is_debug_text:
+            if is_controllable:
                 self.object_combo.addItem(obj.name, obj)
 
         # Restore previous selection if still present; otherwise stay on None

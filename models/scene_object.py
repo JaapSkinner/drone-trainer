@@ -1,7 +1,5 @@
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
-from math import sin, cos
+from OpenGL.GL import (GL_ENABLE_BIT, GL_LIGHTING, glDisable, glMultMatrixf,
+                       glPopAttrib, glPopMatrix, glPushAttrib, glPushMatrix)
 import numpy as np
 from abc import ABC, abstractmethod
 from models import frames
@@ -18,12 +16,15 @@ class SceneObject(ABC):
         tracking_id: Vicon/mocap ID for tracking
         rendered: Whether to render this object
         shaded: Whether to apply shading
+        colour: Base RGBA colour (alpha < 1 renders translucent)
         controllable: Whether this object can be controlled by user input
         mavlink_config: MAVLink configuration for this object
     """
     
+    DEFAULT_COLOUR = (0.5, 0.5, 0.5, 1.0)
+
     def __init__(self, pose=None, name=None, rendered=True, shaded=True, controllable=True,
-                 mavlink_enabled=False):
+                 mavlink_enabled=False, colour=None):
         """Initialize a scene object.
         
         Args:
@@ -41,11 +42,27 @@ class SceneObject(ABC):
         self.rendered = rendered
         self.shaded = shaded  # Whether the object should be shaded
         self.controllable = controllable
+        self.colour = self._rgba(colour, self.DEFAULT_COLOUR)
 
         self.pose_delta = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # (dx, dy, dz, dqw, dqx, dqy, dqz)
         
         # MAVLink configuration for this object
         self.mavlink_config = MavlinkObjectConfig(enabled=mavlink_enabled)
+
+    @staticmethod
+    def _rgba(colour, default):
+        """Normalise an RGB/RGBA tuple (or None) to a 4-tuple of floats."""
+        if colour is None:
+            return tuple(default)
+        colour = tuple(float(c) for c in colour)
+        if len(colour) == 3:
+            colour = (*colour, 1.0)
+        if len(colour) != 4:
+            raise ValueError("Colour must have 3 or 4 components")
+        return colour
+
+    def is_translucent(self) -> bool:
+        return self.colour[3] < 1.0
 
     def set_name(self, name):
         """Set the name of the object."""
@@ -130,13 +147,23 @@ class SceneObject(ABC):
 
     @abstractmethod
     def _draw(self):
-        """Abstract method to draw the object. Must be implemented by subclasses."""
-        pass
+        """Draw the object in its own (local) coordinates.
+
+        ``draw()`` has already applied the object's pose, so subclasses only
+        apply their own scale/offsets.
+        """
 
     def draw(self):
-        if not self.shaded:
-            glDisable(GL_LIGHTING)
+        glPushMatrix()
+        glPushAttrib(GL_ENABLE_BIT)
+        try:
+            glMultMatrixf(frames.gl_model_matrix(self.pose))
+            if not self.shaded:
+                glDisable(GL_LIGHTING)
             self._draw()
-            glEnable(GL_LIGHTING)
-        else:
-            self._draw()
+        finally:
+            glPopAttrib()
+            glPopMatrix()
+
+    def release_gl(self):
+        """Free GPU resources (called when the object leaves the scene)."""

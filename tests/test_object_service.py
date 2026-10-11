@@ -25,8 +25,8 @@ class ObjectServiceTests(unittest.TestCase):
         service.add_object(obj_b)
         service.add_object(obj_c)
 
-        # Objects are sorted by alpha descending in add_object
-        self.assertEqual([o.name for o in service.get_objects()], ["B", "C", "A"])
+        # Insertion order is preserved (the renderer handles translucency order)
+        self.assertEqual([o.name for o in service.get_objects()], ["A", "B", "C"])
 
         service.set_controlled_object(name="C")
         self.assertIs(service.get_controlled_object(), obj_c)

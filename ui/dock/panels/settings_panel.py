@@ -5,7 +5,6 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider,
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QStyle, QApplication
-from models.debug_text import DebugText
 from models.structs import MavlinkGlobalSettings
 
 
@@ -474,8 +473,7 @@ class SettingsPanel(QWidget):
         for obj in self.object_service.get_objects():
             # Only include controllable objects, exclude debug/utility objects
             is_controllable = getattr(obj, 'controllable', False)
-            is_debug_text = isinstance(obj, DebugText)
-            if is_controllable and not is_debug_text:
+            if is_controllable:
                 self.lock_object_combo.addItem(obj.name, obj)
         
         # Restore selection if still valid

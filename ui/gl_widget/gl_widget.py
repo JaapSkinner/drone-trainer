@@ -1,23 +1,20 @@
-from PyQt5.QtWidgets import QOpenGLWidget
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
-import OpenGL.GLUT as GLUT
+import time
 
-from models.scene_object import SceneObject
-import numpy as np
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtWidgets import QLabel, QOpenGLWidget
+
 from models.cad_mesh import CadMesh
 from models.rect_prism import RectPrism
 from models.grid import Grid
 from models.axes import Axes
-from models.debug_text import DebugText
-import time
+from ui.gl_widget.scene_renderer import Camera, SceneRenderer
+
 
 class GLWidget(QOpenGLWidget):
     # Base zoom speed factor for mouse wheel zoom
     BASE_ZOOM_SPEED = 0.001
-    
+    HUD_REFRESH_MS = 250
+
     # Signal emitted when camera is reset (for UI synchronization)
     camera_reset = pyqtSignal()
 
@@ -28,12 +25,13 @@ class GLWidget(QOpenGLWidget):
 
         self.object_service = object_service
         self.input_service = None  # Will be set by MainWindow
+        self.renderer = SceneRenderer()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
         self.timer.start(16)  # Update approximately every 16 milliseconds (about 60 FPS)
 
-        self.prev_time = time.time()
+        self.prev_time = time.perf_counter()
         self.fps = 0.0
 
         grid = Grid(name="Grid", colour=(0.68, 0.68, 0.68, 1.0))
@@ -71,90 +69,49 @@ class GLWidget(QOpenGLWidget):
         # Object lock feature - camera follows and orbits around this object
         self.locked_object = None
 
-        self.debug_count = 0  # Counter for debug text
+        # Heads-up readout (FPS / camera). A Qt overlay rather than GL text, so
+        # no GLUT and no interference with GL state.
+        self.hud_label = QLabel(self)
+        self.hud_label.setObjectName("ViewportHud")
+        self.hud_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hud_label.setStyleSheet(
+            "QLabel#ViewportHud { background: rgba(255, 255, 255, 170); color: #222;"
+            " border-radius: 6px; padding: 4px 8px; font-family: monospace; }")
+        self.hud_label.move(10, 10)
+        self._hud_timer = QTimer(self)
+        self._hud_timer.timeout.connect(self._update_hud)
+        self._hud_timer.start(self.HUD_REFRESH_MS)
+        self._update_hud()
+
+    def camera(self) -> Camera:
+        """The current view as a renderer camera (follows the locked object)."""
+        target = (0.0, 0.0, 0.0)
+        if self.locked_object is not None and len(getattr(self.locked_object, "pose", ())) >= 3:
+            target = tuple(self.locked_object.pose[:3])
+        return Camera(distance=self.camera_distance, angle_x=self.camera_angle_x,
+                      angle_y=self.camera_angle_y, target=target)
 
     def initializeGL(self):
-        glClearColor(1.0, 1.0, 1.0, 1.0)
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_BLEND)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glEnable(GL_LIGHTING)
-        glEnable(GL_COLOR_MATERIAL)
-        glEnable(GL_LIGHT0)
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
-        glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0, 1.0, 1.0, 1.0])
-        glShadeModel(GL_SMOOTH)
+        self.renderer.initialize()
 
     def paintGL(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45.0, self.width() / self.height(), 0.1, 100.0)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        
-        # Get the target position (locked object or origin)
-        target_x, target_y, target_z = 0.0, 0.0, 0.0
-        if self.locked_object is not None:
-            # Validate pose exists and has expected structure
-            if hasattr(self.locked_object, 'pose') and len(self.locked_object.pose) >= 3:
-                target_x = self.locked_object.pose[0]
-                target_y = self.locked_object.pose[1]
-                target_z = self.locked_object.pose[2]
-        
-        # Calculate camera position relative to target
-        cam_x = target_x + self.camera_distance * np.sin(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x))
-        cam_y = target_y + self.camera_distance * np.sin(np.radians(self.camera_angle_x))
-        cam_z = target_z + self.camera_distance * np.cos(np.radians(self.camera_angle_y)) * np.cos(np.radians(self.camera_angle_x))
-        
-        gluLookAt(
-            cam_x, cam_y, cam_z,
-            target_x, target_y, target_z,
-            0.0, 1.0, 0.0
-        )
-        glLightfv(GL_LIGHT0, GL_POSITION, [10.0, 10.0, 10.0, 0.0])
-
-        current_time = time.time()
-        delta = current_time - self.prev_time
+        now = time.perf_counter()
+        delta = now - self.prev_time
+        self.prev_time = now
         if delta > 0:
-            self.fps = 1.0 / delta
-        self.prev_time = current_time
+            # Smooth so the readout is legible.
+            self.fps = 0.9 * self.fps + 0.1 * (1.0 / delta) if self.fps else 1.0 / delta
 
-        window_dimensions = (self.width(), self.height())
+        self.renderer.render(self.object_service.get_objects(), self.camera(),
+                             self.width(), self.height())
 
-        self.object_service.update_debug_text("FPS", self.fps, dimensions=window_dimensions)
-        self.object_service.update_debug_text("Cam X", self.camera_angle_x, dimensions=window_dimensions)
-        self.object_service.update_debug_text("Cam Y", self.camera_angle_y, dimensions=window_dimensions)
-
-        self.object_service.draw_objects()
-
-        # Draw dashed line between the first and second objects
-        # start = np.array([self.objects[0].x_pos, self.objects[0].y_pos, self.objects[0].z_pos])
-        # end = np.array([self.objects[1].x_pos, self.objects[1].y_pos, self.objects[1].z_pos])
-        # self.draw_dashed_line(start, end, (0.855, 0.647, 0.125))  # Yellow color
-
-
-        # Draw arrows in the direction of each moving object's velocity
-        # for obj in self.objects:
-        #     if obj.x_vel != 0.0 or obj.y_vel != 0.0 or obj.z_vel != 0.0:
-        #         arrow_start = np.array([obj.x_pos, obj.y_pos, obj.z_pos])
-        #         arrow_end = arrow_start + np.array([obj.x_vel, obj.y_vel, obj.z_vel]) * 10  # Scale the velocity for visibility
-        #         self.draw_arrow(arrow_start, arrow_end, (1.0, 0.0, 0.0))  # Red color arrow
-
-        # Draw two arrows pointing up at each end of the green rectangle
-        # green_rect = self.objects[2]
-        # half_length = (green_rect.length / 2) - 0.1 # Offset the arrows slightly from the edges of the rectangle
-        # start_arrow_1 = np.array([green_rect.x_pos - half_length, green_rect.y_pos, green_rect.z_pos])
-        # end_arrow_1 = start_arrow_1 + np.array([0.0, 0.5, 0.0])
-        # self.draw_arrow(start_arrow_1, end_arrow_1, (0.0, 0.0, 1.0))  # Blue FORCE ARROW
-        #
-        # start_arrow_2 = np.array([green_rect.x_pos + half_length, green_rect.y_pos, green_rect.z_pos])
-        # end_arrow_2 = start_arrow_2 + np.array([0.0, 0.5, 0.0])
-        # self.draw_arrow(start_arrow_2, end_arrow_2, (0.0, 0.0, 1.0))
-
+    def _update_hud(self):
+        self.hud_label.setText(
+            f"FPS {self.fps:5.1f}   Cam {self.camera_angle_x:5.1f}° / {self.camera_angle_y:6.1f}°")
+        self.hud_label.adjustSize()
 
     def resizeGL(self, width, height):
-        glViewport(0, 0, width, height)
+        pass  # QOpenGLWidget sets the viewport before each paintGL
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -180,58 +137,14 @@ class GLWidget(QOpenGLWidget):
         """Handle mouse wheel events for zooming in/out."""
         delta = event.angleDelta().y()
         zoom_factor = self.BASE_ZOOM_SPEED * self.zoom_sensitivity
-        
+
         # Proportional zoom: faster when far, slower when close for smooth control
         self.camera_distance -= delta * zoom_factor * self.camera_distance
-        
+
         # Clamp to min/max zoom levels
-        self.camera_distance = max(self.camera_distance_min, 
+        self.camera_distance = max(self.camera_distance_min,
                                    min(self.camera_distance_max, self.camera_distance))
         self.update()
-
-    def draw_dashed_line(self, start, end, color, dash_length=0.1):
-        glColor3f(*color)
-        glLineWidth(4.0)  # Set line width to 3.0 for thicker lines
-        glBegin(GL_LINES)
-        length = np.linalg.norm(np.array(end) - np.array(start))
-        num_dashes = int(length / dash_length)
-        for i in range(num_dashes):
-            t1 = i / num_dashes
-            t2 = (i + 0.5) / num_dashes
-            point1 = start * (1 - t1) + np.array(end) * t1
-            point2 = start * (1 - t2) + np.array(end) * t2
-            glVertex3fv(point1)
-            glVertex3fv(point2)
-        glEnd()
-        glLineWidth(1.0)  # Set line width to 3.0 for thicker lines
-
-    def draw_arrow(self, start, end, color, arrow_head_length=0.2, arrow_head_width=0.1):
-        glColor3f(*color)
-        glLineWidth(3.0)  # Set line width for the arrow
-
-        # Draw the arrow shaft
-        glBegin(GL_LINES)
-        glVertex3fv(start)
-        glVertex3fv(end)
-        glEnd()
-
-        # Calculate the direction of the arrow
-        direction = np.array(end) - np.array(start)
-        direction = direction / np.linalg.norm(direction)
-
-        # Calculate points for the arrow head
-        ortho_direction = np.array([-direction[1], direction[0], 0])  # Perpendicular in 2D
-        arrow_left = np.array(end) - arrow_head_length * direction + arrow_head_width * ortho_direction
-        arrow_right = np.array(end) - arrow_head_length * direction - arrow_head_width * ortho_direction
-
-        # Draw the arrow head
-        glBegin(GL_TRIANGLES)
-        glVertex3fv(end)
-        glVertex3fv(arrow_left)
-        glVertex3fv(arrow_right)
-        glEnd()
-
-        glLineWidth(1.0)  # Reset line width
 
     def keyPressEvent(self, event):
         """Handle key press events and forward to input service"""
@@ -251,7 +164,7 @@ class GLWidget(QOpenGLWidget):
 
     def set_zoom_sensitivity(self, sensitivity):
         """Set the zoom sensitivity for mouse wheel zoom.
-        
+
         Args:
             sensitivity: Zoom sensitivity multiplier (default 1.0)
         """
@@ -259,7 +172,7 @@ class GLWidget(QOpenGLWidget):
 
     def reset_camera(self):
         """Reset camera to default position, zoom level, and clear object lock.
-        
+
         Emits camera_reset signal for UI synchronization.
         """
         self.camera_distance = 10.0
@@ -272,10 +185,10 @@ class GLWidget(QOpenGLWidget):
 
     def set_locked_object(self, obj):
         """Set the object to lock the camera view onto.
-        
+
         When locked, the camera will orbit around this object and follow it
         as it moves. Set to None to unlock and return to orbiting around origin.
-        
+
         Args:
             obj: SceneObject to lock onto, or None to unlock
         """
@@ -284,10 +197,8 @@ class GLWidget(QOpenGLWidget):
 
     def get_locked_object(self):
         """Get the currently locked object.
-        
+
         Returns:
             The locked SceneObject, or None if not locked
         """
         return self.locked_object
-
-

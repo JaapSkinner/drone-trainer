@@ -1,8 +1,5 @@
-import numpy as np
-import pygame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
-from models.debug_text import DebugText
 from models.scene_object import SceneObject
 from services.service_base import ServiceBase,DebugLevel,ServiceLevel  # your base service
 from models.structs import PositionData
@@ -20,7 +17,6 @@ class ObjectService(ServiceBase):
         self.controlled_object = None
         self.input_service = input_service
 
-        self.debug_count = 0
 
     def on_start(self):
         pass
@@ -32,36 +28,10 @@ class ObjectService(ServiceBase):
         self.input_service = input_service
         self.set_controlled_object(obj=self.controlled_object)
 
-    def update_debug_text(self, name: str, value: float, dimensions: tuple = None):
-        """Update or create a debug text object."""
-        debug_text = self.get_object(name)
-        if debug_text is None:
-            debug_text = DebugText(name=name, text=name, colour=(0.0, 0.0, 0.0, 1.0), dimensions=dimensions)
-            self.add_object(debug_text)
-
-        debug_text.update(value, dimensions)
-        self.status_changed.emit(ServiceLevel.RUNNING.value, f"Debug text {name} updated to {value}.")
-
     def add_object(self, obj):
         if obj not in self.objects:
-            if isinstance(obj, DebugText):
-                self.debug_count += 1
-                obj.set_offset((obj.offset[0], obj.offset[1], self.debug_count * 20))  # Offset debug text to a new line
-
             self.objects.append(obj)
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Object {obj.name} added.")
-
-            def sort_colour_check(obj):
-                # Check if the object has a 'colour' attribute
-                if hasattr(obj, 'colour') and isinstance(obj.colour, tuple) and len(obj.colour) >= 4:
-                    # If it does, use the 4th element (alpha) as the primary sort key
-                    return obj.colour[3]
-                else:
-                    return 999
-
-            # Sort objects by their colour's alpha channel (4th element in the tuple)
-            self.objects.sort(key=sort_colour_check, reverse=True)
-
         else:
             self.status_changed.emit(ServiceLevel.WARNING.value, f"Object {obj.name} already exists.")
 
@@ -75,6 +45,7 @@ class ObjectService(ServiceBase):
 
         if obj in self.objects:
             self.objects.remove(obj)
+            obj.release_gl()
             self.status_changed.emit(ServiceLevel.RUNNING.value, f"Object {obj.name} removed.")
         else:
             self.status_changed.emit(ServiceLevel.WARNING.value, f"Object {obj.name} not found.")

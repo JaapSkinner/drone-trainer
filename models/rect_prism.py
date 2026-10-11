@@ -1,63 +1,56 @@
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
-import numpy as np
+from OpenGL.GL import (GL_BACK, GL_CULL_FACE, GL_CURRENT_BIT, GL_LIGHTING, GL_LINE_BIT,
+                       GL_POLYGON_OFFSET_FILL, glColor4f, glCullFace, glDisable, glEnable,
+                       glLineWidth, glPolygonOffset, glPopAttrib, glPushAttrib, glScalef)
 
+from models import mesh_data
+from models.gl_buffers import MeshBuffer, draw_lines
 from models.scene_object import SceneObject
+
+# Shared geometry for every box (tiny, so kept in client memory).
+_CUBE = MeshBuffer(mesh_data.unit_cube(), use_vbo=False)
+_CUBE_EDGES = mesh_data.unit_cube_edges()
 
 
 class RectPrism(SceneObject):
-    def __init__(self, pose=None, name=None, dimensions=(1.0, 1.0, 1.0), colour=None, edge_colour=(0.0, 0.0, 0.0)):
-        super().__init__(pose, name)
-        if name is None:
-            self.name = "Unnamed Rectangular Prism"
+    """A box with optional outlined edges."""
 
+    def __init__(self, pose=None, name=None, dimensions=(1.0, 1.0, 1.0), colour=None,
+                 edge_colour=(0.0, 0.0, 0.0), controllable=True):
+        super().__init__(pose, name or "Unnamed Rectangular Prism", controllable=controllable,
+                         colour=colour)
+        self.dimensions = (1.0, 1.0, 1.0)
+        self.set_dimensions(dimensions)
+        self.edge_colour = self._rgba(edge_colour, (0.0, 0.0, 0.0, 1.0)) if edge_colour else None
+        self.edge_width = 3.0
+
+    def set_dimensions(self, dimensions=(1.0, 1.0, 1.0)):
+        """Set the (x, y, z) size of the prism, or a single number for a cube."""
         if isinstance(dimensions, (int, float)):
             dimensions = (dimensions, dimensions, dimensions)
-
-        self.dimensions = dimensions
-
-        if colour is not None and len(colour) == 3:
-            colour = (*colour, 1.0)
-
-        if len(edge_colour) == 3:
-            edge_colour = (*edge_colour, 1.0)
-
-        self.colour = colour if colour else (0.5, 0.5, 0.5, 1.0)  # Default color (0 - 1) (r, g, b, a)
-        self.edge_colour = edge_colour if edge_colour else (0.0, 0.0, 0.0, 1.0)  # Default edge color (0 - 1) (r, g, b, a)
-
-
-    def set_dimensions(self, dimensions=(1.0,1.0,1.0)):
-        """Set the dimensions of the rectangular prism."""
-        if len(dimensions) == 3:
-            self.dimensions = dimensions
-        elif isinstance(dimensions, (int, float)):
-            self.dimensions = (dimensions, dimensions, dimensions)
-        else:
-            raise ValueError("Dimensions must be a tuple of length 3 (length, width, height)")
+        if len(dimensions) != 3:
+            raise ValueError("Dimensions must be a number or a tuple of length 3")
+        self.dimensions = tuple(float(d) for d in dimensions)
 
     def _draw(self):
-        # Draw solid rectangle
-        glPushMatrix()
-        glTranslatef(*self.pose[:3])
-        glMultMatrixf(self.quat_to_matrix(self.pose[3:]))
         glScalef(*self.dimensions)
-        glColor4f(*self.colour)
-        glutSolidCube(1.0)
-        glPopMatrix()
+        glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
+        try:
+            # Push the faces back slightly so the outline never z-fights with them.
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(1.0, 1.0)
+            if self.is_translucent():
+                # One see-through layer: hide the far faces of the box.
+                glEnable(GL_CULL_FACE)
+                glCullFace(GL_BACK)
+            glColor4f(*self.colour)
+            _CUBE.draw()
+            glDisable(GL_CULL_FACE)
+            glDisable(GL_POLYGON_OFFSET_FILL)
 
-        # Draw wireframe rectangle
-        glPushMatrix()
-        glTranslatef(*self.pose[:3])
-
-        glMultMatrixf(self.quat_to_matrix(self.pose[3:]))
-        glScalef(*self.dimensions)
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-        glLineWidth(3.0)
-        glColor4f(*self.edge_colour)
-        glutSolidCube(1.0)
-        glPopMatrix()
-
-        # Ensure OpenGL state is reset to default after rendering
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)  # Reset polygon mode to fill
-        glLineWidth(1.0)  # Reset line width
+            if self.edge_colour is not None:
+                glDisable(GL_LIGHTING)
+                glLineWidth(self.edge_width)
+                glColor4f(*self.edge_colour)
+                draw_lines(_CUBE_EDGES)
+        finally:
+            glPopAttrib()

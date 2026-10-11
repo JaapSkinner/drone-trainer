@@ -4,7 +4,6 @@ import logging
 from PyQt5.QtWidgets import QApplication, QSplashScreen
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
-from OpenGL.GLUT import glutInit
 from services.app_logging import configure_logging
 from services.paths import APP_ROOT
 from ui.main_window import MainWindow
@@ -12,7 +11,6 @@ from ui.main_window import MainWindow
 def main():
     # Asset paths (icons, stylesheets, meshes) are relative to the app root.
     os.chdir(APP_ROOT)
-    glutInit(sys.argv)
     configure_logging(level=logging.INFO)
     app = QApplication(sys.argv)
 

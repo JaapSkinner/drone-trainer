@@ -1,30 +1,25 @@
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
 import numpy as np
+from OpenGL.GL import GL_CURRENT_BIT, GL_LINE_BIT, glLineWidth, glPopAttrib, glPushAttrib
 
+from models.gl_buffers import draw_lines
 from models.scene_object import SceneObject
+
+# X red, Y green, Z blue — one unit long.
+_POINTS = np.array([(0, 0, 0), (1, 0, 0), (0, 0, 0), (0, 1, 0), (0, 0, 0), (0, 0, 1)], dtype=np.float32)
+_COLOURS = np.array([(1, 0, 0), (1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 0, 1), (0, 0, 1)], dtype=np.float32)
 
 
 class Axes(SceneObject):
-    def __init__(self, pose=None, name=None, controllable=False):
-        super().__init__(pose, name, shaded=False, controllable=controllable)
-        if name is None:
-            self.name = "Unnamed Axes"
+    """Scene origin axes."""
 
+    def __init__(self, pose=None, name=None, controllable=False, length=1.0):
+        super().__init__(pose, name or "Unnamed Axes", shaded=False, controllable=controllable)
+        self.length = float(length)
 
     def _draw(self):
-        current_thickness = glGetFloatv(GL_LINE_WIDTH)
-        glLineWidth(3.0)
-        glBegin(GL_LINES)
-        glColor3f(1.0, 0.0, 0.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(1, 0, 0)
-        glColor3f(0.0, 1.0, 0.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 1, 0)
-        glColor3f(0.0, 0.0, 1.0)
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 0, 1)
-        glEnd()
-        glLineWidth(current_thickness)
+        glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
+        try:
+            glLineWidth(3.0)
+            draw_lines(_POINTS * self.length, _COLOURS)
+        finally:
+            glPopAttrib()
