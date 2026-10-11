@@ -65,10 +65,22 @@ make run
 3. Select a subject and **Assign to object…** (or **Create object**). That object now follows it;
    give it the *MAVLink vehicle* feature in the Objects panel to stream its pose to PX4.
 
+4. If the mocap origin or axes don't match the lab (origin in a corner, "forward" rotated), press
+   **Calibrate…**. Either type a rotation/offset, or use an object: *Origin & direction* (put it where
+   the origin should be, then move it along the new +X) or *Reference points* (capture it on marks
+   with known positions; reports the fit error). Changes preview live; **Apply** saves them, and the
+   calibration then applies to everything — the viewport, tracked objects and mocap sent to PX4.
+
 No lab handy? Send a synthetic Vicon stream from another terminal:
 
 ```bash
 python scripts/fake_vicon.py --subjects 2
+```
+
+To practise calibrating, make the fake Vicon frame mis-aligned and walk the wand between two marks:
+
+```bash
+python scripts/fake_vicon.py --frame-yaw 30 --frame-offset 2000,1000,0 --wand-path "0,0,0;1500,0,0" --wand-dwell 4
 ```
 
 ## Test

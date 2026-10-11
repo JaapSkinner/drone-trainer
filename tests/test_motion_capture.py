@@ -12,6 +12,7 @@ from models.structs import MotionCaptureConfig
 from services.motion_capture import vicon_udp
 from services.motion_capture.filters import PoseLowPass
 from services.motion_capture.optitrack import OptiTrackSource
+from models.mocap_calibration import MocapCalibration
 from services.motion_capture_service import MotionCaptureService
 from services.object_service import ObjectService
 from services.service_base import ServiceLevel
@@ -201,6 +202,62 @@ class MotionCaptureServiceTests(unittest.TestCase):
             self.assertIn("could not listen", service.status_text)
         finally:
             service.stop()
+
+
+class MotionCaptureCalibrationTests(unittest.TestCase):
+    POSE = (1.0, 0.5, 2.0, *frames.IDENTITY_QUAT)
+
+    def test_published_poses_are_calibrated_and_raw_pose_is_kept(self):
+        cal = MocapCalibration(frames.quat_from_axis_angle((0, 1, 0), math.pi / 2), (0.0, 0.0, 1.0))
+        service = MotionCaptureService(MotionCaptureConfig(calibration=cal.to_dict()))
+        batches = []
+        service.poses_updated.connect(batches.append)
+        service._record_sample("wand", self.POSE, 1.0)
+        service.update()
+
+        expected = cal.apply(self.POSE)
+        for got, want in zip(batches[0]["wand"], expected):
+            self.assertAlmostEqual(got, want)
+        info = service.subjects_snapshot()[0]
+        self.assertEqual(info.raw_pose, self.POSE)
+        for got, want in zip(info.pose, expected):
+            self.assertAlmostEqual(got, want)
+
+    def test_set_calibration_takes_effect_and_is_saved_in_config(self):
+        service = MotionCaptureService()
+        cal = MocapCalibration.from_manual((0, 0, 0), (0.0, -0.5, 0.0))
+        service.set_calibration(cal)
+        service._record_sample("wand", self.POSE, 1.0)
+        self.assertAlmostEqual(service.subjects_snapshot()[0].pose[1], 0.0)
+        self.assertEqual(MocapCalibration.from_dict(service.get_config().calibration).translation,
+                         (0.0, -0.5, 0.0))
+
+    def test_capture_averages_raw_positions(self):
+        service = MotionCaptureService(MotionCaptureConfig(
+            calibration=MocapCalibration.from_manual((0, 0, 0), (5, 5, 5)).to_dict()))
+        results = []
+        service.capture_finished.connect(results.append)
+        service.capture_subject("wand", duration_s=0.0)
+        for x in (0.99, 1.01, 1.00):
+            service._record_sample("wand", (x, 0.5, 2.0, *frames.IDENTITY_QUAT), 1.0)
+        service._record_sample("other", self.POSE, 1.0)
+        service.update()
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertTrue(result.ok)
+        self.assertEqual(result.samples, 3)
+        self.assertAlmostEqual(result.mean[0], 1.0)   # raw, not calibrated (+5)
+        self.assertAlmostEqual(result.mean[1], 0.5)
+        self.assertLess(result.std_m, 0.01)
+
+    def test_capture_without_samples_reports_failure(self):
+        service = MotionCaptureService()
+        results = []
+        service.capture_finished.connect(results.append)
+        service.capture_subject("ghost", duration_s=0.0)
+        service.update()
+        self.assertFalse(results[0].ok)
 
 
 if __name__ == "__main__":

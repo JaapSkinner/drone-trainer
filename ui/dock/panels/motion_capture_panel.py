@@ -5,9 +5,11 @@ from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpi
                              QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
                              QVBoxLayout, QWidget)
 
+from models.mocap_calibration import MocapCalibration
 from models.sphere import Sphere
 from models.structs import MotionCaptureConfig
 from services.service_base import ServiceLevel
+from ui.dock.panels.mocap_calibration_dialog import MocapCalibrationDialog
 
 _STATUS_COLOURS = {
     ServiceLevel.RUNNING: "#1e7e34",
@@ -90,7 +92,16 @@ class MotionCapturePanel(QWidget):
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self._on_connect_clicked)
         button_row.addWidget(self.connect_button)
+        self.calibrate_button = QPushButton("Calibrate…")
+        self.calibrate_button.setToolTip("Align the motion capture axes and origin with the lab")
+        self.calibrate_button.clicked.connect(self.open_calibration)
+        button_row.addWidget(self.calibrate_button)
         form.addRow(button_row)
+
+        self.calibration_label = QLabel()
+        self.calibration_label.setWordWrap(True)
+        self.calibration_label.setStyleSheet("color: #666; font-size: 11px;")
+        form.addRow("Calibration:", self.calibration_label)
 
         self.status_label = QLabel("Not connected")
         self.status_label.setWordWrap(True)
@@ -191,6 +202,8 @@ class MotionCapturePanel(QWidget):
         self.auto_connect_check.setChecked(config.auto_connect)
         self.auto_connect_check.blockSignals(False)
         self._poll_rate_hz = config.poll_rate_hz
+        self._calibration_dict = dict(config.calibration)
+        self._show_calibration(MocapCalibration.from_dict(config.calibration))
         self._on_source_changed(self.source_combo.currentIndex())
 
     def current_config(self) -> MotionCaptureConfig:
@@ -206,10 +219,39 @@ class MotionCapturePanel(QWidget):
             filter_cutoff_hz=self.filter_cutoff_spin.value(),
             poll_rate_hz=self._poll_rate_hz,
             auto_connect=self.auto_connect_check.isChecked(),
+            calibration=(self.service.get_config().calibration if self.service
+                         else dict(self._calibration_dict)),
         )
 
     def _emit_config(self):
         self.config_changed.emit(self.current_config())
+
+    # ------------------------------------------------------------------
+    # Calibration
+    # ------------------------------------------------------------------
+
+    def _show_calibration(self, calibration):
+        text = calibration.describe()
+        self.calibration_label.setText("None" if calibration.is_identity else text)
+
+    def open_calibration(self):
+        """Open (or raise) the calibration dialog."""
+        if self.service is None:
+            return None
+        dialog = getattr(self, "_calibration_dialog", None)
+        if dialog is None or not dialog.isVisible():
+            dialog = MocapCalibrationDialog(self.service, self)
+            dialog.calibration_applied.connect(self._on_calibration_applied)
+            dialog.finished.connect(lambda _r: self._show_calibration(self.service.get_calibration()))
+            self._calibration_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        return dialog
+
+    def _on_calibration_applied(self, calibration):
+        self._calibration_dict = calibration.to_dict()
+        self._show_calibration(calibration)
+        self._emit_config()  # MainWindow applies and saves it
 
     def _on_source_changed(self, index):
         for i, page in enumerate(self.source_pages):

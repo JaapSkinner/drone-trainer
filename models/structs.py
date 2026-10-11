@@ -393,6 +393,7 @@ class MotionCaptureConfig:
         filter_cutoff_hz: Filter cutoff frequency
         poll_rate_hz: How often the service drains the socket and publishes poses
         auto_connect: Connect automatically when the app starts
+        calibration: Alignment of the mocap frame to the lab (see models/mocap_calibration.py)
     """
     source: str = "vicon"
     vicon_address: str = "0.0.0.0"
@@ -405,6 +406,8 @@ class MotionCaptureConfig:
     filter_cutoff_hz: float = 10.0
     poll_rate_hz: float = 200.0
     auto_connect: bool = False
+    # MocapCalibration.to_dict(): rigid transform applied to every mocap pose
+    calibration: dict = field(default_factory=dict)
 
     SOURCES = ("vicon", "optitrack")
 

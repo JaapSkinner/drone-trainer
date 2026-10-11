@@ -21,9 +21,11 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+import numpy as np
 from PyQt5.QtCore import QTimer, pyqtSignal
 
 from models import frames
+from models.mocap_calibration import MocapCalibration
 from models.structs import MotionCaptureConfig
 from services.motion_capture import vicon_udp
 from services.motion_capture.filters import PoseLowPass
@@ -37,14 +39,29 @@ class SubjectInfo:
     name: str
     rate_hz: float
     age_s: float           # seconds since the last sample
-    pose: tuple            # latest scene pose
+    pose: tuple            # latest scene pose (calibrated)
+    raw_pose: tuple = None  # latest pose before calibration
+
+
+@dataclass
+class CaptureResult:
+    """Averaged position of one subject over a short capture window (uncalibrated)."""
+    subject: str
+    mean: Optional[tuple]   # None if no samples arrived
+    std_m: float            # largest per-axis standard deviation
+    samples: int
+
+    @property
+    def ok(self) -> bool:
+        return self.mean is not None
 
 
 class _SubjectStats:
-    __slots__ = ("pose", "last_seen", "window_count", "rate_hz")
+    __slots__ = ("pose", "raw_pose", "last_seen", "window_count", "rate_hz")
 
     def __init__(self):
         self.pose = None
+        self.raw_pose = None
         self.last_seen = 0.0
         self.window_count = 0
         self.rate_hz = 0.0
@@ -54,6 +71,7 @@ class MotionCaptureService(ServiceBase):
     poses_updated = pyqtSignal(object)
     subjects_updated = pyqtSignal(object)
     connection_changed = pyqtSignal(bool)
+    capture_finished = pyqtSignal(object)       # CaptureResult
 
     STALE_AFTER_S = 1.0
     UI_REFRESH_S = 0.5
@@ -62,6 +80,8 @@ class MotionCaptureService(ServiceBase):
     def __init__(self, config: Optional[MotionCaptureConfig] = None, debug_level=None):
         super().__init__(debug_level=debug_level or DebugLevel.LOG)
         self._config = copy.deepcopy(config) if config else MotionCaptureConfig()
+        self._calibration = MocapCalibration.from_dict(self._config.calibration)
+        self._captures: Dict[str, tuple] = {}  # subject → (deadline, [raw positions])
         self._lock = threading.Lock()
         self._pending: Dict[str, tuple] = {}
         self._subjects: Dict[str, _SubjectStats] = {}
@@ -92,6 +112,18 @@ class MotionCaptureService(ServiceBase):
     def connect_source(self):
         self.call_in_service_thread(self._connect)
 
+    def get_calibration(self) -> MocapCalibration:
+        return self._calibration
+
+    def set_calibration(self, calibration: MocapCalibration):
+        """Apply a calibration immediately (also stored in the config for saving)."""
+        self._calibration = calibration
+        self._config.calibration = calibration.to_dict()
+
+    def capture_subject(self, subject: str, duration_s: float = 1.0):
+        """Average a subject's uncalibrated position over ``duration_s``; result via ``capture_finished``."""
+        self.call_in_service_thread(self._start_capture, subject, float(duration_s))
+
     def disconnect_source(self):
         self.call_in_service_thread(self._disconnect)
 
@@ -101,7 +133,7 @@ class MotionCaptureService(ServiceBase):
     def subjects_snapshot(self) -> List[SubjectInfo]:
         now = time.monotonic()
         with self._lock:
-            return sorted((SubjectInfo(name, s.rate_hz, now - s.last_seen, s.pose)
+            return sorted((SubjectInfo(name, s.rate_hz, now - s.last_seen, s.pose, s.raw_pose)
                            for name, s in self._subjects.items() if s.pose is not None),
                           key=lambda info: info.name.lower())
 
@@ -141,6 +173,7 @@ class MotionCaptureService(ServiceBase):
             self.poses_updated.emit(batch)
 
         now = time.monotonic()
+        self._finish_captures(now)
         if now - self._last_ui_refresh >= self.UI_REFRESH_S:
             self._refresh_rates(now)
             self._last_ui_refresh = now
@@ -154,13 +187,18 @@ class MotionCaptureService(ServiceBase):
     def _poll_interval_ms(self) -> int:
         return max(1, int(1000.0 / max(1.0, float(self._config.poll_rate_hz))))
 
+    _CONNECTION_FIELDS = ("source", "vicon_address", "vicon_port", "optitrack_server_ip",
+                          "optitrack_client_ip", "optitrack_multicast", "optitrack_up_axis")
+
     def _apply_config(self, config: MotionCaptureConfig):
-        was_connected = self._connected
+        reconnect = self._connected and any(
+            getattr(config, f) != getattr(self._config, f) for f in self._CONNECTION_FIELDS)
         self._config = config
+        self._calibration = MocapCalibration.from_dict(config.calibration)
         self._filters.clear()
         if self._timer is not None:
             self._timer.setInterval(self._poll_interval_ms())
-        if was_connected:
+        if reconnect:
             self._connect()
 
     def _source_label(self) -> str:
@@ -259,8 +297,28 @@ class MotionCaptureService(ServiceBase):
                                         frames.vicon_to_scene_pose(obj.translation_mm, obj.rotation_rad),
                                         now)
 
+    def _start_capture(self, subject: str, duration_s: float):
+        with self._lock:
+            self._captures[subject] = (time.monotonic() + duration_s, [])
+
+    def _finish_captures(self, now: float):
+        with self._lock:
+            done = [(name, samples) for name, (deadline, samples) in self._captures.items() if now >= deadline]
+            for name, _ in done:
+                del self._captures[name]
+        for name, samples in done:
+            if samples:
+                pts = np.asarray(samples)
+                result = CaptureResult(name, tuple(float(v) for v in pts.mean(axis=0)),
+                                       float(pts.std(axis=0).max()), len(samples))
+            else:
+                result = CaptureResult(name, None, 0.0, 0)
+            self.capture_finished.emit(result)
+
     def _record_sample(self, name: str, pose: tuple, t: float):
         """Store a scene-frame sample. Called on the service thread or the NatNet thread."""
+        raw_pose = pose
+        pose = self._calibration.apply(pose)
         if self._config.filter_enabled:
             filt = self._filters.get(name)
             if filt is None:
@@ -271,7 +329,11 @@ class MotionCaptureService(ServiceBase):
             if stats is None:
                 stats = self._subjects[name] = _SubjectStats()
             stats.pose = pose
+            stats.raw_pose = raw_pose
             stats.last_seen = t
+            capture = self._captures.get(name)
+            if capture is not None:
+                capture[1].append(raw_pose[:3])
             stats.window_count += 1
             self._pending[name] = pose
             self._last_sample = t
