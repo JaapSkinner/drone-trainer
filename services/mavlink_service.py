@@ -28,6 +28,7 @@ from enum import Enum
 from PyQt5.QtCore import pyqtSignal, QTimer, QThread
 
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
+from models import frames
 from models.structs import (
     MavlinkConnectionConfig,
     MavlinkTelemetryData,
@@ -1803,14 +1804,10 @@ class MavlinkService(ServiceBase):
             if conn is None or not conn.is_connected:
                 continue
             
-            # Extract pose from scene object
+            # Scene pose (Y up) → PX4 NED position and FRD attitude.
             if hasattr(obj, 'pose') and len(obj.pose) >= 7:
-                mocap = MocapData(
-                    x=obj.pose[0],
-                    y=obj.pose[2],  # Note: swapping Y/Z for NED frame
-                    z=-obj.pose[1],  # NED: negative Z is up
-                    q=(obj.pose[3], obj.pose[4], obj.pose[5], obj.pose[6])
-                )
+                position, q = frames.scene_pose_to_ned(obj.pose)
+                mocap = MocapData(x=position[0], y=position[1], z=position[2], q=q)
                 conn.send_mocap_data(mocap)
     
     def _process_setpoints(self):

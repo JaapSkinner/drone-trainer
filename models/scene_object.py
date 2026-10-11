@@ -4,6 +4,7 @@ from OpenGL.GLU import *
 from math import sin, cos
 import numpy as np
 from abc import ABC, abstractmethod
+from models import frames
 from models.structs import MavlinkObjectConfig
 
 
@@ -78,33 +79,21 @@ class SceneObject(ABC):
         else:
             raise ValueError("Pose delta must be of length 7")
     
+    # Thin wrappers kept for existing callers; new code should use models.frames.
     @staticmethod
     def axis_angle_to_quat(axis, angle):
-        half = 0.5 * angle
-        w = cos(half)
-        xyz = np.array(axis) * sin(half)
-        return np.concatenate([[w], xyz])
-    
+        return np.array(frames.quat_from_axis_angle(axis, angle))
+
     @staticmethod
     def quat_mult(q1, q2):
-        w1, x1, y1, z1 = q1
-        w2, x2, y2, z2 = q2
-        return np.array([
-            w1*w2 - x1*x2 - y1*y2 - z1*z2,
-            w1*x2 + x1*w2 + y1*z2 - z1*y2,
-            w1*y2 - x1*z2 + y1*w2 + z1*x2,
-            w1*z2 + x1*y2 - y1*x2 + z1*w2
-        ])
-    
+        return np.array(frames.quat_multiply(q1, q2))
+
     @staticmethod
     def quat_to_matrix(q):
-        w, x, y, z = q
-        return np.array([
-            [1 - 2*(y*y + z*z),   2*(x*y - z*w),     2*(x*z + y*w),     0],
-            [2*(x*y + z*w),       1 - 2*(x*x + z*z), 2*(y*z - x*w),     0],
-            [2*(x*z - y*w),       2*(y*z + x*w),     1 - 2*(x*x + y*y), 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float32).T
+        """4×4 rotation matrix laid out for glMultMatrixf (column-major)."""
+        m = np.identity(4, dtype=np.float32)
+        m[:3, :3] = frames.quat_to_matrix(q)
+        return m.T
 
     # MAVLink configuration methods
     def set_mavlink_enabled(self, enabled: bool):
