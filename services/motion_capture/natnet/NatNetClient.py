@@ -291,7 +291,12 @@ class NatNetClient:
                               socket.inet_aton(self.local_ip_address))
             try:
                 # Use bind in data socket due to the nature of UDP
-                result.bind((self.local_ip_address, self.data_port))
+                # DRONE TRAINER local modification: on Linux/macOS a socket
+                # bound to a unicast address never receives multicast, so bind
+                # to all interfaces there (group membership above still uses
+                # the chosen interface). Windows needs the interface address.
+                bind_address = self.local_ip_address if sys.platform.startswith("win") else ""
+                result.bind((bind_address, self.data_port))
             except socket.error as e:
                 print(f'Multicast Error: {e}')
                 sys.exit(1)
