@@ -38,6 +38,8 @@ from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
 from ui.status_panel.status_panel import StatusPanel
 from services.app_logging import get_log_file_path
+from services.paths import session_scene_path
+from models import scene_io
 
 logger = logging.getLogger(__name__)
 _OBJECT_STATUS_DEBUG_PREFIX = "Debug text "
@@ -96,7 +98,7 @@ class MainWindow(QMainWindow):
         # Create object service early (before StorageService) to preserve
         # the previous construction order and avoid moveToThread races.
         self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
-        self.object_service.add_objects(build_default_scene())
+        self.object_service.add_objects(self._load_startup_scene())
 
         # Motion capture feeds tracked object poses into the object service.
         self.motion_capture_service = MotionCaptureService(
@@ -482,6 +484,26 @@ class MainWindow(QMainWindow):
 
 
 
+    @staticmethod
+    def _load_startup_scene():
+        """Objects from the last session, or the default scene on first launch."""
+        path = session_scene_path()
+        if os.path.exists(path):
+            try:
+                objects = scene_io.load_scene(path)
+                if objects:
+                    logger.info("Restored %d object(s) from %s", len(objects), path)
+                    return objects
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not restore the last scene (%s); using the default scene.", exc)
+        return build_default_scene()
+
+    def _save_session_scene(self):
+        try:
+            scene_io.save_scene(self.object_service.get_objects(), session_scene_path())
+        except OSError:
+            logger.exception("Could not save the scene for next session")
+
     def focus_object(self, obj):
         """Lock the camera onto ``obj`` and keep the settings dropdown in sync."""
         combo = self.settings_panel.lock_object_combo
@@ -775,6 +797,8 @@ class MainWindow(QMainWindow):
                     pass
         except Exception:
             pass
+
+        self._save_session_scene()
 
         # Stop services to ensure timers are stopped in their own threads
         # Include storage_service and object_service so their QThreads are

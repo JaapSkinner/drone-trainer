@@ -75,6 +75,32 @@ class AppBootTests(unittest.TestCase):
             window.close()
             process_events_for(0.1)
 
+    def test_scene_is_restored_and_saved_between_sessions(self):
+        from models import scene_io
+        from models.sphere import Sphere
+        scene_path = os.path.join(self._data_dir.name, "scene.json")
+        scene_io.save_scene([Sphere(name="Waypoint", radius=0.3)], scene_path)
+
+        window = self._boot()
+        try:
+            self.assertEqual([o.name for o in window.object_service.get_objects()], ["Waypoint"])
+            window.object_service.add_object(Sphere(name="Added"))
+        finally:
+            window.close()
+            process_events_for(0.1)
+
+        self.assertEqual([o.name for o in scene_io.load_scene(scene_path)], ["Waypoint", "Added"])
+
+    def test_broken_scene_file_falls_back_to_default_scene(self):
+        with open(os.path.join(self._data_dir.name, "scene.json"), "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        window = self._boot()
+        try:
+            self.assertIsNotNone(window.object_service.get_object("Grid"))
+        finally:
+            window.close()
+            process_events_for(0.1)
+
 
 if __name__ == "__main__":
     unittest.main()
