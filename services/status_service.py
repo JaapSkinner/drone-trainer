@@ -15,16 +15,21 @@ logger = logging.getLogger(__name__)
 
 class StatusService(ServiceBase):
     """Service for monitoring and reporting the health of other services.
-    
+
     Periodically polls input service, mavlink service, and other registered
     services to update the status panel with their current state.
-    
+
+    Updates reach the panel through ``status_update`` so the widget is only
+    touched on the GUI thread (this service polls from its own thread).
+
     Attributes:
         status_panel: UI panel for displaying status information
         input_service: Input service to monitor
         mavlink_service: MAVLink service to monitor
     """
-    
+
+    status_update = pyqtSignal(int, str, str)  # level, label, target
+
     def __init__(self, status_panel, input_service, mavlink_service=None, debug_level=DebugLevel.LOG):
         """Initialize the status service.
         
@@ -39,6 +44,8 @@ class StatusService(ServiceBase):
         self.input_service = input_service
         self.mavlink_service = mavlink_service
         self.timer = None
+        if status_panel is not None:
+            self.status_update.connect(status_panel.handle_status_change)
 
     def on_start(self):
         """Start the status monitoring timer."""
@@ -64,7 +71,7 @@ class StatusService(ServiceBase):
         # Input Device status
         if self.input_service is not None:
             input_svc = self.input_service
-            self.status_panel.handle_status_change(
+            self.status_update.emit(
                 input_svc.status.value, 
                 getattr(input_svc, "status_label", ""), 
                 "input"
@@ -87,7 +94,7 @@ class StatusService(ServiceBase):
                     label = f"1 drone @ {rate_hz:.0f} Hz"
                 else:
                     label = f"{active_conns} drones @ {rate_hz:.0f} Hz"
-                self.status_panel.handle_status_change(
+                self.status_update.emit(
                     mavlink_svc.status.value,
                     label,
                     "mavlink"
@@ -95,14 +102,14 @@ class StatusService(ServiceBase):
             elif enabled_objects > 0:
                 # Objects configured but not connected
                 label = f"Not Connected ({enabled_objects} objects configured)"
-                self.status_panel.handle_status_change(
+                self.status_update.emit(
                     ServiceLevel.WARNING.value,
                     label,
                     "mavlink"
                 )
             else:
                 # No connections or objects - hide mavlink status
-                self.status_panel.handle_status_change(
+                self.status_update.emit(
                     ServiceLevel.STOPPED.value,
                     "",
                     "mavlink"

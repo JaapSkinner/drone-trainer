@@ -7,7 +7,7 @@ This panel shows the current status of:
 - Input device status
 """
 from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSlot
 from ui.style import load_stylesheet
 from services.service_base import ServiceLevel
 
@@ -47,6 +47,7 @@ class StatusPanel(QFrame):
         layout.addWidget(self.mavlink_label)
         layout.addWidget(self.input_label)
         
+    @pyqtSlot(int, str, str)
     def handle_status_change(self, level: int, label: str, target=""):
         """Handle status change from a service.
         

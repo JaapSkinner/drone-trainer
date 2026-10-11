@@ -754,18 +754,30 @@ class MavlinkService(ServiceBase):
         methods like _sanitize_setpoint() rather than being copied to
         class-level constants.
         
+        Safe to call from any thread: the timers live on the service thread,
+        so the interval change is applied there.
+
         Args:
             settings: New global settings to apply
         """
         self._global_settings = settings
-        
+        self.call_in_service_thread(self._apply_timer_intervals)
+
+    def _apply_timer_intervals(self):
+        """Apply the rates in the global settings to the running timers.
+
+        Must run on the service thread (QTimers can't be restarted from another
+        thread — doing so was the cause of issue #40).
+        """
+        settings = self._global_settings
+
         # Helper to safely calculate interval (avoid division by zero)
         def rate_to_interval(rate_hz: float, default_ms: int) -> int:
             """Convert rate in Hz to interval in ms, with fallback."""
             if rate_hz is None or rate_hz <= 0:
                 return default_ms
             return max(1, int(1000 / rate_hz))
-        
+
         # Update timer intervals if timers exist
         if self._telemetry_timer is not None:
             self._telemetry_timer.setInterval(rate_to_interval(settings.telemetry_rate_hz, 50))
@@ -898,7 +910,10 @@ class MavlinkService(ServiceBase):
         self._setpoint_timer.setInterval(self.SETPOINT_UPDATE_INTERVAL_MS)
         self._setpoint_timer.timeout.connect(self.safe(self._process_setpoints))
         self._setpoint_timer.start()
-        
+
+        # Settings may have been applied before the service started.
+        self._apply_timer_intervals()
+
         self.set_status(ServiceLevel.RUNNING, "MAVLink: Ready")
         logger.info("MAVLink service started and ready.")
     

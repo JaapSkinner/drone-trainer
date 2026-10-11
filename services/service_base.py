@@ -4,10 +4,18 @@ import traceback
 import threading
 from abc import ABCMeta, abstractmethod
 from enum import Enum, auto
+from PyQt5 import sip
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import QApplication
 
 logger = logging.getLogger(__name__)
+
+
+def _same_qthread(a: QThread, b: QThread) -> bool:
+    """Compare two QThread wrappers by their underlying C++ object."""
+    if a is None or b is None:
+        return False
+    return sip.unwrapinstance(a) == sip.unwrapinstance(b)
 
 class ServiceLevel(Enum):
     STOPPED = auto()
@@ -28,6 +36,8 @@ class MetaService(type(QObject), ABCMeta):
 class ServiceBase(QObject, metaclass=MetaService):  
     status_changed = pyqtSignal(int, str)  # emit both enum and label
     error_occurred = pyqtSignal(str)
+    # Internal: carries a callable onto the service's own thread.
+    _invoke_requested = pyqtSignal(object)
 
     def __init__(self, debug_level=DebugLevel.LOG):
         super().__init__()
@@ -47,6 +57,8 @@ class ServiceBase(QObject, metaclass=MetaService):
 
         # Bind error signal to handler
         self.error_occurred.connect(self._handle_error)
+        # Queued automatically once the service has moved to its own thread.
+        self._invoke_requested.connect(self._run_invoked)
 
     @property
     def status(self):
@@ -92,7 +104,7 @@ class ServiceBase(QObject, metaclass=MetaService):
 
         logger.debug("start(): current_qthread=%s obj_thread=%s python_thread=%s", current, obj_thread, threading.get_ident())
 
-        if obj_thread is current:
+        if _same_qthread(obj_thread, current):
             # We're in the object's thread already — perform the start immediately
             self._do_start_thread()
         else:
@@ -202,6 +214,26 @@ class ServiceBase(QObject, metaclass=MetaService):
     def update(self):
         """Override: Periodic or event-driven update logic."""
         pass
+
+    def call_in_service_thread(self, func, *args, **kwargs):
+        """Run ``func`` on the thread this service lives on.
+
+        Called from the service's own thread (or before the service has been
+        started) it runs immediately. Called from any other thread — e.g. a UI
+        callback — it is queued onto the service's event loop. Use this for
+        anything that touches thread-affine state such as QTimers or sockets.
+        """
+        if _same_qthread(QThread.currentThread(), self.thread()):
+            return func(*args, **kwargs)
+        self._invoke_requested.emit(functools.partial(func, *args, **kwargs))
+        return None
+
+    @pyqtSlot(object)
+    def _run_invoked(self, call):
+        try:
+            call()
+        except Exception as e:
+            self.error_occurred.emit(f"{e}\n{traceback.format_exc()}")
 
     def safe(self, func):
         @functools.wraps(func)

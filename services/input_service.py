@@ -2,6 +2,8 @@
 Input Service for handling various input devices (Controllers, Keyboards, etc.)
 Refactored from JoystickService to support multiple input types.
 """
+import os
+import time
 import numpy as np
 import pygame
 import logging
@@ -50,8 +52,15 @@ class InputService(ServiceBase):
     
     The service calculates pose deltas and routes them through the command panel
     to update setpoint/next_setpoint instead of directly modifying object position.
+
+    Polling runs on the service thread; pose deltas reach the command panel via
+    ``setpoint_delta_requested`` so the panel is only ever updated on the GUI
+    thread.
     """
+    RECONNECT_PROBE_INTERVAL_S = 1.0
+
     input_updated = pyqtSignal(object)  # emits the updated object state
+    setpoint_delta_requested = pyqtSignal(object)  # pose delta list for the command panel
 
     def __init__(self, gl_widget, input_type=InputType.CONTROLLER, 
                  sensitivity=1.0, update_interval_ms=16, debug_level=None):
@@ -73,6 +82,7 @@ class InputService(ServiceBase):
         
         # Controller-specific attributes
         self.joystick = None
+        self._last_reconnect_probe = 0.0
         
         # Keyboard-specific attributes
         self.key_states = {
@@ -90,8 +100,12 @@ class InputService(ServiceBase):
         self.command_panel = None  # Reference to command panel for setpoint updates
         self.timer = None
 
-        # Global key event filter (installed for keyboard input modes)
+        # Application-wide key event filter. It must be created and installed on
+        # the GUI thread, so it is set up here (construction happens on the GUI
+        # thread) rather than in on_start(), which runs on the service thread.
+        # It only records key states, so it is harmless in controller mode.
         self._key_event_filter = None
+        self._install_key_filter()
 
     @staticmethod
     def _apply_deadzone(value, threshold=0.1):
@@ -116,7 +130,6 @@ class InputService(ServiceBase):
             # For keyboard input, we just need to set up the status
             self.status_label = f"{self.input_type.value}"
             self.status = ServiceLevel.RUNNING
-            self._install_key_filter()
 
         # Parent the timer to the service so it shares the service's
         # QObject thread affinity. This prevents starting/stopping the
@@ -144,10 +157,23 @@ class InputService(ServiceBase):
         for key in self.key_states:
             self.key_states[key] = False
 
+    @staticmethod
+    def _init_pygame_joystick():
+        """Initialise only the parts of SDL needed for gamepad polling.
+
+        A full ``pygame.init()`` also starts SDL audio and video, which can block
+        indefinitely on machines without a reachable display/audio server. The
+        dummy video driver is needed because ``pygame.event.pump()`` (which
+        refreshes joystick state) requires the video subsystem.
+        """
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
+        pygame.display.init()
+        pygame.joystick.init()
+
     def _init_controller(self):
         """Initialize pygame for controller input"""
-        pygame.init()
-        pygame.joystick.init()
+        self._init_pygame_joystick()
         if pygame.joystick.get_count() > 0:
             self.joystick = pygame.joystick.Joystick(0)
             self.joystick.init()
@@ -169,22 +195,32 @@ class InputService(ServiceBase):
             self.timer = None
         if self.input_type == InputType.CONTROLLER:
             pygame.quit()
+
+    def stop(self):
+        # The key filter lives on the GUI thread; remove it from there before
+        # the service thread shuts down.
         self._uninstall_key_filter()
+        super().stop()
 
     def set_input_type(self, input_type: InputType):
         """
         Change the input type.
+
+        Safe to call from the GUI thread: pygame is only ever touched on the
+        service thread.
         
         Args:
             input_type: New input type to use
         """
+        self.call_in_service_thread(self._apply_input_type, input_type)
+
+    def _apply_input_type(self, input_type: InputType):
         if self.input_type != input_type:
             # Clean up old input type
             if self.input_type == InputType.CONTROLLER:
                 pygame.quit()
-            else:
-                # Switching away from a keyboard mode — remove the global filter
-                self._uninstall_key_filter()
+                self.joystick = None
+            self.clear_key_states()
 
             self.input_type = input_type
             logger.info("Input type switched to %s", input_type.value)
@@ -195,7 +231,6 @@ class InputService(ServiceBase):
             else:
                 self.status_label = f"{input_type.value}"
                 self.status = ServiceLevel.RUNNING
-                self._install_key_filter()
 
     def set_sensitivity(self, sensitivity: float):
         """
@@ -243,7 +278,13 @@ class InputService(ServiceBase):
     def _update_controller(self):
         """Update controller input (original joystick logic)"""
         if not self.joystick or not self.joystick.get_init():
-            # No joystick connected or joystick was disconnected, check for new connection
+            # No joystick connected or joystick was disconnected, check for a
+            # new connection. Re-initialising the joystick subsystem takes tens
+            # of milliseconds, so only probe about once a second.
+            now = time.monotonic()
+            if now - self._last_reconnect_probe < self.RECONNECT_PROBE_INTERVAL_S:
+                return
+            self._last_reconnect_probe = now
             pygame.joystick.quit()
             pygame.joystick.init()
             if pygame.joystick.get_count() > 0:
@@ -295,7 +336,7 @@ class InputService(ServiceBase):
             # Route through command panel to update setpoint (not position directly)
             # Only apply deltas when Joystick mode is active
             if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
-                self.command_panel.update_setpoint_from_joystick(pose_delta)
+                self.setpoint_delta_requested.emit(pose_delta)
                 self.input_updated.emit(obj)
 
     def _update_keyboard_wasd(self):
@@ -334,7 +375,7 @@ class InputService(ServiceBase):
         # Route through command panel to update setpoint (not position directly)
         # Only apply deltas when Joystick mode is active
         if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
-            self.command_panel.update_setpoint_from_joystick(pose_delta)
+            self.setpoint_delta_requested.emit(pose_delta)
             self.input_updated.emit(obj)
 
     def _update_keyboard_arrows(self):
@@ -373,7 +414,7 @@ class InputService(ServiceBase):
         # Route through command panel to update setpoint (not position directly)
         # Only apply deltas when Joystick mode is active
         if self.command_panel is not None and self.command_panel.is_joystick_control_allowed():
-            self.command_panel.update_setpoint_from_joystick(pose_delta)
+            self.setpoint_delta_requested.emit(pose_delta)
             self.input_updated.emit(obj)
 
     def set_controlled_object(self, obj):
@@ -392,4 +433,11 @@ class InputService(ServiceBase):
         Args:
             command_panel: The CommandPanel instance
         """
+        if self.command_panel is not None:
+            try:
+                self.setpoint_delta_requested.disconnect(self.command_panel.update_setpoint_from_joystick)
+            except TypeError:
+                pass
         self.command_panel = command_panel
+        if command_panel is not None:
+            self.setpoint_delta_requested.connect(command_panel.update_setpoint_from_joystick)

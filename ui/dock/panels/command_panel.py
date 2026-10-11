@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QTabWidget, QCheckBox, QSizePolicy, QScrollArea, QFrame,
     QSlider
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
 from models.debug_text import DebugText
 from models.scene_object import SceneObject
 from services.input_service import InputType
@@ -1132,6 +1132,7 @@ class CommandPanel(QWidget):
         self._update_position_display()
         self._update_jog_values()
     
+    @pyqtSlot(object)
     def update_setpoint_from_joystick(self, pose_delta):
         """Update setpoint (or next_setpoint in ghost mode) from joystick input.
         
