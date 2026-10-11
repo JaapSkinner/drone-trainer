@@ -1,8 +1,7 @@
 import unittest
-import os
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PyQt5.QtWidgets import QApplication, QSizePolicy
+from qt_test_utils import get_app
+from PyQt5.QtWidgets import QSizePolicy
 
 from ui.dock.panels.settings_panel import SettingsPanel
 
@@ -10,7 +9,7 @@ from ui.dock.panels.settings_panel import SettingsPanel
 class SettingsPanelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._app = QApplication.instance() or QApplication([])
+        cls._app = get_app()
 
     def _clean_title(self, text: str) -> str:
         # Remove caret glyphs and surrounding whitespace used by header indicator

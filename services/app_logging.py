@@ -3,12 +3,9 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 
+from services.paths import data_dir
 
-_LOG_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "storage_data",
-    "logs",
-)
+
 _LOG_FILE = "drone_trainer.log"
 _LOGGING_CONFIGURED = False
 
@@ -36,8 +33,12 @@ class _StreamToLogger:
         pass
 
 
+def _log_dir() -> str:
+    return os.path.join(data_dir(), "logs")
+
+
 def get_log_file_path() -> str:
-    return os.path.join(_LOG_DIR, _LOG_FILE)
+    return os.path.join(_log_dir(), _LOG_FILE)
 
 
 def configure_logging(
@@ -54,7 +55,7 @@ def configure_logging(
             handler.setLevel(level)
         return get_log_file_path()
 
-    os.makedirs(_LOG_DIR, exist_ok=True)
+    os.makedirs(_log_dir(), exist_ok=True)
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s",

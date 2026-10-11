@@ -4,6 +4,11 @@
 
 .PHONY: help init install mavlink run clean test
 
+PYTHON ?= python
+
+# Headless defaults so tests never need a display, audio device or gamepad.
+TEST_ENV = QT_QPA_PLATFORM=offscreen SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+
 # Default target
 help:
 	@echo "Drone Trainer - Available Commands:"
@@ -13,7 +18,7 @@ help:
 	@echo "  make mavlink    - Build DTRG MAVLink dialect"
 	@echo "  make run        - Run the application"
 	@echo "  make clean      - Clean generated files"
-	@echo "  make test       - Run tests (if available)"
+	@echo "  make test       - Run the unit test suite (headless)"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  make init       - First time setup (submodules + deps + mavlink)"
@@ -33,13 +38,13 @@ submodules:
 # Install Python dependencies
 install:
 	@echo "=== Installing Python Dependencies ==="
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 
 # Build DTRG MAVLink dialect
 mavlink: submodules
 	@echo "=== Building DTRG MAVLink Dialect ==="
 	@if [ -f "libs/dtrg-mavlink/pymavlink/generator/mavgen.py" ]; then \
-		python scripts/build_mavlink.py --dialect dtrg; \
+		$(PYTHON) scripts/build_mavlink.py --dialect dtrg; \
 	else \
 		echo "Error: DTRG-Mavlink submodule not found. Run 'make submodules' first."; \
 		exit 1; \
@@ -48,7 +53,7 @@ mavlink: submodules
 # Run the application
 run:
 	@echo "=== Starting Drone Trainer ==="
-	python main.py
+	$(PYTHON) main.py
 
 # Clean generated files
 clean:
@@ -58,7 +63,7 @@ clean:
 	rm -f libs/dtrg-mavlink/pymavlink/dialects/v20/dtrg.py 2>/dev/null || true
 	@echo "Clean complete"
 
-# Run tests (placeholder)
+# Run tests
 test:
 	@echo "=== Running Tests ==="
-	python -m unittest discover -s tests -p "test_*.py" -v
+	$(TEST_ENV) $(PYTHON) -m unittest discover -s tests -p "test_*.py" -v

@@ -31,12 +31,10 @@ from PyQt5.QtCore import pyqtSignal
 from dataclasses import fields
 
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
+from services.paths import data_dir
 from models.storage_models import AppSettings, ConnectionEntry
 
 
-# Default storage directory (relative to the working directory)
-_STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "storage_data")
 _SETTINGS_FILE = "settings.json"
 _CONNECTIONS_FILE = "connections.json"
 
@@ -58,7 +56,7 @@ class StorageService(ServiceBase):
         # thread. For synchronous startup needs, use the static loader
         # helpers below so the UI can read persisted state before starting
         # threaded services.
-        self._storage_dir = storage_dir or _STORAGE_DIR
+        self._storage_dir = storage_dir or data_dir()
         self._settings: AppSettings = AppSettings()
         self._connections: Dict[str, ConnectionEntry] = {}
 
@@ -345,7 +343,7 @@ class StorageService(ServiceBase):
         This is intended for synchronous startup where the UI needs
         persisted settings before threaded services are started.
         """
-        _dir = storage_dir or _STORAGE_DIR
+        _dir = storage_dir or data_dir()
         path = os.path.join(_dir, _SETTINGS_FILE)
         if not os.path.exists(path):
             return AppSettings()
@@ -363,7 +361,7 @@ class StorageService(ServiceBase):
 
         Returns an empty list on error or if no file exists.
         """
-        _dir = storage_dir or _STORAGE_DIR
+        _dir = storage_dir or data_dir()
         path = os.path.join(_dir, _CONNECTIONS_FILE)
         if not os.path.exists(path):
             return []

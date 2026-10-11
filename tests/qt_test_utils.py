@@ -3,6 +3,8 @@
 Import this module before anything that creates a QApplication or initialises
 SDL so the headless defaults below take effect.
 """
+import atexit
+import gc
 import os
 import time
 
@@ -10,12 +12,39 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
+from PyQt5 import sip
 from PyQt5.QtCore import QtMsgType, qInstallMessageHandler
 from PyQt5.QtWidgets import QApplication
 
+_app = None
+
 
 def get_app() -> QApplication:
-    return QApplication.instance() or QApplication([])
+    global _app
+    if _app is None:
+        _app = QApplication.instance() or QApplication([])
+    return _app
+
+
+@atexit.register
+def _shutdown_qt():
+    """Tear Qt down before the interpreter starts destroying modules.
+
+    Otherwise widgets left over from tests may be destroyed after the
+    QApplication, in arbitrary order, which segfaults intermittently.
+    """
+    global _app
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.sendPostedEvents(None, 0)  # 0 == QEvent::DeferredDelete
+    app.processEvents()
+    gc.collect()
+    _app = None
+    sip.delete(app)
 
 
 def wait_until(predicate, timeout_s: float = 3.0, interval_s: float = 0.01) -> bool:
