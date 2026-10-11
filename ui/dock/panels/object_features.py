@@ -202,9 +202,18 @@ class _MavlinkEditor(FeatureEditor):
         self.connection_combo.activated.connect(self._on_connection_chosen)
         form.addRow("Connection:", self.connection_combo)
 
-        self.send_mocap_check = QCheckBox("Send pose to the vehicle as mocap")
+        self.send_mocap_check = QCheckBox("Send motion capture to the vehicle")
+        self.send_mocap_check.setToolTip("Stream this object's tracked pose to PX4 as an external "
+                                         "position (ATT_POS_MOCAP). Paused automatically if tracking is lost.")
         self.send_mocap_check.toggled.connect(self._on_send_mocap_toggled)
         form.addRow(self.send_mocap_check)
+
+        self.untracked_check = QCheckBox("Also when not tracked (simulation / SITL only)")
+        self.untracked_check.setToolTip("Sends the object's pose even without fresh motion capture. "
+                                        "Never use with a real vehicle: it would fly on a made-up position.")
+        self.untracked_check.setStyleSheet("color: #b36b00;")
+        self.untracked_check.toggled.connect(self._on_untracked_toggled)
+        form.addRow(self.untracked_check)
 
         self.status_label = QLabel()
         form.addRow("Status:", self.status_label)
@@ -231,20 +240,25 @@ class _MavlinkEditor(FeatureEditor):
             index = self.connection_combo.count() - 1
         self.connection_combo.setCurrentIndex(max(0, index))
 
-        self.send_mocap_check.blockSignals(True)
-        self.send_mocap_check.setChecked(cfg.send_mocap)
-        self.send_mocap_check.blockSignals(False)
+        for check, value in ((self.send_mocap_check, cfg.send_mocap),
+                             (self.untracked_check, cfg.send_mocap_untracked)):
+            check.blockSignals(True)
+            check.setChecked(value)
+            check.blockSignals(False)
+        self.untracked_check.setEnabled(cfg.send_mocap)
 
-        if not cfg.linked_connection_name:
-            text, colour = "Not linked to a connection", "#666"
-        else:
-            conn = service.get_connection_by_name(cfg.linked_connection_name) if service else None
-            if conn is None or not conn.is_connected:
-                text, colour = f"{cfg.linked_connection_name} is not connected", "#b36b00"
-            elif cfg.send_mocap:
-                text, colour = f"Streaming mocap to {cfg.linked_connection_name}", "#1e7e34"
-            else:
-                text, colour = f"Linked to {cfg.linked_connection_name}", "#1e7e34"
+        name = cfg.linked_connection_name
+        state = (service.mocap_stream_state(self.obj) if service is not None and
+                 hasattr(service, "mocap_stream_state") else ("not_linked" if not name else "not_connected"))
+        text, colour = {
+            "streaming": (f"Streaming mocap to {name}", "#1e7e34"),
+            "disabled": (f"Linked to {name} (mocap not sent)" if name else "Not linked to a connection", "#666"),
+            "not_linked": ("Not linked to a connection", "#666"),
+            "not_connected": (f"{name} is not connected", "#b36b00"),
+            "not_tracked": ("Not sending: object isn't tracked by motion capture", "#b36b00"),
+            "locked": ("Paused: the pose is locked", "#b36b00"),
+            "tracking_lost": ("Paused: motion capture lost", "#c82333"),
+        }.get(state, (state, "#666"))
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {colour};")
 
@@ -257,6 +271,12 @@ class _MavlinkEditor(FeatureEditor):
             service.link_object(self.obj, name)
         else:
             service.unlink_object(self.obj)
+        self.ctx.object_service.notify_object_changed(self.obj)
+
+    def _on_untracked_toggled(self, checked):
+        self.obj.mavlink_config.send_mocap_untracked = checked
+        if self.ctx.mavlink_service is not None:
+            self.ctx.mavlink_service.update_object_config(self.obj, self.obj.mavlink_config)
         self.ctx.object_service.notify_object_changed(self.obj)
 
     def _on_send_mocap_toggled(self, checked):

@@ -1,4 +1,5 @@
 import math
+import time
 import types
 import unittest
 
@@ -20,10 +21,15 @@ class _FakeConnection:
 
 
 class _Tracked:
+    """A scene object receiving fresh motion capture."""
+
     def __init__(self, pose, name="obj"):
         self.pose = pose
         self.name = name
         self.mavlink_config = MavlinkObjectConfig()
+        self.tracked = True
+        self.pose_locked = False
+        self.last_tracking_update = time.monotonic()
 
 
 class MavlinkMocapTests(unittest.TestCase):
@@ -34,7 +40,7 @@ class MavlinkMocapTests(unittest.TestCase):
 
         # 2 m up, 1 m along +X, 3 m along +Z, nose yawed 90° about scene up.
         q_scene = frames.quat_from_axis_angle((0, 1, 0), math.pi / 2)
-        service.register_mocap_source(1, _Tracked((1.0, 2.0, 3.0, *q_scene)))
+        service.register_mocap_source(1, _Tracked((1.0, 2.0, 3.0, *q_scene)))  # fresh tracking
 
         service._process_mocap()
 
@@ -97,6 +103,46 @@ class MavlinkObjectLinkTests(unittest.TestCase):
         self.service.update_object_config(obj, obj.mavlink_config)
         self.service._process_mocap()
         self.assertEqual(len(self.drone2.mocap), 1)
+
+
+class MocapSafetyTests(unittest.TestCase):
+    """Only fresh motion capture may reach the vehicle as an external position."""
+    POSE = (0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0)
+
+    def setUp(self):
+        self.service = MavlinkService()
+        self.drone = _FakeConnection("Drone-1", system_id=11)
+        self.service._connections = {11: self.drone}
+        self.obj = _Tracked(self.POSE, "quad")
+        self.service.link_object(self.obj, "Drone-1")
+
+    def sent(self):
+        self.drone.mocap.clear()
+        self.service._process_mocap()
+        return len(self.drone.mocap)
+
+    def test_fresh_tracking_is_streamed(self):
+        self.assertEqual(self.sent(), 1)
+        self.assertEqual(self.service.mocap_stream_state(self.obj), "streaming")
+
+    def test_untracked_object_is_not_streamed(self):
+        self.obj.tracked = False
+        self.assertEqual(self.sent(), 0)
+        self.assertEqual(self.service.mocap_stream_state(self.obj), "not_tracked")
+
+    def test_lost_tracking_pauses_the_stream(self):
+        self.obj.last_tracking_update = time.monotonic() - 1.0
+        self.assertEqual(self.sent(), 0)
+        self.assertEqual(self.service.mocap_stream_state(self.obj), "tracking_lost")
+
+    def test_locked_pose_is_not_streamed(self):
+        self.obj.pose_locked = True
+        self.assertEqual(self.sent(), 0)
+
+    def test_simulation_override_streams_untracked_poses(self):
+        self.obj.tracked = False
+        self.obj.mavlink_config.send_mocap_untracked = True
+        self.assertEqual(self.sent(), 1)
 
 
 if __name__ == "__main__":

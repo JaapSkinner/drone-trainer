@@ -208,6 +208,7 @@ class MavlinkObjectConfig:
         mocap_rate_hz: Rate to send mocap data (Hz), 0 = use global default
         use_global_connection: If True, use global connection instead of object-specific
         linked_connection_name: Name of the linked MAVLink connection
+        send_mocap_untracked: Also stream poses that aren't fresh mocap (simulation/SITL only)
     """
     enabled: bool = False
     connection_string: str = "udpin:0.0.0.0:14550"
@@ -218,6 +219,9 @@ class MavlinkObjectConfig:
     mocap_rate_hz: float = 0.0  # 0 = use global default
     use_global_connection: bool = True
     linked_connection_name: str = ""  # Name of linked MAVLink connection
+    # Stream the pose even when it is not fresh motion capture. Only for
+    # simulation/SITL — a real vehicle must never get a made-up position.
+    send_mocap_untracked: bool = False
 
 
 @dataclass

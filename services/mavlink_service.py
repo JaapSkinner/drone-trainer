@@ -1816,17 +1816,53 @@ class MavlinkService(ServiceBase):
         self._active_connections = sum(1 for c in self._connections.values() if c.is_connected)
         self.health_updated.emit(self._total_rate_hz, self._active_connections)
     
+    # Stop streaming mocap this long after the last motion capture sample, so the
+    # vehicle's own external-vision timeout/failsafe takes over instead of it
+    # being fed a frozen position.
+    MOCAP_STALE_S = 0.25
+
+    @classmethod
+    def mocap_freshness(cls, obj, cfg=None) -> str:
+        """Why an object's pose may (not) be sent as mocap: 'ok', 'not_tracked',
+        'locked' or 'tracking_lost'."""
+        if cfg is not None and getattr(cfg, "send_mocap_untracked", False):
+            return "ok"
+        if not getattr(obj, "tracked", False):
+            return "not_tracked"
+        if getattr(obj, "pose_locked", False):
+            return "locked"
+        last = getattr(obj, "last_tracking_update", None)
+        if last is None or time.monotonic() - last > cls.MOCAP_STALE_S:
+            return "tracking_lost"
+        return "ok"
+
+    def mocap_stream_state(self, obj) -> str:
+        """For the UI: 'streaming', 'disabled', 'not_linked', 'not_connected',
+        'not_tracked', 'locked' or 'tracking_lost'."""
+        cfg = self._mavlink_objects.get(obj) or getattr(obj, "mavlink_config", None)
+        if cfg is None or not cfg.enabled or not cfg.send_mocap:
+            return "disabled"
+        if not cfg.linked_connection_name and not any(o is obj for o in self._mocap_sources.values()):
+            return "not_linked"
+        if cfg.linked_connection_name:
+            conn = self.get_connection_by_name(cfg.linked_connection_name)
+            if conn is None or not conn.is_connected:
+                return "not_connected"
+        freshness = self.mocap_freshness(obj, cfg)
+        return "streaming" if freshness == "ok" else freshness
+
     def _mocap_targets(self):
         """(connection, scene object) pairs that should receive mocap this tick."""
         targets = []
         for system_id, obj in list(self._mocap_sources.items()):
             conn = self._connections.get(system_id)
-            if conn is not None and conn.is_connected:
+            cfg = self._mavlink_objects.get(obj)
+            if conn is not None and conn.is_connected and self.mocap_freshness(obj, cfg) == "ok":
                 targets.append((conn, obj))
         for obj, cfg in list(self._mavlink_objects.items()):
             if cfg.enabled and cfg.send_mocap and cfg.linked_connection_name:
                 conn = self.get_connection_by_name(cfg.linked_connection_name)
-                if conn is not None and conn.is_connected:
+                if conn is not None and conn.is_connected and self.mocap_freshness(obj, cfg) == "ok":
                     targets.append((conn, obj))
         return targets
 
