@@ -46,13 +46,17 @@ class SceneObject(ABC):
         self.tracked = False
         self.tracking_id = None
         self.pose_locked = False
+        # Position in a race course (Trainer gate race), or None if not a gate.
+        self.gate_order = None
         self.last_tracking_update = None
         self.rendered = rendered
         self.shaded = shaded  # Whether the object should be shaded
         self.controllable = controllable
         self.colour = self._rgba(colour, self.DEFAULT_COLOUR)
-        # Set by the renderer each frame, e.g. to fade an object that hides its setpoint.
+        # Set by the renderer each frame, e.g. to fade an object that hides its setpoint
+        # or to highlight the next gate in a race. Never saved.
         self.draw_alpha_scale = 1.0
+        self.draw_colour_override = None
 
         self.pose_delta = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # (dx, dy, dz, dqw, dqx, dqy, dqz)
         
@@ -72,8 +76,8 @@ class SceneObject(ABC):
         return colour
 
     def effective_colour(self):
-        """Colour to draw with this frame (alpha scaled by the renderer)."""
-        r, g, b, a = self.colour
+        """Colour to draw with this frame (overridden/alpha-scaled by the renderer)."""
+        r, g, b, a = self.draw_colour_override or self.colour
         return (r, g, b, a * self.draw_alpha_scale)
 
     def is_translucent(self) -> bool:

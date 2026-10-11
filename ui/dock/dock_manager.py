@@ -30,7 +30,7 @@ class DockManager(QDockWidget):
     """
 
     def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None,
-                 motion_capture_service=None, control_service=None):
+                 motion_capture_service=None, control_service=None, trainer_service=None):
         """Initialize the dock manager.
 
         Args:
@@ -58,6 +58,9 @@ class DockManager(QDockWidget):
             self, object_service=object_service, mavlink_service=mavlink_service,
             motion_capture_service=motion_capture_service)
 
+        self.trainer_panel = TrainerPanel(self, trainer_service=trainer_service, object_service=object_service)
+        self.leaderboard_panel = LeaderboardPanel(self, trainer_service=trainer_service)
+
         self.motion_capture_panel = MotionCapturePanel(
             self, motion_capture_service=motion_capture_service, object_service=object_service)
 
@@ -71,8 +74,8 @@ class DockManager(QDockWidget):
         # Public references for external access
         self.panels = [
             HomePanel(self),
-            TrainerPanel(self),
-            LeaderboardPanel(self),
+            self.trainer_panel,
+            self.leaderboard_panel,
             self.motion_capture_panel,
             self.mavlink_panel,
             self.objects_panel,

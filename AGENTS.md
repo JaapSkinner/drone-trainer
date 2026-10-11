@@ -33,6 +33,9 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
 - **Object capabilities** are features on the object's card (`ui/dock/panels/object_features.py`).
   Add a new one (e.g. a "Gate" for an obstacle course) by subclassing `ObjectFeature`; persist any new
   object fields in `models/scene_io.py`.
+- **Training games** live in `services/trainer/games.py`: subclass `TrainingGame`, declare `SETTINGS`
+  (the Trainer panel builds its form from them) and add it to `GAMES`. Games only read the pilot
+  object's pose; keep them tick-driven with explicit times so they can be unit-tested.
 - **Rendering**: subclasses of `SceneObject` draw in local coordinates in `_draw()` (the pose matrix is
   already applied). Upload geometry once (`models/gl_buffers.MeshBuffer`); never rebuild GPU data per
   frame. Check visual changes with `scripts/render_snapshot.py`.

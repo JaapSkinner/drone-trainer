@@ -25,8 +25,14 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 - **Motion capture calibration**: align the mocap origin/axes with the lab by hand or by moving an
   object around (see below).
 
-Still to come (see the roadmap): sending Command-panel setpoints to PX4 (and LAND), the Trainer
-games and the Leaderboard.
+- **Trainer**: pick a game, set it up and play, flying either a simulated drone (Command panel /
+  gamepad) or a real mocap-tracked one. *Gate race* — fly numbered gates in order for N laps against
+  the clock (one click creates a sample course; any object can be a gate via the *Race gate* feature).
+  *Hover hold* — hold the drone inside a target zone. A status line in the viewport shows progress.
+- **Leaderboard**: best results per game, per pilot. Set your pilot name by clicking the profile block
+  at the bottom of the navbar.
+
+Still to come (see the roadmap): sending Command-panel setpoints to PX4 (and LAND).
 
 ## Requirements
 
@@ -134,7 +140,8 @@ More detail for contributors (and AI agents) is in [AGENTS.md](AGENTS.md).
 
 ## Data and logs
 
-Settings, saved connections, the last scene (`scene.json`), saved scenes (`scenes/`) and logs are
+Settings, saved connections, the last scene (`scene.json`), saved scenes (`scenes/`), training
+results (`results.json`) and logs are
 written to `storage_data/` (git-ignored). Set
 `DRONE_TRAINER_DATA_DIR` to use a different location. Press **F12** in the app for the live
 application console.

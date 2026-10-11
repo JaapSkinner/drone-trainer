@@ -22,7 +22,9 @@ class GLWidget(QOpenGLWidget):
         self.object_service = object_service
         self.input_service = None  # Will be set by MainWindow
         self.renderer = SceneRenderer()
-        self.overlay = None  # e.g. SetpointOverlay; provides drawables() and alpha_for()
+        # Overlays (SetpointOverlay, TrainerService…) provide drawables() and may provide
+        # alpha_for(obj) and colour_for(obj).
+        self.overlays = []
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -56,6 +58,14 @@ class GLWidget(QOpenGLWidget):
             "QLabel#ViewportHud { background: rgba(255, 255, 255, 170); color: #222;"
             " border-radius: 6px; padding: 4px 8px; font-family: monospace; }")
         self.hud_label.move(10, 10)
+        self.game_hud = QLabel(self)
+        self.game_hud.setObjectName("GameHud")
+        self.game_hud.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.game_hud.setStyleSheet(
+            "QLabel#GameHud { background: rgba(20, 20, 20, 190); color: white; border-radius: 10px;"
+            " padding: 8px 16px; font-size: 18px; font-weight: 600; }")
+        self.game_hud.hide()
+
         self._hud_timer = QTimer(self)
         self._hud_timer.timeout.connect(self._update_hud)
         self._hud_timer.start(self.HUD_REFRESH_MS)
@@ -80,11 +90,40 @@ class GLWidget(QOpenGLWidget):
             # Smooth so the readout is legible.
             self.fps = 0.9 * self.fps + 0.1 * (1.0 / delta) if self.fps else 1.0 / delta
 
-        overlay = self.overlay
         self.renderer.render(self.object_service.get_objects(), self.camera(),
-                             self.width(), self.height(),
-                             overlays=overlay.drawables() if overlay is not None else (),
-                             alpha_for=overlay.alpha_for if overlay is not None else None)
+                             self.width(), self.height(), **self.overlay_arguments())
+
+    def overlay_arguments(self) -> dict:
+        """Renderer keyword arguments combining every overlay."""
+        overlays = list(self.overlays)
+        alpha_sources = [o.alpha_for for o in overlays if hasattr(o, "alpha_for")]
+        colour_sources = [o.colour_for for o in overlays if hasattr(o, "colour_for")]
+
+        def alpha_for(obj):
+            return min((f(obj) for f in alpha_sources), default=1.0)
+
+        def colour_for(obj):
+            return next((c for c in (f(obj) for f in colour_sources) if c is not None), None)
+
+        return {"overlays": [d for o in overlays for d in o.drawables()],
+                "alpha_for": alpha_for if alpha_sources else None,
+                "colour_for": colour_for if colour_sources else None}
+
+    def set_game_hud(self, text: str):
+        """Large status line at the top of the viewport (empty hides it)."""
+        self.game_hud.setText(text)
+        self.game_hud.setVisible(bool(text))
+        self.game_hud.adjustSize()
+        self._place_game_hud()
+
+    def _place_game_hud(self):
+        # Bottom centre: clear of the FPS readout and the status panel at the top.
+        self.game_hud.move(max(0, (self.width() - self.game_hud.width()) // 2),
+                           max(0, self.height() - self.game_hud.height() - 28))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_game_hud()
 
     def _update_hud(self):
         self.hud_label.setText(

@@ -16,12 +16,13 @@ from PyQt5.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog, QDialo
 
 from models import frames, scene_io
 from models.cad_mesh import CadMesh
+from models.gate_frame import GateFrame
 from models.rect_prism import RectPrism
 from models.sphere import Sphere
 from services.paths import data_dir
 from ui.dock.panels.object_features import FEATURES, FeatureContext
 
-TYPE_LABELS = {RectPrism: "Box", Sphere: "Sphere", CadMesh: "Mesh"}
+TYPE_LABELS = {RectPrism: "Box", Sphere: "Sphere", CadMesh: "Mesh", GateFrame: "Gate"}
 
 _PANEL_STYLE = """
 QFrame#ObjectCard { background: #ffffff; border: 1px solid #d8d8d8; border-radius: 8px; }
@@ -210,6 +211,14 @@ class ObjectCard(QFrame):
             self.radius_spin.setValue(obj.radius)
             self.radius_spin.valueChanged.connect(self._on_radius_edited)
             form.addRow("Radius (m):", self.radius_spin)
+        elif isinstance(obj, GateFrame):
+            row = QHBoxLayout()
+            self.gate_spins = [_spin(0.1, 20, 2, 0.05) for _ in range(2)]
+            for spin, value in zip(self.gate_spins, (obj.width, obj.height)):
+                spin.setValue(value)
+                spin.valueChanged.connect(self._on_gate_size_edited)
+                row.addWidget(spin)
+            form.addRow("Opening W/H (m):", row)
         elif isinstance(obj, CadMesh):
             form.addRow("File:", QLabel(os.path.basename(obj.filename)))
             self.scale_spin = _spin(0.0001, 1000, 4, 0.01)
@@ -357,6 +366,9 @@ class ObjectCard(QFrame):
     def _on_dimensions_edited(self, _value=None):
         self.obj.set_dimensions(tuple(s.value() for s in self.dimension_spins))
 
+    def _on_gate_size_edited(self, _value=None):
+        self.obj.width, self.obj.height = (s.value() for s in self.gate_spins)
+
     def _on_radius_edited(self, value):
         self.obj.radius = value
 
@@ -382,7 +394,7 @@ class CreateObjectDialog(QDialog):
 
         form = QFormLayout(self)
         self.type_combo = QComboBox()
-        for label in ("Box", "Sphere", "Mesh (STL / OBJ)"):
+        for label in ("Box", "Sphere", "Mesh (STL / OBJ)", "Race gate"):
             self.type_combo.addItem(label)
         self.type_combo.currentIndexChanged.connect(self._update_fields)
         form.addRow("Type:", self.type_combo)
@@ -447,7 +459,9 @@ class CreateObjectDialog(QDialog):
 
     def _update_fields(self):
         kind = self.type_combo.currentIndex()
-        for widgets, shown in (((self.size_row_label, self.size_widget), kind == 0),
+        self.size_row_label.setText("Opening W/H:" if kind == 3 else "Size X/Y/Z:")
+        self.size_spins[2].setVisible(kind != 3)
+        for widgets, shown in (((self.size_row_label, self.size_widget), kind in (0, 3)),
                                ((self.radius_label, self.radius_spin), kind == 1),
                                ((self.mesh_label, self.mesh_widget, self.scale_label, self.scale_spin), kind == 2)):
             for w in widgets:
@@ -481,9 +495,13 @@ class CreateObjectDialog(QDialog):
                             colour=self._colour)
         elif kind == 1:
             obj = Sphere(name=name or "Sphere", radius=self.radius_spin.value(), colour=self._colour)
-        else:
+        elif kind == 2:
             obj = CadMesh(self._mesh_path, name=name, scale=self.scale_spin.value(), colour=self._colour)
-        obj.controllable = self.controllable_check.isChecked()
+        else:
+            obj = GateFrame(name=name or "Gate", width=self.size_spins[0].value(),
+                            height=self.size_spins[1].value(), colour=self._colour)
+            obj.gate_order = 1
+        obj.controllable = self.controllable_check.isChecked() and kind != 3
         obj.set_pose((*(s.value() for s in self.position_spins), *frames.IDENTITY_QUAT))
         return obj
 
@@ -607,6 +625,9 @@ class ObjectsPanel(QWidget):
             self.add_new_object(dialog.build_object())
 
     def add_new_object(self, obj):
+        if obj.gate_order is not None:  # new gates go at the end of the course
+            used = [o.gate_order for o in self.object_service.get_objects() if o.gate_order is not None]
+            obj.gate_order = max(used, default=0) + 1
         self._expanded.add(id(obj))
         self.object_service.add_object(obj)
         card = self.card_for(obj)

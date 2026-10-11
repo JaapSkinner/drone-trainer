@@ -14,6 +14,7 @@ from typing import Callable, Dict, List, Tuple, Type
 
 from models.axes import Axes
 from models.cad_mesh import CadMesh
+from models.gate_frame import GateFrame
 from models.grid import Grid
 from models.rect_prism import RectPrism
 from models.scene_object import SceneObject
@@ -58,6 +59,12 @@ _TYPES: Dict[str, Tuple[Type[SceneObject], Callable, Callable]] = {
                    "max_triangles": int(d.get("max_triangles", 50_000)),
                    "shaded": bool(d.get("shaded", True))},
     ),
+    "gate": (
+        GateFrame,
+        lambda o: {"width": o.width, "height": o.height, "bar": o.bar},
+        lambda d: {"width": float(d.get("width", 1.0)), "height": float(d.get("height", 1.0)),
+                   "bar": float(d.get("bar", 0.06))},
+    ),
     "grid": (
         Grid,
         lambda o: {"half_extent": o.half_extent, "spacing": o.spacing},
@@ -91,6 +98,7 @@ def object_to_dict(obj: SceneObject) -> dict:
         "tracked": obj.tracked,
         "tracking_id": obj.tracking_id,
         "pose_locked": obj.pose_locked,
+        "gate_order": obj.gate_order,
         "mavlink": asdict(obj.mavlink_config),
     }
     data.update(extra(obj))
@@ -112,6 +120,7 @@ def object_from_dict(data: dict) -> SceneObject:
     obj.tracking_id = data.get("tracking_id") or None
     obj.tracked = bool(data.get("tracked", False)) and obj.tracking_id is not None
     obj.pose_locked = bool(data.get("pose_locked", False))
+    obj.gate_order = int(data["gate_order"]) if data.get("gate_order") is not None else None
     mav = data.get("mavlink")
     if isinstance(mav, dict):
         known = {f.name for f in fields(MavlinkObjectConfig)}

@@ -29,6 +29,7 @@ from services.mavlink_service import MavlinkService
 from services.storage_service import StorageService
 from services.motion_capture_service import MotionCaptureService
 from services.control_service import ControlService
+from services.trainer_service import TrainerService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.gl_widget.setpoint_overlay import SetpointOverlay
@@ -109,6 +110,8 @@ class MainWindow(QMainWindow):
 
         # Setpoints for controlled objects (red ball / ghost in the viewport).
         self.control_service = ControlService(self.object_service, parent=self)
+        # Training games (Trainer panel) and their results (Leaderboard panel).
+        self.trainer_service = TrainerService(self.object_service, parent=self)
 
         # Now instantiate the storage service (its QThread will be created
         # inside ServiceBase.__init__). We'll start it later after UI wiring.
@@ -272,6 +275,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        # --- Trainer: pilot name and remembered game settings ---
+        self.trainer_panel = self.dock.trainer_panel
+        self.trainer_panel.set_pilot_name(saved.pilot_name)
+        self.trainer_panel.load_preferences(saved.trainer)
+        self.navbar.set_pilot_name(saved.pilot_name)
+        self.trainer_panel.pilot_name_changed.connect(self.set_pilot_name)
+        self.trainer_panel.preferences_changed.connect(self._on_trainer_preferences_changed)
+        self.navbar.profile_clicked.connect(self._on_profile_clicked)
+
         # --- Wire auto-save hooks ---
         self.settings_panel.zoom_sensitivity_changed.connect(self._on_save_zoom_sensitivity)
         self.settings_panel.mavlink_settings_changed.connect(self._on_save_mavlink_settings)
@@ -421,8 +433,11 @@ class MainWindow(QMainWindow):
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service,
                                 motion_capture_service=self.motion_capture_service,
-                                control_service=self.control_service)
-        self.glWidget.overlay = SetpointOverlay(self.control_service, self.object_service)
+                                control_service=self.control_service,
+                                trainer_service=self.trainer_service)
+        self.glWidget.overlays = [SetpointOverlay(self.control_service, self.object_service),
+                                  self.trainer_service]
+        self.trainer_service.hud_changed.connect(self.glWidget.set_game_hud)
         self.dock.motion_capture_panel.config_changed.connect(self.save_motion_capture_config)
         self.objects_panel = self.dock.objects_panel
         self.objects_panel.focus_requested.connect(self.focus_object)
@@ -637,6 +652,29 @@ class MainWindow(QMainWindow):
         settings.motion_capture = config.to_dict()
         self.storage_service.update_settings(settings)
 
+    def set_pilot_name(self, name: str):
+        """Persist the pilot name and show it in the navbar and Trainer panel."""
+        name = (name or "").strip()
+        self.navbar.set_pilot_name(name)
+        if self.trainer_panel.pilot_name() != name:
+            self.trainer_panel.set_pilot_name(name)
+        settings = self.storage_service.get_settings()
+        if settings.pilot_name != name:
+            settings.pilot_name = name
+            self.storage_service.update_settings(settings)
+
+    def _on_profile_clicked(self):
+        from PyQt5.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "Pilot", "Pilot name for training results:",
+                                        text=self.trainer_panel.pilot_name())
+        if ok:
+            self.set_pilot_name(name)
+
+    def _on_trainer_preferences_changed(self, prefs):
+        settings = self.storage_service.get_settings()
+        settings.trainer = prefs
+        self.storage_service.update_settings(settings)
+
     def _on_save_zoom_sensitivity(self, value: float):
         """Persist zoom sensitivity when the slider changes."""
         settings = self.storage_service.get_settings()
@@ -810,6 +848,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        self.trainer_service.stop()
         self._save_session_scene()
 
         # Stop services to ensure timers are stopped in their own threads

@@ -11,7 +11,7 @@ and append an instance to FEATURES.
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from PyQt5.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QWidget
+from PyQt5.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QSpinBox, QWidget
 
 
 @dataclass
@@ -292,4 +292,52 @@ class MavlinkFeature(ObjectFeature):
         return _MavlinkEditor(obj, ctx)
 
 
-FEATURES = [ControllableFeature(), MotionCaptureFeature(), MavlinkFeature()]
+# ---------------------------------------------------------------------------
+
+class _GateEditor(FeatureEditor):
+    def __init__(self, obj, ctx: FeatureContext):
+        super().__init__()
+        self.obj, self.ctx = obj, ctx
+        form = QFormLayout(self)
+        form.setContentsMargins(0, 0, 0, 0)
+        self.order_spin = QSpinBox()
+        self.order_spin.setRange(1, 99)
+        self.order_spin.setValue(obj.gate_order or 1)
+        self.order_spin.valueChanged.connect(self._on_order_changed)
+        form.addRow("Gate number:", self.order_spin)
+        form.addRow(_hint("Gate races fly the gates in number order. Gate frames and boxes must be "
+                          "flown through; any other object just has to be touched."))
+
+    def refresh(self):
+        if not self.order_spin.hasFocus() and self.obj.gate_order is not None:
+            self.order_spin.blockSignals(True)
+            self.order_spin.setValue(self.obj.gate_order)
+            self.order_spin.blockSignals(False)
+
+    def _on_order_changed(self, value):
+        self.obj.gate_order = value
+        self.ctx.object_service.notify_object_changed(self.obj)
+
+
+class RaceGateFeature(ObjectFeature):
+    key = "race_gate"
+    title = "Race gate"
+    description = "Part of the Trainer's gate race course."
+
+    def is_present(self, obj):
+        return obj.gate_order is not None
+
+    def add(self, obj, ctx):
+        used = [o.gate_order for o in ctx.object_service.get_objects() if o.gate_order is not None]
+        obj.gate_order = max(used, default=0) + 1
+        ctx.object_service.notify_object_changed(obj)
+
+    def remove(self, obj, ctx):
+        obj.gate_order = None
+        ctx.object_service.notify_object_changed(obj)
+
+    def build_editor(self, obj, ctx):
+        return _GateEditor(obj, ctx)
+
+
+FEATURES = [ControllableFeature(), MotionCaptureFeature(), MavlinkFeature(), RaceGateFeature()]

@@ -84,6 +84,10 @@ class AppSettings:
     object_mavlink_configs: dict = field(default_factory=dict)
     # MotionCaptureConfig.to_dict()
     motion_capture: dict = field(default_factory=dict)
+    # Trainer: pilot name shown in the navbar and on results
+    pilot_name: str = ""
+    # Trainer: {"game": last game key, "settings": {game key: {setting: value}}}
+    trainer: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""

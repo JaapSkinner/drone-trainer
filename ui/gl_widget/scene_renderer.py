@@ -94,13 +94,14 @@ class SceneRenderer:
 
     def render(self, objects: Iterable, camera: Camera, width: int, height: int,
                viewport: Optional[Sequence[int]] = None, overlays: Iterable = (),
-               alpha_for: Optional[Callable] = None):
+               alpha_for: Optional[Callable] = None, colour_for: Optional[Callable] = None):
         """Draw one frame.
 
         ``width``/``height`` set the aspect ratio. Pass ``viewport`` to also
         call glViewport (QOpenGLWidget sets the viewport itself).
         ``overlays`` are extra drawables (e.g. setpoint markers) and
-        ``alpha_for(obj)`` scales each scene object's opacity for this frame.
+        ``alpha_for(obj)`` scales each scene object's opacity for this frame and
+        ``colour_for(obj)`` may return an RGBA to draw it with instead (or None).
         """
         gl_buffers.flush_pending_deletes()
         self._apply_state()
@@ -118,6 +119,7 @@ class SceneRenderer:
         visible = [o for o in objects if getattr(o, "rendered", True)]
         for obj in visible:
             obj.draw_alpha_scale = alpha_for(obj) if alpha_for is not None else 1.0
+            obj.draw_colour_override = colour_for(obj) if colour_for is not None else None
         visible += list(overlays)
         opaque = [o for o in visible if not o.is_translucent()]
         translucent = [o for o in visible if o.is_translucent()]

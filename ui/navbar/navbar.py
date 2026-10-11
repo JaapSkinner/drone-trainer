@@ -5,6 +5,7 @@ from ui.style import load_stylesheet
 
 class SideNavbar(QWidget):
     panel_selected = pyqtSignal(str)
+    profile_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,7 +85,8 @@ class SideNavbar(QWidget):
         profile_layout = QHBoxLayout(profile_frame)
         profile_layout.setContentsMargins(8, 4, 8, 4)
         profile_layout.setSpacing(8)
-        profile_frame.mouseReleaseEvent = lambda event: self.coming_soon()
+        profile_frame.setToolTip("Set the pilot name used for training results")
+        profile_frame.mouseReleaseEvent = lambda event: self.profile_clicked.emit()
 
         # Profile image
         avatar = QLabel()
@@ -95,8 +97,9 @@ class SideNavbar(QWidget):
         """)
         
         # Profile name
-        name_label = QLabel("Jaap")
+        name_label = QLabel("Set pilot name")
         name_label.setObjectName("ProfileName")
+        self.profile_name_label = name_label
 
         profile_layout.addWidget(avatar)
         profile_layout.addWidget(name_label)
@@ -113,10 +116,5 @@ class SideNavbar(QWidget):
             btn.setChecked(k == key)
     
     
-    def coming_soon(self):
-        msg = QMessageBox()
-        msg.setWindowTitle("Coming Soon")
-        msg.setText("This feature is not yet implemented.")
-        msg.setIcon(QMessageBox.Warning)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+    def set_pilot_name(self, name: str):
+        self.profile_name_label.setText(name or "Set pilot name")
