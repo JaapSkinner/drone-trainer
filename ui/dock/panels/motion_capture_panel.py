@@ -53,7 +53,7 @@ class MotionCapturePanel(QWidget):
             self.on_status_changed(self.service.status.value, self.service.status_text)
         if self.object_service is not None:
             self.object_service.objects_changed.connect(self._refresh_tracked_by)
-            self.object_service.object_changed.connect(lambda _obj: self._refresh_tracked_by())
+            self.object_service.object_changed.connect(self._on_object_changed)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -312,6 +312,10 @@ class MotionCapturePanel(QWidget):
         self.empty_label.setVisible(not subjects)
         self.empty_label.setText("Connect to see tracked subjects." if not self._connected
                                  else "Connected — no subjects received yet.")
+        self._refresh_tracked_by()
+
+    @pyqtSlot(object)
+    def _on_object_changed(self, _obj):
         self._refresh_tracked_by()
 
     def _refresh_tracked_by(self):

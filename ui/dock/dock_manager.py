@@ -30,7 +30,7 @@ class DockManager(QDockWidget):
     """
 
     def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None,
-                 motion_capture_service=None):
+                 motion_capture_service=None, control_service=None):
         """Initialize the dock manager.
 
         Args:
@@ -77,7 +77,7 @@ class DockManager(QDockWidget):
             self.mavlink_panel,
             self.objects_panel,
             self.settings_panel,
-            CommandPanel(self, object_service=object_service)
+            CommandPanel(self, object_service=object_service, control_service=control_service)
         ]
         for panel in self.panels:
             if hasattr(panel, "NavTag"):

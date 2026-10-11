@@ -18,10 +18,15 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 - **Motion capture**: Vicon Tracker UDP object stream or OptiTrack Motive (NatNet), with live
   subject list, rates and status.
 - **MAVLink**: multiple PX4 connections, discovery, telemetry, console, mocap streaming.
-- **Command panel**: jog / target / home / gamepad & keyboard control of the selected object.
+- **Command panel**: jog / target / home / gamepad & keyboard control of the selected object's
+  *setpoint*, drawn as a red ball in the viewport (a dashed line joins the object to it while it
+  travels). **Ghost mode** previews the next move as a translucent ball until you press *Send
+  Position*. Objects not tracked by motion capture fly to their setpoint as simulated vehicles.
+- **Motion capture calibration**: align the mocap origin/axes with the lab by hand or by moving an
+  object around (see below).
 
-Still to come (see the roadmap): sending Command-panel setpoints to vehicles, setpoint/ghost
-rendering, the Trainer games and the Leaderboard.
+Still to come (see the roadmap): sending Command-panel setpoints to PX4 (and LAND), the Trainer
+games and the Leaderboard.
 
 ## Requirements
 

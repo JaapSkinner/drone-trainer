@@ -125,6 +125,25 @@ def quats_equivalent(a: Sequence[float], b: Sequence[float], tol: float = 1e-6) 
     return abs(abs(float(np.dot(quat_normalize(a), quat_normalize(b)))) - 1.0) < tol
 
 
+def quat_angle(a: Sequence[float], b: Sequence[float]) -> float:
+    """Angle (radians, 0..π) of the rotation taking ``a`` to ``b``."""
+    d = abs(float(np.dot(quat_normalize(a), quat_normalize(b))))
+    return 2.0 * math.acos(min(1.0, d))
+
+
+def quat_slerp(a: Sequence[float], b: Sequence[float], t: float) -> Quat:
+    """Spherical interpolation from ``a`` (t=0) to ``b`` (t=1) the short way round."""
+    qa, qb = np.asarray(quat_normalize(a)), np.asarray(quat_normalize(b))
+    dot = float(np.dot(qa, qb))
+    if dot < 0.0:
+        qb, dot = -qb, -dot
+    if dot > 0.9995:  # nearly identical: lerp is accurate and avoids dividing by ~0
+        return quat_normalize(qa + t * (qb - qa))
+    theta = math.acos(dot)
+    s = math.sin(theta)
+    return quat_normalize((math.sin((1 - t) * theta) / s) * qa + (math.sin(t * theta) / s) * qb)
+
+
 # ---------------------------------------------------------------------------
 # Euler angles — extrinsic X, then Y, then Z (R = Rz · Ry · Rx)
 # ---------------------------------------------------------------------------

@@ -28,8 +28,10 @@ from services.status_service import StatusService
 from services.mavlink_service import MavlinkService
 from services.storage_service import StorageService
 from services.motion_capture_service import MotionCaptureService
+from services.control_service import ControlService
 
 from ui.gl_widget.gl_widget import GLWidget
+from ui.gl_widget.setpoint_overlay import SetpointOverlay
 from ui.dock.dock_manager import DockManager
 from models.structs import MotionCaptureConfig, MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
 from models.storage_models import AppSettings, ConnectionEntry
@@ -104,6 +106,9 @@ class MainWindow(QMainWindow):
         self.motion_capture_service = MotionCaptureService(
             MotionCaptureConfig.from_dict(saved.motion_capture))
         self.motion_capture_service.poses_updated.connect(self.object_service.apply_tracking_poses)
+
+        # Setpoints for controlled objects (red ball / ghost in the viewport).
+        self.control_service = ControlService(self.object_service, parent=self)
 
         # Now instantiate the storage service (its QThread will be created
         # inside ServiceBase.__init__). We'll start it later after UI wiring.
@@ -415,7 +420,9 @@ class MainWindow(QMainWindow):
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
         self.dock = DockManager(self.glWidget, self, self.object_service,
-                                motion_capture_service=self.motion_capture_service)
+                                motion_capture_service=self.motion_capture_service,
+                                control_service=self.control_service)
+        self.glWidget.overlay = SetpointOverlay(self.control_service, self.object_service)
         self.dock.motion_capture_panel.config_changed.connect(self.save_motion_capture_config)
         self.objects_panel = self.dock.objects_panel
         self.objects_panel.focus_requested.connect(self.focus_object)

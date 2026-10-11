@@ -31,6 +31,9 @@ class RectPrism(SceneObject):
             raise ValueError("Dimensions must be a number or a tuple of length 3")
         self.dimensions = tuple(float(d) for d in dimensions)
 
+    def bounding_radius(self) -> float:
+        return 0.5 * float(sum(d * d for d in self.dimensions)) ** 0.5
+
     def _draw(self):
         glScalef(*self.dimensions)
         glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
@@ -42,7 +45,7 @@ class RectPrism(SceneObject):
                 # One see-through layer: hide the far faces of the box.
                 glEnable(GL_CULL_FACE)
                 glCullFace(GL_BACK)
-            glColor4f(*self.colour)
+            glColor4f(*self.effective_colour())
             _CUBE.draw()
             glDisable(GL_CULL_FACE)
             glDisable(GL_POLYGON_OFFSET_FILL)
@@ -50,7 +53,8 @@ class RectPrism(SceneObject):
             if self.edge_colour is not None:
                 glDisable(GL_LIGHTING)
                 glLineWidth(self.edge_width)
-                glColor4f(*self.edge_colour)
+                r, g, b, a = self.edge_colour
+                glColor4f(r, g, b, a * self.draw_alpha_scale)
                 draw_lines(_CUBE_EDGES)
         finally:
             glPopAttrib()

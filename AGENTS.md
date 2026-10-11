@@ -25,6 +25,9 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
     expose a public method that calls `self.call_in_service_thread(self._do_thing, ...)`.
   - Services never touch widgets. Emit a signal and connect it to a `@pyqtSlot` on the widget; Qt
     queues it onto the GUI thread.
+  - Connect long-lived signals (services, timers) to bound `@pyqtSlot` methods, not lambdas that
+    capture a widget: Qt drops a bound slot's connection when the widget is destroyed, but a lambda
+    keeps firing into the deleted widget and can segfault.
 - Qt warnings such as `Timers cannot be stopped from another thread` are bugs, not noise.
   `tests/qt_test_utils.QtMessageCapture` can assert they don't happen.
 - **Object capabilities** are features on the object's card (`ui/dock/panels/object_features.py`).

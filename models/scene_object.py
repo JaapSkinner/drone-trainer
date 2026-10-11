@@ -51,6 +51,8 @@ class SceneObject(ABC):
         self.shaded = shaded  # Whether the object should be shaded
         self.controllable = controllable
         self.colour = self._rgba(colour, self.DEFAULT_COLOUR)
+        # Set by the renderer each frame, e.g. to fade an object that hides its setpoint.
+        self.draw_alpha_scale = 1.0
 
         self.pose_delta = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # (dx, dy, dz, dqw, dqx, dqy, dqz)
         
@@ -69,8 +71,17 @@ class SceneObject(ABC):
             raise ValueError("Colour must have 3 or 4 components")
         return colour
 
+    def effective_colour(self):
+        """Colour to draw with this frame (alpha scaled by the renderer)."""
+        r, g, b, a = self.colour
+        return (r, g, b, a * self.draw_alpha_scale)
+
     def is_translucent(self) -> bool:
-        return self.colour[3] < 1.0
+        return self.effective_colour()[3] < 1.0
+
+    def bounding_radius(self) -> float:
+        """Approximate size: distance from the object's origin to its furthest point (m)."""
+        return 0.25
 
     def set_name(self, name):
         """Set the name of the object."""

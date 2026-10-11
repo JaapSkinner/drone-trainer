@@ -22,6 +22,7 @@ class GLWidget(QOpenGLWidget):
         self.object_service = object_service
         self.input_service = None  # Will be set by MainWindow
         self.renderer = SceneRenderer()
+        self.overlay = None  # e.g. SetpointOverlay; provides drawables() and alpha_for()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -79,8 +80,11 @@ class GLWidget(QOpenGLWidget):
             # Smooth so the readout is legible.
             self.fps = 0.9 * self.fps + 0.1 * (1.0 / delta) if self.fps else 1.0 / delta
 
+        overlay = self.overlay
         self.renderer.render(self.object_service.get_objects(), self.camera(),
-                             self.width(), self.height())
+                             self.width(), self.height(),
+                             overlays=overlay.drawables() if overlay is not None else (),
+                             alpha_for=overlay.alpha_for if overlay is not None else None)
 
     def _update_hud(self):
         self.hud_label.setText(

@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Callable, Iterable, Optional, Sequence, Tuple
 
 import numpy as np
 from OpenGL.GL import (GL_BLEND, GL_COLOR_BUFFER_BIT, GL_COLOR_MATERIAL, GL_CULL_FACE,
-                       GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DIFFUSE, GL_FALSE, GL_LIGHT0,
+                       GL_DEPTH_BUFFER_BIT, GL_DEPTH_TEST, GL_DIFFUSE, GL_LEQUAL, GL_FALSE, GL_LIGHT0,
                        GL_LIGHTING, GL_MODELVIEW, GL_ONE_MINUS_SRC_ALPHA, GL_POSITION,
                        GL_PROJECTION, GL_SMOOTH, GL_SPECULAR, GL_AMBIENT, GL_SRC_ALPHA,
                        GL_TRUE, GL_AMBIENT_AND_DIFFUSE, GL_FRONT_AND_BACK, glBlendFunc, glClear,
-                       glClearColor, glColorMaterial, glDepthMask, glDisable, glEnable,
+                       glClearColor, glColorMaterial, glDepthFunc, glDepthMask, glDisable, glEnable,
                        glLightfv, glLoadMatrixf, glMatrixMode, glShadeModel, glViewport)
 
 from models import gl_buffers
@@ -77,6 +77,8 @@ class SceneRenderer:
 
     def _apply_state(self):
         glEnable(GL_DEPTH_TEST)
+        # LEQUAL: lines drawn later at the same depth (axes over the grid) win.
+        glDepthFunc(GL_LEQUAL)
         glDepthMask(GL_TRUE)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -91,11 +93,14 @@ class SceneRenderer:
         glShadeModel(GL_SMOOTH)
 
     def render(self, objects: Iterable, camera: Camera, width: int, height: int,
-               viewport: Optional[Sequence[int]] = None):
+               viewport: Optional[Sequence[int]] = None, overlays: Iterable = (),
+               alpha_for: Optional[Callable] = None):
         """Draw one frame.
 
         ``width``/``height`` set the aspect ratio. Pass ``viewport`` to also
         call glViewport (QOpenGLWidget sets the viewport itself).
+        ``overlays`` are extra drawables (e.g. setpoint markers) and
+        ``alpha_for(obj)`` scales each scene object's opacity for this frame.
         """
         gl_buffers.flush_pending_deletes()
         self._apply_state()
@@ -111,6 +116,9 @@ class SceneRenderer:
         glLightfv(GL_LIGHT0, GL_POSITION, list(self.light_position))
 
         visible = [o for o in objects if getattr(o, "rendered", True)]
+        for obj in visible:
+            obj.draw_alpha_scale = alpha_for(obj) if alpha_for is not None else 1.0
+        visible += list(overlays)
         opaque = [o for o in visible if not o.is_translucent()]
         translucent = [o for o in visible if o.is_translucent()]
         eye = camera.eye()

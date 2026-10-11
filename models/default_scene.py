@@ -16,5 +16,6 @@ def build_default_scene():
         RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0)),
         green_cube,
         blue_cube,
-        CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5)),
+        # The STL is in millimetres and 84 mm across; 0.004 shows it as a ~0.34 m quad.
+        CadMesh("cad_files/basic_quadcopter.stl", scale=0.004, colour=(0.5, 0.9, 0.5)),
     ]

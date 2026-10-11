@@ -1,6 +1,8 @@
 import logging
 import os
 
+import numpy as np
+
 from OpenGL.GL import (GL_BACK, GL_CCW, GL_CULL_FACE, GL_NORMALIZE, glColor4f,
                        glCullFace, glEnable, glFrontFace, glScalef)
 
@@ -56,7 +58,12 @@ class CadMesh(SceneObject):
             logger.warning("Mesh %s has %d triangles; decimated to %d for display.",
                            filename, self.source_triangle_count, mesh.triangle_count)
         self.triangle_count = mesh.triangle_count
+        self._model_radius = (float(np.linalg.norm(mesh.positions, axis=1).max())
+                              if len(mesh.positions) else 0.0)
         self._buffer = MeshBuffer(mesh, use_vbo=True)
+
+    def bounding_radius(self) -> float:
+        return self._model_radius * max(self.scale)
 
     def _draw(self):
         glScalef(*self.scale)
@@ -64,7 +71,7 @@ class CadMesh(SceneObject):
         glEnable(GL_CULL_FACE)
         glCullFace(GL_BACK)
         glFrontFace(GL_CCW)
-        glColor4f(*self.colour)
+        glColor4f(*self.effective_colour())
         self._buffer.draw()
 
     def release_gl(self):

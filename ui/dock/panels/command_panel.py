@@ -7,21 +7,25 @@ This panel provides various control modes for offboard control via mavlink comma
 - Target mode: Specify target position or tracked object with offset
 - Joystick mode: Controller/WASD/Arrow keys input
 
-All modes manipulate the SETPOINT position. Current position is updated from tracking
-or when setpoint is applied via "Send Position".
+All modes manipulate the SETPOINT (held by ControlService, drawn as a red ball in
+the viewport). Objects tracked by motion capture are only commanded; other objects
+fly to the setpoint as simulated vehicles.
 
-Ghost mode shows a "Next Setpoint" column for visualizing planned movements.
+Ghost mode edits a "Next" setpoint instead (a translucent ball) until "Send
+Position" commits it.
 """
 
-import numpy as np
+import math
+
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
     QGroupBox, QFormLayout, QPushButton, QDoubleSpinBox,
     QTabWidget, QCheckBox, QSizePolicy, QScrollArea, QFrame,
     QSlider
 )
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from models.scene_object import SceneObject
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
+from models import frames
+from services.control_service import ControlService
 from services.input_service import InputType
 
 
@@ -40,8 +44,10 @@ class CommandPanel(QWidget):
     input_type_changed = pyqtSignal(object)  # Emits InputType for joystick settings
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity value
     
-    # Constants for step scaling
-    ROTATION_STEP_SCALE = 0.1  # Scale factor for rotation steps (radians per step)
+    # Rotation jogs turn this many degrees per metre of step size (5° at the default 0.1 step).
+    ROTATION_DEG_PER_STEP_UNIT = 50.0
+    # Scene axes for rotation jogs: roll about forward (X), pitch about the side (Z), yaw about up (Y).
+    ROTATION_AXES = {"Roll": (1.0, 0.0, 0.0), "Pitch": (0.0, 0.0, 1.0), "Yaw": (0.0, 1.0, 0.0)}
     
     # Mode indices
     MODE_HOME = 0
@@ -49,19 +55,18 @@ class CommandPanel(QWidget):
     MODE_TARGET = 2
     MODE_JOYSTICK = 3
     
-    def __init__(self, parent=None, object_service=None):
+    def __init__(self, parent=None, object_service=None, control_service=None):
         super().__init__(parent)
         self.object_service = object_service
-        self.ghost_mode = False
+        self.control = control_service or ControlService(object_service, parent=self)
+        self.control.setpoints_changed.connect(self._on_setpoints_changed)
         self.home_position = (0.0, 0.0)  # Just X, Y - height is separate
         self.home_height = 1.0
         self.step_size = 0.1
-        
-        # Setpoint position (what we're commanding)
-        self.setpoint = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
-        
-        # Next setpoint (ghost mode preview - only used when ghost mode is on)
-        self.next_setpoint = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        # Simulated objects move continuously, so keep the readout live.
+        self._display_timer = QTimer(self)
+        self._display_timer.timeout.connect(self._on_display_timer)
+        self._display_timer.start(100)
         
         # Track current mode for joystick control
         self.current_mode = self.MODE_HOME
@@ -778,31 +783,19 @@ class CommandPanel(QWidget):
     def _on_home_clicked(self):
         """Handle HOME button click - enables Home mode AND executes Go to Home.
         
-        This is a safety button so it IGNORES ghost mode and immediately updates
-        both setpoint and object position.
+        This is a safety button so it IGNORES ghost mode and sets the setpoint
+        directly.
         """
         self.mode_tabs.setCurrentIndex(self.MODE_HOME)
-        
-        # Safety button - ignore ghost mode and immediately update setpoint AND object
         obj = self._get_controlled_object()
         if obj is not None:
-            # Update setpoint to home position with hover height
-            self.setpoint[0] = self.home_position[0]  # X
-            self.setpoint[1] = self.hover_height_spin.value()  # Y (height)
-            self.setpoint[2] = self.home_position[1]  # Z (stored as home_position[1])
-            
-            # Also sync next_setpoint if in ghost mode
-            if self.ghost_mode:
-                self.next_setpoint = list(self.setpoint)
-            
-            # Immediately update object position (safety - ignore ghost mode)
-            obj.set_pose(self.setpoint)
-            
-            self._update_send_button_state()
-            self._update_position_display()
-            self._update_jog_values()
-        
+            self.control.set_setpoint_now(obj, self._home_pose(obj))
         self.go_home_requested.emit()
+
+    def _home_pose(self, obj):
+        """Home position at hover height, keeping the current target orientation."""
+        current = self.control.target(obj)
+        return (self.home_position[0], self.hover_height_spin.value(), self.home_position[1], *current[3:])
     
     def _on_mode_changed(self, index):
         """Handle mode tab change."""
@@ -832,87 +825,56 @@ class CommandPanel(QWidget):
             if self.current_mode == self.MODE_JOYSTICK:
                 self.joystick_control_enabled.emit(True)
     
+    @property
+    def ghost_mode(self) -> bool:
+        return self.control.ghost_mode
+
+    @property
+    def setpoint(self):
+        obj = self._get_controlled_object()
+        return list(self.control.setpoint(obj)) if obj is not None else list(frames.IDENTITY_POSE)
+
+    @property
+    def next_setpoint(self):
+        obj = self._get_controlled_object()
+        return list(self.control.ghost(obj)) if obj is not None else list(frames.IDENTITY_POSE)
+
     def _on_ghost_mode_changed(self, state):
         """Handle ghost mode toggle."""
-        self.ghost_mode = state == Qt.Checked
-        self.ghost_mode_changed.emit(self.ghost_mode)
+        enabled = state == Qt.Checked
+        self.control.set_ghost_mode(enabled)
+        self.ghost_mode_changed.emit(enabled)
         
         # Show/hide next setpoint column
-        self.next_setpoint_header.setVisible(self.ghost_mode)
+        self.next_setpoint_header.setVisible(enabled)
         for label in self.next_setpoint_labels:
-            label.setVisible(self.ghost_mode)
-        
-        if self.ghost_mode:
-            # Sync next_setpoint with current setpoint when enabling ghost mode
-            self.next_setpoint = list(self.setpoint)
-        
-        self._update_send_button_state()
-        self._update_position_display()
+            label.setVisible(enabled)
+        self.refresh()
     
     def _on_send_position_clicked(self):
-        """Handle send position button click.
-        
-        In ghost mode, this applies next_setpoint to setpoint and updates the object.
-        """
+        """Ghost mode: commit the "next" setpoint so the object goes there."""
         obj = self._get_controlled_object()
         if obj is None:
             return
-        
-        if self.ghost_mode:
-            # Apply next_setpoint to setpoint
-            self.setpoint = list(self.next_setpoint)
-        
-        # Update object position to match setpoint
-        obj.set_pose(self.setpoint)
-        
-        # Emit the position
-        x, y, z = self.setpoint[0], self.setpoint[1], self.setpoint[2]
-        qw, qx, qy, qz = self.setpoint[3], self.setpoint[4], self.setpoint[5], self.setpoint[6]
-        self.send_position_requested.emit((x, y, z, qw, qx, qy, qz))
-        
-        self._update_send_button_state()
-        self._update_position_display()
-        self._update_jog_values()
+        self.send_position_requested.emit(tuple(self.control.commit_ghost(obj)))
     
     def _on_step_size_changed(self, value):
         """Handle step size change."""
         self.step_size = value
     
     def _jog_axis(self, axis, direction):
-        """Jog the setpoint along the specified axis.
-        
-        Always updates setpoint (or next_setpoint in ghost mode).
-        The object position is updated from setpoint when not in ghost mode.
-        """
+        """Jog the setpoint (the "next" setpoint in ghost mode) along/around an axis."""
         obj = self._get_controlled_object()
         if obj is None:
             return
-        
         step = self.step_size * direction
-        
-        # Determine which setpoint to update
-        target = self.next_setpoint if self.ghost_mode else self.setpoint
-        
-        if axis == "X":
-            target[0] += step
-        elif axis == "Y":
-            target[1] += step
-        elif axis == "Z":
-            target[2] += step
-        elif axis == "Roll":
-            target[4] += step * self.ROTATION_STEP_SCALE
-        elif axis == "Pitch":
-            target[5] += step * self.ROTATION_STEP_SCALE
-        elif axis == "Yaw":
-            target[6] += step * self.ROTATION_STEP_SCALE
-        
-        # If not in ghost mode, also update the object position
-        if not self.ghost_mode:
-            obj.set_pose(self.setpoint)
-        
-        self._update_send_button_state()
-        self._update_position_display()
-        self._update_jog_values()
+        if axis in ("X", "Y", "Z"):
+            delta = [0.0, 0.0, 0.0]
+            delta["XYZ".index(axis)] = step
+            self.control.move_target(obj, delta)
+        else:
+            angle = math.radians(step * self.ROTATION_DEG_PER_STEP_UNIT)
+            self.control.move_target(obj, rotation=frames.quat_from_axis_angle(self.ROTATION_AXES[axis], angle))
     
     def _on_target_type_changed(self, index):
         """Handle target type change."""
@@ -953,19 +915,8 @@ class CommandPanel(QWidget):
             y = tracked_obj.pose[1] + self.offset_y_spin.value()
             z = tracked_obj.pose[2] + self.offset_z_spin.value()
         
-        # Update setpoint (or next_setpoint in ghost mode)
-        target = self.next_setpoint if self.ghost_mode else self.setpoint
-        target[0] = x
-        target[1] = y
-        target[2] = z
-        
-        # If not in ghost mode, update object position
-        if not self.ghost_mode:
-            obj.set_pose(self.setpoint)
-        
-        self._update_send_button_state()
-        self._update_position_display()
-        self._update_jog_values()
+        current = self.control.target(obj)
+        self.control.set_target(obj, (x, y, z, *current[3:]))
     
     def _on_set_home_clicked(self):
         """Handle set home button click."""
@@ -978,25 +929,10 @@ class CommandPanel(QWidget):
             self.set_home_requested.emit((self.home_position[0], self.home_position[1], height))
     
     def _on_go_home_tab_clicked(self):
-        """Handle go home button click in the home tab."""
+        """Handle go home button click in the home tab (respects ghost mode)."""
         obj = self._get_controlled_object()
-        if obj is None:
-            return
-        
-        # Update setpoint to home position with hover height
-        # home_position = (X, Z), height is Y
-        target = self.next_setpoint if self.ghost_mode else self.setpoint
-        target[0] = self.home_position[0]  # X
-        target[1] = self.hover_height_spin.value()  # Y (height)
-        target[2] = self.home_position[1]  # Z (stored as home_position[1])
-        
-        # If not in ghost mode, update object position
-        if not self.ghost_mode:
-            obj.set_pose(self.setpoint)
-        
-        self._update_send_button_state()
-        self._update_position_display()
-        self._update_jog_values()
+        if obj is not None:
+            self.control.set_target(obj, self._home_pose(obj))
     
     def _on_hover_height_changed(self, value):
         """Handle hover height change."""
@@ -1011,35 +947,26 @@ class CommandPanel(QWidget):
         return None
     
     def _sync_setpoints_from_object(self):
-        """Sync setpoint and next_setpoint from current object position."""
+        """Start commanding the controlled object from where it is now."""
         obj = self._get_controlled_object()
-        if obj is not None:
-            self.setpoint = list(obj.pose)
-            self.next_setpoint = list(obj.pose)
+        if obj is not None and self.control.state(obj) is None:
+            self.control.sync_from_object(obj)
+
+    def _on_setpoints_changed(self, obj):
+        if obj is self._get_controlled_object():
+            self.refresh()
     
     def _update_send_button_state(self):
-        """Update send position button enabled state.
-        
-        Button is enabled only in ghost mode when next_setpoint differs from setpoint.
-        """
-        if not self.ghost_mode:
-            self.send_position_btn.setEnabled(False)
-            return
-        
-        # Check if next_setpoint differs from setpoint
-        differs = False
-        for i in range(7):
-            if abs(self.next_setpoint[i] - self.setpoint[i]) > 0.0001:
-                differs = True
-                break
-        
-        self.send_position_btn.setEnabled(differs)
+        """Send Position is only enabled in ghost mode while a move is pending."""
+        obj = self._get_controlled_object()
+        self.send_position_btn.setEnabled(obj is not None and self.control.has_pending_ghost(obj))
     
     def _update_position_display(self):
         """Update the position display with current, setpoint, and next setpoint (ghost mode)."""
         obj = self._get_controlled_object()
         if obj is None:
             return
+        setpoint, ghost = self.setpoint, self.next_setpoint
         
         # Current position (from object - updated by tracking or when setpoint applied)
         self.pos_x_label.setText(f"{obj.pose[0]:.4f}")
@@ -1050,33 +977,32 @@ class CommandPanel(QWidget):
         self.rot_qz_label.setText(f"{obj.pose[6]:.4f}")
         
         # Setpoint (what we're commanding)
-        self.setpoint_x_label.setText(f"{self.setpoint[0]:.4f}")
-        self.setpoint_y_label.setText(f"{self.setpoint[1]:.4f}")
-        self.setpoint_z_label.setText(f"{self.setpoint[2]:.4f}")
-        self.setpoint_qx_label.setText(f"{self.setpoint[4]:.4f}")
-        self.setpoint_qy_label.setText(f"{self.setpoint[5]:.4f}")
-        self.setpoint_qz_label.setText(f"{self.setpoint[6]:.4f}")
+        self.setpoint_x_label.setText(f"{setpoint[0]:.4f}")
+        self.setpoint_y_label.setText(f"{setpoint[1]:.4f}")
+        self.setpoint_z_label.setText(f"{setpoint[2]:.4f}")
+        self.setpoint_qx_label.setText(f"{setpoint[4]:.4f}")
+        self.setpoint_qy_label.setText(f"{setpoint[5]:.4f}")
+        self.setpoint_qz_label.setText(f"{setpoint[6]:.4f}")
         
         # Next setpoint (ghost mode preview)
         if self.ghost_mode:
-            self.next_x_label.setText(f"{self.next_setpoint[0]:.4f}")
-            self.next_y_label.setText(f"{self.next_setpoint[1]:.4f}")
-            self.next_z_label.setText(f"{self.next_setpoint[2]:.4f}")
-            self.next_qx_label.setText(f"{self.next_setpoint[4]:.4f}")
-            self.next_qy_label.setText(f"{self.next_setpoint[5]:.4f}")
-            self.next_qz_label.setText(f"{self.next_setpoint[6]:.4f}")
+            self.next_x_label.setText(f"{ghost[0]:.4f}")
+            self.next_y_label.setText(f"{ghost[1]:.4f}")
+            self.next_z_label.setText(f"{ghost[2]:.4f}")
+            self.next_qx_label.setText(f"{ghost[4]:.4f}")
+            self.next_qy_label.setText(f"{ghost[5]:.4f}")
+            self.next_qz_label.setText(f"{ghost[6]:.4f}")
     
     def _update_jog_values(self):
-        """Update the jog value labels - shows setpoint (or next_setpoint in ghost mode)."""
-        # In ghost mode, show next_setpoint; otherwise show setpoint
+        """Show the setpoint being edited (the "next" one in ghost mode); angles in degrees."""
         target = self.next_setpoint if self.ghost_mode else self.setpoint
-        
+        rx, ry, rz = frames.quat_to_euler_deg(target[3:])
         self.jog_x_value.setText(f"{target[0]:.4f}")
         self.jog_y_value.setText(f"{target[1]:.4f}")
         self.jog_z_value.setText(f"{target[2]:.4f}")
-        self.jog_roll_value.setText(f"{target[4]:.4f}")
-        self.jog_pitch_value.setText(f"{target[5]:.4f}")
-        self.jog_yaw_value.setText(f"{target[6]:.4f}")
+        self.jog_roll_value.setText(f"{rx:.1f}°")
+        self.jog_pitch_value.setText(f"{rz:.1f}°")
+        self.jog_yaw_value.setText(f"{ry:.1f}°")
     
     def _update_home_display(self):
         """Update the home position display.
@@ -1125,68 +1051,33 @@ class CommandPanel(QWidget):
         self._update_position_display()
         self._update_jog_values()
     
+    @pyqtSlot()
+    def _on_display_timer(self):
+        # A bound slot (not a lambda), so Qt drops the connection if the panel is destroyed.
+        if self.isVisible():
+            self.refresh()
+
     def refresh(self):
         """Refresh the panel display (called on input updates)."""
+        self._update_send_button_state()
         self._update_position_display()
         self._update_jog_values()
     
     @pyqtSlot(object)
     def update_setpoint_from_joystick(self, pose_delta):
-        """Update setpoint (or next_setpoint in ghost mode) from joystick input.
-        
-        This is the primary method for joystick mode to update positions.
-        Joystick should ALWAYS update setpoint/next_setpoint, never the object directly.
+        """Move the setpoint (or the "next" setpoint in ghost mode) by a gamepad/keyboard delta.
         
         Args:
-            pose_delta: The delta to apply [dx, dy, dz, dqw, dqx, dqy, dqz]
+            pose_delta: [dx, dy, dz, unused, rx, ry, rz] — position in metres and a small
+                rotation (scene axes) applied as a normalised incremental quaternion.
         """
         obj = self._get_controlled_object()
         if obj is None:
             return
-        
-        # Determine which setpoint to update
-        target = self.next_setpoint if self.ghost_mode else self.setpoint
-        
-        # Apply position delta directly (additive)
-        for i in range(3):
-            target[i] += pose_delta[i]
-        
-        # Apply rotation delta using quaternion multiplication and normalize
-        # This prevents quaternion drift away from unit length
-        if any(pose_delta[3:7]):  # Only if there's rotation delta
-            # Current quaternion: [qw, qx, qy, qz]
-            current_quat = np.array(target[3:7])
-            # Delta quaternion: [dqw, dqx, dqy, dqz]
-            delta_quat = np.array(pose_delta[3:7])
-            
-            # Add delta to create incremental rotation quaternion
-            # For small deltas, this approximates an incremental rotation
-            incremental_quat = np.array([1.0, 0.0, 0.0, 0.0]) + delta_quat
-            
-            # Normalize the incremental quaternion
-            norm = np.linalg.norm(incremental_quat)
-            if norm > 1e-6:
-                incremental_quat /= norm
-            
-            # Multiply: new_quat = incremental_quat * current_quat
-            new_quat = SceneObject.quat_mult(incremental_quat, current_quat)
-            
-            # Normalize result to ensure unit quaternion
-            norm = np.linalg.norm(new_quat)
-            if norm > 1e-6:
-                new_quat /= norm
-            
-            # Update target quaternion
-            for i in range(4):
-                target[3 + i] = new_quat[i]
-        
-        # If not in ghost mode, also update the object position
-        if not self.ghost_mode:
-            obj.set_pose(self.setpoint)
-        
-        self._update_send_button_state()
-        self._update_position_display()
-        self._update_jog_values()
+        rotation = None
+        if any(pose_delta[4:7]):
+            rotation = frames.quat_normalize((1.0, *pose_delta[4:7]))
+        self.control.move_target(obj, pose_delta[:3], rotation)
     
     def is_joystick_control_allowed(self):
         """Check if joystick control should move the object.

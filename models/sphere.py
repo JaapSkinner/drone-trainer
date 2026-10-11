@@ -14,10 +14,13 @@ class Sphere(SceneObject):
         super().__init__(pose, name or "Unnamed Sphere", controllable=controllable, colour=colour)
         self.radius = float(radius)
 
+    def bounding_radius(self) -> float:
+        return self.radius
+
     def _draw(self):
         d = 2.0 * self.radius
         glScalef(d, d, d)
         glEnable(GL_CULL_FACE)  # closed surface; also keeps translucent spheres single-layer
         glCullFace(GL_BACK)
-        glColor4f(*self.colour)
+        glColor4f(*self.effective_colour())
         _SPHERE.draw()

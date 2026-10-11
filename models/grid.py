@@ -30,7 +30,7 @@ class Grid(SceneObject):
         glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
         try:
             glLineWidth(1.0)
-            glColor4f(*self.colour)
+            glColor4f(*self.effective_colour())
             draw_lines(self._lines)
         finally:
             glPopAttrib()
