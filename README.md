@@ -7,6 +7,22 @@ operator command vehicles with a gamepad, keyboard or setpoint tools.
 Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 [INPUT_CONTROLS.md](INPUT_CONTROLS.md).
 
+## What it does today
+
+- **3D viewport** of the lab: grid, boxes, spheres and STL/OBJ meshes, translucency, orbit/zoom,
+  lock the camera onto any object.
+- **Objects panel**: every object is a card — edit pose, size, colour and opacity, and attach
+  *features*: **Motion capture** (follow a Vicon/OptiTrack subject, lock pose), **MAVLink vehicle**
+  (stream the pose to a PX4 connection as mocap) and **Controllable** (drive it from the Command panel).
+  Scenes are kept between sessions and can be saved/loaded as JSON.
+- **Motion capture**: Vicon Tracker UDP object stream or OptiTrack Motive (NatNet), with live
+  subject list, rates and status.
+- **MAVLink**: multiple PX4 connections, discovery, telemetry, console, mocap streaming.
+- **Command panel**: jog / target / home / gamepad & keyboard control of the selected object.
+
+Still to come (see the roadmap): sending Command-panel setpoints to vehicles, setpoint/ghost
+rendering, the Trainer games and the Leaderboard.
+
 ## Requirements
 
 - Python 3.10–3.12
@@ -39,6 +55,22 @@ source .venv/bin/activate
 make run
 ```
 
+## Motion capture quick start
+
+1. Open **Motion Capture** in the navbar and pick the source.
+   - **Vicon**: in Vicon Tracker enable the *UDP Object Stream* and send it to this PC's IP on the
+     port shown (default 51001).
+   - **OptiTrack**: in Motive enable NatNet streaming; enter Motive's IP and this PC's IP.
+2. Press **Connect**. Subjects appear in the table with their rate and position.
+3. Select a subject and **Assign to object…** (or **Create object**). That object now follows it;
+   give it the *MAVLink vehicle* feature in the Objects panel to stream its pose to PX4.
+
+No lab handy? Send a synthetic Vicon stream from another terminal:
+
+```bash
+python scripts/fake_vicon.py --subjects 2
+```
+
 ## Test
 
 ```bash
@@ -57,8 +89,17 @@ main window. CI runs the same command on every pull request.
 | `services/` | Long-running services (input, MAVLink, motion capture, storage, status), each on its own thread |
 | `ui/` | Main window, navbar, dock panels, 3D viewport (`ui/gl_widget/`), status overlay |
 | `tests/` | Unit and smoke tests |
-| `scripts/` | Developer tools (MAVLink dialect build, fake mocap sender, render benchmark) |
+| `scripts/` | Developer tools (see below) |
 | `cad_files/` | Meshes (STL/OBJ) |
+
+### Developer scripts
+
+| Script | Purpose |
+|---|---|
+| `scripts/fake_vicon.py` | Synthetic Vicon UDP stream (circling quads + a wand) |
+| `scripts/render_snapshot.py` | Render the scene headlessly to a PNG; `--check` runs the renderer pixel tests |
+| `scripts/bench_render.py` | Frame-time benchmark with many moving meshes |
+| `scripts/build_mavlink.py` | Build the DTRG MAVLink dialect (`make mavlink`) |
 
 ## Architecture in brief
 
@@ -67,11 +108,16 @@ main window. CI runs the same command on every pull request.
   to and from Vicon, OptiTrack and PX4 NED live in `models/frames.py`.
 - **Services** subclass `ServiceBase` and run on their own `QThread`. They talk to the UI only through
   Qt signals; cross-thread calls go through `ServiceBase.call_in_service_thread()`.
+- **MotionCaptureService** publishes scene-frame poses by subject name; `ObjectService` applies them to
+  objects whose `tracking_id` matches. **MavlinkService** streams linked objects' poses to PX4.
+- **Rendering** (`ui/gl_widget/scene_renderer.py`) uploads geometry to the GPU once and draws each
+  object with its pose matrix; meshes over 50k triangles are simplified on load.
 
 More detail for contributors (and AI agents) is in [AGENTS.md](AGENTS.md).
 
 ## Data and logs
 
-Settings, saved connections and logs are written to `storage_data/` (git-ignored). Set
+Settings, saved connections, the last scene (`scene.json`), saved scenes (`scenes/`) and logs are
+written to `storage_data/` (git-ignored). Set
 `DRONE_TRAINER_DATA_DIR` to use a different location. Press **F12** in the app for the live
 application console.

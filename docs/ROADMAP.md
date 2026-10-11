@@ -8,6 +8,62 @@ single issue → single PR. Every WP lists its context, files, tasks, acceptance
 
 ---
 
+## 0. Progress — 2026-10-12
+
+Phases 0, 1, 2, 3 and 5 are done on branch `claude/project-analysis-plan-fc019a` (not yet pushed).
+90 tests, including a headless boot of the full main window and real-pixel render checks.
+
+| WP | Status | Commit |
+|---|---|---|
+| 0.1 Branch & PR clean-up | **Open — needs you** (GitHub access): close #41 and #42, archive the playground branch | — |
+| 0.2 Thread-safe services (#40) | Done. Also fixed StatusService/InputService touching widgets from worker threads | `4beca53` |
+| 0.3 Headless CI, smoke test, README, AGENTS.md | Done. Also fixed an intermittent segfault at exit | `57c59ad` |
+| 0.4 Legacy paths, navigation | Done | `d84ffcb` |
+| 1.1 Coordinate frames | Done; mocap → PX4 attitude bug fixed | `9a4b00f` |
+| 1.2 Reactive ObjectService, scene serialisation | Done | `75c8738` |
+| 2.1 MotionCaptureService (Vicon + OptiTrack) | Done; `scripts/fake_vicon.py` for lab-free testing | `e54d1d6` |
+| 2.2 Motion Capture panel | Done | `7b07d69` |
+| 3.1 Card-based Objects panel (#23) | Done | `4c73309` |
+| 3.2 Scene save / load | Done, plus automatic restore of the last session | `9a683b5` |
+| 5.1 Mesh pipeline (#26) | Done: ~12 s/frame → ~1.4 ms/frame for 10 moving quads | `0e5bfad` |
+| 5.2 Drop GLUT | Done (and GLU) | `0e5bfad` |
+
+Found and fixed along the way (not in the original list):
+- Object ↔ MAVLink links never streamed mocap, and disabling MAVLink on an object didn't stop it (`c7609f8`).
+- MAVLink rates saved in settings were ignored at start-up.
+- Gamepad reconnect probing re-initialised SDL every 16 ms with no controller attached.
+- The MAVLink panel never received the object service ("Link Object" always failed).
+- MainWindow shutdown could run twice (`75e9025`).
+
+### Human checkpoints before relying on this in the lab
+
+1. **Vicon**: connect to the real Tracker stream. Confirm subject names match, positions read in metres
+   with height on scene Y, and the Euler convention (roll/pitch/yaw signs) in `models/frames.py`. Also
+   confirm occluded objects arrive as all-zero samples (`services/motion_capture/vicon_udp.py`).
+2. **Which way is North?** `models/frames.py` treats Vicon +X as North (FLU → FRD). Check this against
+   how PX4's heading is set up in the lab before streaming mocap to a vehicle.
+3. **OptiTrack**: untested against a real Motive server (unit-tested against the SDK's data structures only).
+4. **Gamepad** on the lab PC: SDL now uses its dummy video driver; check a controller still works,
+   especially on Windows.
+5. **Real GPU window**: run `make run` and `python scripts/bench_render.py --min-fps 60` on the lab PC.
+
+### Ready for Phase 4 (setpoints / ghost mode)
+
+- `Sphere` objects, a translucent render pass (single-layer, depth-sorted) and `gl_buffers.draw_lines`
+  cover the red setpoint ball, its ghost copy, the object→setpoint line, and making an object translucent
+  when it overlaps its setpoint (#33).
+- Setpoints still live inside `CommandPanel` as plain lists. WP4.1 moves them into a model.
+  `InputService` already delivers pose deltas to the panel on the GUI thread
+  (`setpoint_delta_requested`).
+- Still missing (B2/B3): nothing sends Command-panel setpoints to PX4, and LAND is not connected. Use
+  `MavlinkService.link_object` / the object's `mavlink_config.linked_connection_name` to find the
+  vehicle, and `models/frames.scene_pose_to_ned` for the conversion.
+- Remaining hardening for WP7.1: `main_window.py` is still large, with many blanket `except: pass`
+  blocks. Several MavlinkService methods are still called directly from the GUI thread; they're safe
+  today because they don't touch timers.
+
+---
+
 ## 1. Where things stand
 
 ### What works (verified)

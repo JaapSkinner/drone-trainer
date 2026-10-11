@@ -27,6 +27,12 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
     queues it onto the GUI thread.
 - Qt warnings such as `Timers cannot be stopped from another thread` are bugs, not noise.
   `tests/qt_test_utils.QtMessageCapture` can assert they don't happen.
+- **Object capabilities** are features on the object's card (`ui/dock/panels/object_features.py`).
+  Add a new one (e.g. a "Gate" for an obstacle course) by subclassing `ObjectFeature`; persist any new
+  object fields in `models/scene_io.py`.
+- **Rendering**: subclasses of `SceneObject` draw in local coordinates in `_draw()` (the pose matrix is
+  already applied). Upload geometry once (`models/gl_buffers.MeshBuffer`); never rebuild GPU data per
+  frame. Check visual changes with `scripts/render_snapshot.py`.
 - Don't swallow exceptions with bare `except: pass`. Log them (`logger.exception(...)`) or let them
   propagate.
 
