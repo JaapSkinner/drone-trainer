@@ -800,15 +800,9 @@ class MavlinkService(ServiceBase):
         """
         if config is None and hasattr(obj, 'mavlink_config'):
             config = obj.mavlink_config
-        
         if config is None:
             config = MavlinkObjectConfig(enabled=True)
-        
-        self._mavlink_objects[obj] = config
-        
-        # If object should send mocap, register as mocap source
-        if config.send_mocap and config.enabled:
-            self.register_mocap_source(config.system_id, obj)
+        self.update_object_config(obj, config)
     
     def unregister_mavlink_object(self, obj):
         """Unregister a scene object from MAVLink operations.
@@ -816,35 +810,60 @@ class MavlinkService(ServiceBase):
         Args:
             obj: Scene object to unregister
         """
-        if obj in self._mavlink_objects:
-            config = self._mavlink_objects[obj]
-            
-            # Remove from mocap sources if registered
-            if config.send_mocap:
-                self.unregister_mocap_source(config.system_id)
-            
-            del self._mavlink_objects[obj]
-    
+        self._mavlink_objects.pop(obj, None)
+        self._drop_mocap_source(obj)
+
     def update_object_config(self, obj, config: MavlinkObjectConfig):
-        """Update MAVLink configuration for a registered object.
+        """Set (or replace) the MAVLink configuration for an object.
+
+        Mocap routing is recomputed from scratch, so this is correct even when
+        the caller edited the config object in place.
+
+        * Linked to a named connection (``linked_connection_name``): mocap goes
+          to that connection, looked up by name every tick (survives
+          reconnects and system ID discovery).
+        * Otherwise: legacy routing by ``config.system_id``.
         
         Args:
             obj: Scene object to update
             config: New MAVLink configuration
         """
-        if obj in self._mavlink_objects:
-            old_config = self._mavlink_objects[obj]
-            
-            # Handle mocap registration changes
-            if old_config.send_mocap and not config.send_mocap:
-                self.unregister_mocap_source(old_config.system_id)
-            elif config.send_mocap and config.enabled and not old_config.send_mocap:
-                self.register_mocap_source(config.system_id, obj)
-            
-            self._mavlink_objects[obj] = config
-        else:
-            self.register_mavlink_object(obj, config)
-    
+        self._mavlink_objects[obj] = config
+        self._drop_mocap_source(obj)
+        if config.enabled and config.send_mocap and not config.linked_connection_name:
+            self.register_mocap_source(config.system_id, obj)
+
+    def _drop_mocap_source(self, obj):
+        for system_id, source in list(self._mocap_sources.items()):
+            if source is obj:
+                del self._mocap_sources[system_id]
+
+    def link_object(self, obj, connection_name: str):
+        """Stream ``obj``'s pose to the named connection and record the link on both sides.
+
+        Any other object linked to that connection is unlinked first.
+        """
+        for other, cfg in list(self._mavlink_objects.items()):
+            if other is not obj and cfg.linked_connection_name == connection_name:
+                self.unlink_object(other)
+        cfg = obj.mavlink_config
+        if cfg.linked_connection_name and cfg.linked_connection_name != connection_name:
+            self.unlink_connection_from_object(cfg.linked_connection_name)
+        cfg.enabled = True
+        cfg.linked_connection_name = connection_name
+        self.link_connection_to_object(connection_name, obj.name)
+        self.update_object_config(obj, cfg)
+
+    def unlink_object(self, obj, disable: bool = False):
+        """Remove ``obj``'s connection link (and optionally disable MAVLink for it)."""
+        cfg = obj.mavlink_config
+        if cfg.linked_connection_name:
+            self.unlink_connection_from_object(cfg.linked_connection_name)
+        cfg.linked_connection_name = ""
+        if disable:
+            cfg.enabled = False
+        self.update_object_config(obj, cfg)
+
     def get_mavlink_objects(self) -> Dict[object, MavlinkObjectConfig]:
         """Get all registered MAVLink-enabled objects.
         
@@ -1797,13 +1816,23 @@ class MavlinkService(ServiceBase):
         self._active_connections = sum(1 for c in self._connections.values() if c.is_connected)
         self.health_updated.emit(self._total_rate_hz, self._active_connections)
     
+    def _mocap_targets(self):
+        """(connection, scene object) pairs that should receive mocap this tick."""
+        targets = []
+        for system_id, obj in list(self._mocap_sources.items()):
+            conn = self._connections.get(system_id)
+            if conn is not None and conn.is_connected:
+                targets.append((conn, obj))
+        for obj, cfg in list(self._mavlink_objects.items()):
+            if cfg.enabled and cfg.send_mocap and cfg.linked_connection_name:
+                conn = self.get_connection_by_name(cfg.linked_connection_name)
+                if conn is not None and conn.is_connected:
+                    targets.append((conn, obj))
+        return targets
+
     def _process_mocap(self):
         """Process motion capture data sending (highest priority)."""
-        for system_id, obj in self._mocap_sources.items():
-            conn = self._connections.get(system_id)
-            if conn is None or not conn.is_connected:
-                continue
-            
+        for conn, obj in self._mocap_targets():
             # Scene pose (Y up) → PX4 NED position and FRD attitude.
             if hasattr(obj, 'pose') and len(obj.pose) >= 7:
                 position, q = frames.scene_pose_to_ned(obj.pose)

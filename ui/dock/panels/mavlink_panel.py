@@ -1008,10 +1008,19 @@ class MavlinkPanel(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             selected_name = combo.currentData()
             if self.mavlink_service:
-                if selected_name:
-                    self.mavlink_service.link_connection_to_object(connection_name, selected_name)
+                # Link through the object so mocap actually streams to this connection.
+                previous = self.object_service.get_object(current_linked) if current_linked else None
+                selected = self.object_service.get_object(selected_name) if selected_name else None
+                if selected is not None:
+                    self.mavlink_service.link_object(selected, connection_name)
+                elif previous is not None:
+                    self.mavlink_service.unlink_object(previous)
                 else:
                     self.mavlink_service.unlink_connection_from_object(connection_name)
+                if self.object_service is not None:
+                    for obj in (previous, selected):
+                        if obj is not None:
+                            self.object_service.notify_object_changed(obj)
                 
                 # Update the card
                 if connection_name in self._connection_cards:

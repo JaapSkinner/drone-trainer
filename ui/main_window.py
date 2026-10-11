@@ -243,6 +243,13 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        # Activate MAVLink routing for objects that have it enabled, and drop
+        # objects from MAVLink when they leave the scene.
+        for obj in self.object_service.get_objects():
+            if obj.mavlink_config.enabled:
+                self.mavlink_service.update_object_config(obj, obj.mavlink_config)
+        self.object_service.object_removed.connect(self.mavlink_service.unregister_mavlink_object)
+
         # Restore active panel
         if getattr(saved, 'active_panel', None):
             self._show_panel(saved.active_panel)
