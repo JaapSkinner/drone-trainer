@@ -346,10 +346,7 @@ class MainWindow(QMainWindow):
         self.app_console_dock.setVisible(not self.app_console_dock.isVisible())
 
     def _position_overlay_widgets(self):
-        try:
-            self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
-        except Exception:
-            pass
+        self.status_panel.anchor_top_right()
         try:
             if hasattr(self, "console_toggle_button") and self.console_toggle_button:
                 margin = 20
@@ -408,7 +405,9 @@ class MainWindow(QMainWindow):
 
         # Dock and GLWidget on the right
         self.glWidget = GLWidget(object_service=self.object_service)
-        self.dock = DockManager(self.glWidget, self, self.object_service)
+        self.dock = DockManager(self.glWidget, self, self.object_service,
+                                motion_capture_service=self.motion_capture_service)
+        self.dock.motion_capture_panel.config_changed.connect(self.save_motion_capture_config)
         self.object_panel = self.dock.object_panel      # Object/Live Data panel
         self.settings_panel = self.dock.settings_panel  # Settings panel
         self.command_panel = self.dock.get_panel("command")
@@ -471,8 +470,8 @@ class MainWindow(QMainWindow):
 
         # === Status panel inside overlay ===
         self.status_panel = StatusPanel(self.overlay)
-        self.status_panel.move(self.width() - self.status_panel.width() - 20, 20)
         self.status_panel.show()
+        self.status_panel.anchor_top_right()
 
 
 

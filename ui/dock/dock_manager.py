@@ -10,6 +10,7 @@ from ui.dock.panels.leaderboard_panel import LeaderboardPanel
 from ui.dock.panels.command_panel import CommandPanel
 from ui.dock.panels.settings_panel import SettingsPanel
 from ui.dock.panels.mavlink_panel import MavlinkPanel
+from ui.dock.panels.motion_capture_panel import MotionCapturePanel
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 _TAG_ALIASES = {
     "config": "settings",
     "live_data": "objects",
+    "vicon": "motion_capture",
 }
 
 
@@ -27,7 +29,8 @@ class DockManager(QDockWidget):
     including home, trainer, mavlink, object, settings, and command panels.
     """
 
-    def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None):
+    def __init__(self, gl_widget=None, parent=None, object_service=None, mavlink_service=None,
+                 motion_capture_service=None):
         """Initialize the dock manager.
 
         Args:
@@ -58,6 +61,9 @@ class DockManager(QDockWidget):
             mavlink_service=mavlink_service
         )
 
+        self.motion_capture_panel = MotionCapturePanel(
+            self, motion_capture_service=motion_capture_service, object_service=object_service)
+
         # Create settings panel with mavlink service reference
         self.settings_panel = SettingsPanel(
             self,
@@ -70,6 +76,7 @@ class DockManager(QDockWidget):
             HomePanel(self),
             TrainerPanel(self),
             LeaderboardPanel(self),
+            self.motion_capture_panel,
             self.mavlink_panel,
             self.object_panel,
             self.settings_panel,

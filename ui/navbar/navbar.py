@@ -49,6 +49,7 @@ class SideNavbar(QWidget):
             ("trainer", "Trainer", "trainer.png"),
             ("leaderboard", "Leaderboard", "leaderboard.png"),
             ("objects", "Objects", "live_data.png"),
+            ("motion_capture", "Motion Capture", "vicon.png"),
             ("mavlink", "MAVLink", "graph.png"),
         ]
         for key, label, icon_file in nav_items:

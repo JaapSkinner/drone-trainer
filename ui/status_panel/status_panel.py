@@ -6,7 +6,7 @@ This panel shows the current status of:
 - MAVLink drone connections
 - Input device status
 """
-from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout
+from PyQt5.QtWidgets import QFrame, QLabel, QLayout, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
 from ui.style import load_stylesheet
 from services.service_base import ServiceLevel
@@ -30,13 +30,14 @@ class StatusPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("StatusPanel")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFixedSize(270, 110)  # Increased height for better layout
         self.setStyleSheet(load_stylesheet('ui/status_panel/status_panel.qss'))
-        
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
+        # Grow/shrink with the status text; stays anchored to the top-right.
+        layout.setSizeConstraint(QLayout.SetFixedSize)
+        self.setMinimumWidth(270)
 
 
         self.motion_capture_label = QLabel("Motion Capture: Not connected")
@@ -46,7 +47,16 @@ class StatusPanel(QFrame):
         layout.addWidget(self.motion_capture_label)
         layout.addWidget(self.mavlink_label)
         layout.addWidget(self.input_label)
-        
+
+    MARGIN = 20
+
+    def anchor_top_right(self):
+        """Place the panel in its parent's top-right corner."""
+        parent = self.parentWidget()
+        if parent is not None:
+            self.adjustSize()
+            self.move(parent.width() - self.width() - self.MARGIN, self.MARGIN)
+
     @pyqtSlot(int, str, str)
     def handle_status_change(self, level: int, label: str, target=""):
         """Handle status change from a service.
@@ -86,3 +96,4 @@ class StatusPanel(QFrame):
                 label_widget.setVisible(True)
                 label_widget.setText(f"{prefix}: {text}")
                 label_widget.setStyleSheet(f"color: {color};")
+            self.anchor_top_right()
