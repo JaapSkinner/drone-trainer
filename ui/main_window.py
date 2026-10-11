@@ -101,7 +101,10 @@ class MainWindow(QMainWindow):
         # Create object service early (before StorageService) to preserve
         # the previous construction order and avoid moveToThread races.
         self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
-        self.object_service.add_objects(self._load_startup_scene())
+        # Resolved once, like the storage directory, so the scene is always saved
+        # next to this window's settings.
+        self._session_scene_path = session_scene_path()
+        self.object_service.add_objects(self._load_startup_scene(self._session_scene_path))
 
         # Motion capture feeds tracked object poses into the object service.
         self.motion_capture_service = MotionCaptureService(
@@ -507,9 +510,8 @@ class MainWindow(QMainWindow):
 
 
     @staticmethod
-    def _load_startup_scene():
+    def _load_startup_scene(path):
         """Objects from the last session, or the default scene on first launch."""
-        path = session_scene_path()
         if os.path.exists(path):
             try:
                 objects = scene_io.load_scene(path)
@@ -522,7 +524,7 @@ class MainWindow(QMainWindow):
 
     def _save_session_scene(self):
         try:
-            scene_io.save_scene(self.object_service.get_objects(), session_scene_path())
+            scene_io.save_scene(self.object_service.get_objects(), self._session_scene_path)
         except OSError:
             logger.exception("Could not save the scene for next session")
 
