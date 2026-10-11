@@ -35,7 +35,7 @@ The 3D viewport supports mouse-based camera controls:
 
 You can lock the camera view to follow a specific object:
 
-1. Open the **Settings Panel** from the navigation bar
+1. Open the **Settings** panel from the navigation bar (Viewport section)
 2. Use the **Lock View To** dropdown to select an object
 3. The camera will now orbit around and follow the selected object
 4. Zoom and orbit controls continue to work while locked
@@ -54,7 +54,7 @@ When locked to an object:
 
 To configure viewport controls:
 
-1. Open the **Settings Panel** from the navigation bar
+1. Open the **Settings** panel from the navigation bar (Viewport section)
 2. Use **Lock View To** to select an object to follow (or "None" for origin)
 3. Adjust the **Zoom Sensitivity** slider (0.1x to 3.0x)
 4. Click **Reset Camera** to return to the default camera position and unlock
@@ -63,10 +63,11 @@ To configure viewport controls:
 
 To change input settings:
 
-1. Open the **Configuration Panel** from the navigation bar
-2. Select your preferred **Input Type** from the dropdown
-3. Adjust the **Sensitivity** slider to your liking (0.1x to 5.0x)
-4. View the input mapping information in the panel
+1. Open the **Command** panel from the navigation bar
+2. Select the **Joystick** tab (input only moves the controlled object while this tab is active)
+3. Select your preferred **Input Type** from the dropdown
+4. Adjust the **Sensitivity** slider to your liking (0.1x to 5.0x)
+5. View the input mapping information in the panel
 
 ## Sensitivity
 
@@ -87,4 +88,5 @@ The status panel (top-right corner) shows:
 - Movement is relative to the camera angle
 - Press and hold keys for continuous movement
 - Only one input type is active at a time
-- Keyboard input requires the 3D viewport to have focus (click on it first)
+- Keyboard input works whichever widget has focus, while the window is active
+- Gamepads are detected automatically; plug one in at any time

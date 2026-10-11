@@ -52,7 +52,7 @@ class HomePanel(QWidget):
         github_btn.setObjectName("githubBtn")
         github_btn.setProperty("class", "home-panel-btn")
         github_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        github_btn.clicked.connect(lambda: webbrowser.open_new_tab("https://github.com/jski306/drone-trainer"))
+        github_btn.clicked.connect(lambda: webbrowser.open_new_tab("https://github.com/JaapSkinner/drone-trainer"))
         layout.addWidget(github_btn)
 
         # dtrg.org website button

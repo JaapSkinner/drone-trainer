@@ -30,7 +30,7 @@ from services.storage_service import StorageService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
-from models.structs import PositionData, MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
+from models.structs import MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
 from models.storage_models import AppSettings, ConnectionEntry
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
@@ -234,11 +234,8 @@ class MainWindow(QMainWindow):
             pass
 
         # Restore active panel
-        try:
-            if hasattr(self.dock, 'set_active_panel') and getattr(saved, 'active_panel', None):
-                self.dock.set_active_panel(saved.active_panel)
-        except Exception:
-            pass
+        if getattr(saved, 'active_panel', None):
+            self._show_panel(saved.active_panel)
 
         # Restore locked object if present
         try:
@@ -385,7 +382,7 @@ class MainWindow(QMainWindow):
 
 
     def initUI(self):
-        self.setWindowTitle('Collaborative Control Interface')
+        self.setWindowTitle('Drone Trainer')
         self.setGeometry(50, 50, 1200, 800)
 
         # Top-level horizontal layout
@@ -403,9 +400,7 @@ class MainWindow(QMainWindow):
         self.dock = DockManager(self.glWidget, self, self.object_service)
         self.object_panel = self.dock.object_panel      # Object/Live Data panel
         self.settings_panel = self.dock.settings_panel  # Settings panel
-        self.command_panel = next(
-            panel for panel in self.dock.panels if getattr(panel, "NavTag", None) == "command"
-        )
+        self.command_panel = self.dock.get_panel("command")
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -468,17 +463,11 @@ class MainWindow(QMainWindow):
 
 
 
-    @pyqtSlot(PositionData)
-    def update_vicon_position(self, pos_data: PositionData):
-        for obj in self.glWidget.objects:
-            if obj.tracked and obj.name == pos_data.name:
-                obj.x_pos = pos_data.x
-                obj.y_pos = pos_data.y
-                obj.z_pos = pos_data.z
-                obj.x_rot = pos_data.x_rot
-                obj.y_rot = pos_data.y_rot
-                obj.z_rot = pos_data.z_rot
-        self.object_panel.refresh()
+    def _show_panel(self, tag: str):
+        """Show a dock panel and keep the navbar selection in sync."""
+        tag = self.dock.resolve_tag(tag)
+        if self.dock.set_active_panel(tag):
+            self.navbar.set_active(tag)
 
     @pyqtSlot(object)
     def on_input_update(self, obj):
@@ -973,11 +962,8 @@ class MainWindow(QMainWindow):
             pass
 
         # Restore active panel and locked object
-        try:
-            if getattr(s, 'active_panel', None) and hasattr(self.dock, 'set_active_panel'):
-                self.dock.set_active_panel(s.active_panel)
-        except Exception:
-            pass
+        if getattr(s, 'active_panel', None):
+            self._show_panel(s.active_panel)
         try:
             if getattr(s, 'last_locked_object', None):
                 for obj in self.object_service.get_objects():

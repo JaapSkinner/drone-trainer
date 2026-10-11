@@ -42,17 +42,19 @@ class SideNavbar(QWidget):
         self.button_group.setExclusive(True)  # Only one checked
 
 
-        for name in ["Home","Command", "Leaderboard", "Vicon", "Live Data", "MAVLink"]:
-            key = name.lower().replace(" ", "_")
-            name = " " + name
-            btn = QPushButton(name)
+        # (navigation key, label, icon) — keys must match a panel NavTag.
+        nav_items = [
+            ("home", "Home", "home.png"),
+            ("command", "Command", "command.png"),
+            ("trainer", "Trainer", "trainer.png"),
+            ("leaderboard", "Leaderboard", "leaderboard.png"),
+            ("objects", "Objects", "live_data.png"),
+            ("mavlink", "MAVLink", "graph.png"),
+        ]
+        for key, label, icon_file in nav_items:
+            btn = QPushButton(" " + label)
             btn.setCheckable(True)
-            # Command reuses the trainer icon
-            if key == "command":
-                icon_path = "ui/assets/icons/trainer.png"
-            else:
-                icon_path = f"ui/assets/icons/{key}.png"
-            btn.setIcon(QIcon(icon_path))
+            btn.setIcon(QIcon(f"ui/assets/icons/{icon_file}"))
             btn.setIconSize(QSize(22, 22))
             btn.setCursor(Qt.PointingHandCursor)
             layout.addWidget(btn)

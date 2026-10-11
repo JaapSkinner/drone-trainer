@@ -13,7 +13,7 @@ class ObjectPanel(QWidget):
     Signals:
         mavlink_config_changed: Emitted when an object's MAVLink config changes
     """
-    NavTag = "live_data"
+    NavTag = "objects"
 
     # Signal emitted when mavlink config changes (object, config)
     mavlink_config_changed = pyqtSignal(object, object)

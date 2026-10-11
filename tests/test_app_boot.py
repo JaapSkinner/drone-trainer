@@ -43,7 +43,8 @@ class AppBootTests(unittest.TestCase):
                 for key, button in window.navbar.buttons.items():
                     button.click()
                     process_events_for(0.05)
-                    self.assertIsNotNone(window.dock.current_widget, key)
+                    self.assertEqual(getattr(window.dock.current_widget, "NavTag", None), key,
+                                     f"navbar entry {key!r} did not open its panel")
 
                 # Paths that previously produced cross-thread timer warnings.
                 window.settings_panel._update_mavlink_setting("telemetry_rate_hz", 10.0)
@@ -62,6 +63,17 @@ class AppBootTests(unittest.TestCase):
         self.assertAlmostEqual(saved["input_sensitivity"], 1.5)
         self.assertAlmostEqual(saved["zoom_sensitivity"], 1.3)
         self.assertAlmostEqual(saved["telemetry_rate_hz"], 10.0)
+
+    def test_restores_legacy_active_panel_and_syncs_navbar(self):
+        with open(os.path.join(self._data_dir.name, "settings.json"), "w", encoding="utf-8") as fh:
+            json.dump({"active_panel": "live_data"}, fh)
+        window = self._boot()
+        try:
+            self.assertEqual(window.dock.current_widget.NavTag, "objects")
+            self.assertTrue(window.navbar.buttons["objects"].isChecked())
+        finally:
+            window.close()
+            process_events_for(0.1)
 
 
 if __name__ == "__main__":
