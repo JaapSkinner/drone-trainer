@@ -27,10 +27,11 @@ from services.object_service import ObjectService
 from services.status_service import StatusService
 from services.mavlink_service import MavlinkService
 from services.storage_service import StorageService
+from services.motion_capture_service import MotionCaptureService
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
-from models.structs import MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
+from models.structs import MotionCaptureConfig, MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
 from models.storage_models import AppSettings, ConnectionEntry
 from models.default_scene import build_default_scene
 from ui.navbar.navbar import SideNavbar
@@ -96,6 +97,11 @@ class MainWindow(QMainWindow):
         # the previous construction order and avoid moveToThread races.
         self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
         self.object_service.add_objects(build_default_scene())
+
+        # Motion capture feeds tracked object poses into the object service.
+        self.motion_capture_service = MotionCaptureService(
+            MotionCaptureConfig.from_dict(saved.motion_capture))
+        self.motion_capture_service.poses_updated.connect(self.object_service.apply_tracking_poses)
 
         # Now instantiate the storage service (its QThread will be created
         # inside ServiceBase.__init__). We'll start it later after UI wiring.
@@ -197,7 +203,8 @@ class MainWindow(QMainWindow):
         self.status_service = StatusService(
             self.status_panel,
             self.input_service,
-            self.mavlink_service
+            self.mavlink_service,
+            motion_capture_service=self.motion_capture_service,
         )
         self.status_service.start()
         self._wire_service_logging()
@@ -206,6 +213,7 @@ class MainWindow(QMainWindow):
         self.input_service.input_updated.connect(self.on_input_update)
         self.input_service.start()
         self.mavlink_service.start()
+        self.motion_capture_service.start()
         
         # Apply persisted per-object MAVLink configs
         try:
@@ -361,6 +369,7 @@ class MainWindow(QMainWindow):
             ("ObjectService", self.object_service),
             ("InputService", self.input_service),
             ("MavlinkService", self.mavlink_service),
+            ("MotionCaptureService", self.motion_capture_service),
             ("StorageService", self.storage_service),
             ("StatusService", self.status_service),
         ]
@@ -578,6 +587,13 @@ class MainWindow(QMainWindow):
             auto_connect_discovered=saved.auto_connect_discovered,
         )
 
+    def save_motion_capture_config(self, config: MotionCaptureConfig):
+        """Apply and persist motion capture settings."""
+        self.motion_capture_service.configure(config)
+        settings = self.storage_service.get_settings()
+        settings.motion_capture = config.to_dict()
+        self.storage_service.update_settings(settings)
+
     def _on_save_zoom_sensitivity(self, value: float):
         """Persist zoom sensitivity when the slider changes."""
         settings = self.storage_service.get_settings()
@@ -749,7 +765,8 @@ class MainWindow(QMainWindow):
         # Stop services to ensure timers are stopped in their own threads
         # Include storage_service and object_service so their QThreads are
         # cleanly stopped before the app tears down Qt objects.
-        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'storage_service', 'object_service'):
+        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'motion_capture_service',
+                         'storage_service', 'object_service'):
             svc = getattr(self, svc_name, None)
             if svc is not None:
                 try:

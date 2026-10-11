@@ -30,7 +30,8 @@ class StatusService(ServiceBase):
 
     status_update = pyqtSignal(int, str, str)  # level, label, target
 
-    def __init__(self, status_panel, input_service, mavlink_service=None, debug_level=DebugLevel.LOG):
+    def __init__(self, status_panel, input_service, mavlink_service=None, debug_level=DebugLevel.LOG,
+                 motion_capture_service=None):
         """Initialize the status service.
         
         Args:
@@ -43,6 +44,7 @@ class StatusService(ServiceBase):
         self.status_panel = status_panel
         self.input_service = input_service
         self.mavlink_service = mavlink_service
+        self.motion_capture_service = motion_capture_service
         self.timer = None
         if status_panel is not None:
             self.status_update.connect(status_panel.handle_status_change)
@@ -68,6 +70,10 @@ class StatusService(ServiceBase):
 
     def update(self):
         """Update status panel with current service states."""
+        if self.motion_capture_service is not None:
+            mocap = self.motion_capture_service
+            self.status_update.emit(mocap.status.value, mocap.status_text, "motion_capture")
+
         # Input Device status
         if self.input_service is not None:
             input_svc = self.input_service

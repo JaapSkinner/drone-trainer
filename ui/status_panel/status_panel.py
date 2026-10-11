@@ -39,11 +39,11 @@ class StatusPanel(QFrame):
         layout.setSpacing(6)
 
 
-        self.vicon_label = QLabel("Motion Capture: Unknown")
+        self.motion_capture_label = QLabel("Motion Capture: Not connected")
         self.mavlink_label = QLabel("MAVLink: Not Connected")
         self.input_label = QLabel("Input Device: Unknown")
 
-        layout.addWidget(self.vicon_label)
+        layout.addWidget(self.motion_capture_label)
         layout.addWidget(self.mavlink_label)
         layout.addWidget(self.input_label)
         
@@ -54,7 +54,7 @@ class StatusPanel(QFrame):
         Args:
             level: ServiceLevel enum value
             label: Status label text
-            target: Target service identifier ('vicon', 'mavlink', 'input')
+            target: Target service identifier ('motion_capture', 'mavlink', 'input')
         """
         level_enum = ServiceLevel(level)
         text = label if label else level_enum.name.capitalize()
@@ -69,7 +69,8 @@ class StatusPanel(QFrame):
         color = color_map.get(level_enum, "gray")
 
         label_map = {
-            "vicon": (self.vicon_label, "Motion Capture"),
+            "motion_capture": (self.motion_capture_label, "Motion Capture"),
+            "vicon": (self.motion_capture_label, "Motion Capture"),  # Legacy compatibility
             "mavlink": (self.mavlink_label, "MAVLink"),
             "input": (self.input_label, "Input Device"),
             "joystick": (self.input_label, "Input Device"),  # Legacy compatibility

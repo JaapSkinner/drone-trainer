@@ -11,7 +11,7 @@ widgets and the renderer read its objects directly.
 import time
 from typing import Dict, Iterable, List, Optional
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
 from models.scene_object import SceneObject
 from services.service_base import DebugLevel, ServiceBase, ServiceLevel
@@ -124,6 +124,7 @@ class ObjectService(ServiceBase):
     # Motion capture
     # ------------------------------------------------------------------
 
+    @pyqtSlot(object)
     def apply_tracking_poses(self, poses: Dict[str, tuple]) -> int:
         """Move tracked objects to the latest mocap poses.
 

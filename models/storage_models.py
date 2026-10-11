@@ -82,6 +82,8 @@ class AppSettings:
     last_active_connection: str = ""
     # Per-object minimal MAVLink configs: { object_name: {enabled: bool, linked_connection_name: str, system_id: int, send_mocap: bool} }
     object_mavlink_configs: dict = field(default_factory=dict)
+    # MotionCaptureConfig.to_dict()
+    motion_capture: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""

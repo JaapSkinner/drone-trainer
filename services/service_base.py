@@ -65,6 +65,11 @@ class ServiceBase(QObject, metaclass=MetaService):
         return self._status_level
 
     @property
+    def status_text(self) -> str:
+        """Label passed with the last status change (see set_status)."""
+        return self._status_label
+
+    @property
     def debug_level(self):
         return self._debug_level
     

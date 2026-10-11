@@ -375,3 +375,48 @@ class DiscoveredDevice:
             parts.append("[ARMED]")
         return "  ".join(parts)
 
+
+
+@dataclass
+class MotionCaptureConfig:
+    """Settings for MotionCaptureService (persisted in AppSettings.motion_capture).
+
+    Attributes:
+        source: "vicon" (Tracker UDP object stream) or "optitrack" (NatNet)
+        vicon_address: Local address to bind for the Vicon UDP stream
+        vicon_port: UDP port Vicon Tracker sends to
+        optitrack_server_ip: IP of the PC running Motive
+        optitrack_client_ip: This PC's IP on the network Motive streams to
+        optitrack_multicast: Use NatNet multicast (Motive's default) instead of unicast
+        optitrack_up_axis: "y" or "z" — must match Motive's streaming "Up Axis"
+        filter_enabled: Apply a low-pass filter to incoming poses
+        filter_cutoff_hz: Filter cutoff frequency
+        poll_rate_hz: How often the service drains the socket and publishes poses
+        auto_connect: Connect automatically when the app starts
+    """
+    source: str = "vicon"
+    vicon_address: str = "0.0.0.0"
+    vicon_port: int = 51001
+    optitrack_server_ip: str = "127.0.0.1"
+    optitrack_client_ip: str = "127.0.0.1"
+    optitrack_multicast: bool = True
+    optitrack_up_axis: str = "y"
+    filter_enabled: bool = False
+    filter_cutoff_hz: float = 10.0
+    poll_rate_hz: float = 200.0
+    auto_connect: bool = False
+
+    SOURCES = ("vicon", "optitrack")
+
+    def to_dict(self) -> dict:
+        from dataclasses import asdict
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "MotionCaptureConfig":
+        from dataclasses import fields as dc_fields
+        known = {f.name for f in dc_fields(cls)}
+        config = cls(**{k: v for k, v in (data or {}).items() if k in known})
+        if config.source not in cls.SOURCES:
+            config.source = "vicon"
+        return config
