@@ -1,5 +1,7 @@
 from OpenGL.GL import (GL_ENABLE_BIT, GL_LIGHTING, glDisable, glMultMatrixf,
                        glPopAttrib, glPopMatrix, glPushAttrib, glPushMatrix)
+import time
+
 import numpy as np
 from abc import ABC, abstractmethod
 from models import frames
@@ -12,8 +14,10 @@ class SceneObject(ABC):
     Attributes:
         pose: Position and orientation tuple (x, y, z, qw, qx, qy, qz)
         name: Human-readable name for the object
-        tracked: Whether this object is being tracked by motion capture
-        tracking_id: Vicon/mocap ID for tracking
+        tracked: Whether this object follows a motion capture subject
+        tracking_id: Name of the mocap subject (Vicon object / OptiTrack rigid body)
+        pose_locked: Ignore mocap updates and keep the current pose
+        last_tracking_update: time.monotonic() of the last mocap sample (or None)
         rendered: Whether to render this object
         shaded: Whether to apply shading
         colour: Base RGBA colour (alpha < 1 renders translucent)
@@ -22,6 +26,8 @@ class SceneObject(ABC):
     """
     
     DEFAULT_COLOUR = (0.5, 0.5, 0.5, 1.0)
+    # Scene furniture (grid, axes): kept by "clear all", listed separately in the UI.
+    helper = False
 
     def __init__(self, pose=None, name=None, rendered=True, shaded=True, controllable=True,
                  mavlink_enabled=False, colour=None):
@@ -38,7 +44,9 @@ class SceneObject(ABC):
         self.pose = pose if pose else (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0) # Default pose: position, quaternion (x, y, z, qw, qx, qy, qz)
         self.name = name if name else "Unnamed Object"
         self.tracked = False
-        self.tracking_id = None  # Vicon ID for tracking, if applicable
+        self.tracking_id = None
+        self.pose_locked = False
+        self.last_tracking_update = None
         self.rendered = rendered
         self.shaded = shaded  # Whether the object should be shaded
         self.controllable = controllable
@@ -71,23 +79,27 @@ class SceneObject(ABC):
         else:
             raise ValueError("Name must be a string")
 
-    def set_tracked(self, tracked, vicon_id=None):
-        """Set whether the object is tracked. If tracked is True, vicon_id must be provided."""
-        if isinstance(tracked, bool):
-            if tracked and vicon_id is not None:
-                self.tracking_id = vicon_id
-            elif tracked and vicon_id is None and self.tracking_id is None:
-                raise ValueError("Vicon ID must be provided if tracked is True")
-            self.tracked = tracked
-        else:
+    def set_tracked(self, tracked: bool, tracking_id: str = None):
+        """Follow (or stop following) a motion capture subject."""
+        if not isinstance(tracked, bool):
             raise ValueError("Tracked must be a boolean value")
+        if tracking_id is not None:
+            self.tracking_id = str(tracking_id).strip() or None
+        if tracked and not self.tracking_id:
+            raise ValueError("A tracking ID is required to enable tracking")
+        self.tracked = tracked
+
+    def tracking_age(self, now: float = None):
+        """Seconds since the last mocap sample, or None if never tracked."""
+        if self.last_tracking_update is None:
+            return None
+        return (time.monotonic() if now is None else now) - self.last_tracking_update
 
     def set_pose(self, pose):
-        """Set the pose of the object."""
-        if len(pose) == 7:
-            self.pose = tuple(pose)
-        else:
+        """Set the pose (x, y, z, qw, qx, qy, qz) in the scene frame."""
+        if len(pose) != 7:
             raise ValueError("Pose must be of length 7")
+        self.pose = tuple(float(v) for v in pose)
 
     def set_pose_delta(self,  pose_delta):
         """Set the pose delta of the object."""

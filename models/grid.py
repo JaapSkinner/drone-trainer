@@ -8,6 +8,8 @@ from models.scene_object import SceneObject
 class Grid(SceneObject):
     """Ground grid on the scene's XZ plane (Y up)."""
 
+    helper = True
+
     def __init__(self, pose=None, name=None, colour=None, controllable=False,
                  half_extent=10, spacing=1.0):
         super().__init__(pose, name or "Unnamed Grid", shaded=False, controllable=False,

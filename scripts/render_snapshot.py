@@ -13,19 +13,8 @@ from headless_gl import EXIT_SKIP, HeadlessContext, HeadlessGLUnavailable, proje
 
 
 def default_scene():
-    from models.axes import Axes
-    from models.cad_mesh import CadMesh
-    from models.grid import Grid
-    from models.rect_prism import RectPrism
-
-    green = RectPrism(name="Green Cube", colour=(0.0, 1.0, 0.0))
-    green.set_pose((2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
-    blue = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5))
-    blue.set_pose((0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0))
-    quad = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5))
-    quad.set_pose((-2.0, 1.0, -1.0, 1.0, 0.0, 0.0, 0.0))
-    return [Grid(name="Grid"), Axes(name="Axes"), RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0)),
-            green, blue, quad]
+    from models.default_scene import build_default_scene
+    return build_default_scene()
 
 
 def run_check(ctx) -> int:

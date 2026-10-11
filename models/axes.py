@@ -12,6 +12,8 @@ _COLOURS = np.array([(1, 0, 0), (1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 0, 1), (0, 
 class Axes(SceneObject):
     """Scene origin axes."""
 
+    helper = True
+
     def __init__(self, pose=None, name=None, controllable=False, length=1.0):
         super().__init__(pose, name or "Unnamed Axes", shaded=False, controllable=controllable)
         self.length = float(length)

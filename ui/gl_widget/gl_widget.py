@@ -3,10 +3,6 @@ import time
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtWidgets import QLabel, QOpenGLWidget
 
-from models.cad_mesh import CadMesh
-from models.rect_prism import RectPrism
-from models.grid import Grid
-from models.axes import Axes
 from ui.gl_widget.scene_renderer import Camera, SceneRenderer
 
 
@@ -33,25 +29,6 @@ class GLWidget(QOpenGLWidget):
 
         self.prev_time = time.perf_counter()
         self.fps = 0.0
-
-        grid = Grid(name="Grid", colour=(0.68, 0.68, 0.68, 1.0))
-        axes = Axes(name="Axes")
-
-        red_cube = RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0))
-        green_cube = RectPrism(name="Green Cube", colour=(0.0, 1.0, 0.0))
-        green_cube.set_pose((2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
-
-        blue_cube = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5))
-        blue_cube.set_pose((0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0))
-
-        quad = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.5, 0.9, 0.5))
-
-        self.object_service.add_object(grid)
-        self.object_service.add_object(axes)
-        self.object_service.add_object(red_cube)
-        self.object_service.add_object(green_cube)
-        self.object_service.add_object(blue_cube)
-        self.object_service.add_object(quad)
 
         # Camera parameters
         self.camera_distance = 10.0

@@ -32,6 +32,7 @@ from ui.gl_widget.gl_widget import GLWidget
 from ui.dock.dock_manager import DockManager
 from models.structs import MavlinkGlobalSettings, MavlinkConnectionConfig, MavlinkObjectConfig
 from models.storage_models import AppSettings, ConnectionEntry
+from models.default_scene import build_default_scene
 from ui.navbar.navbar import SideNavbar
 from ui.style import load_stylesheet
 from ui.status_panel.status_panel import StatusPanel
@@ -94,6 +95,7 @@ class MainWindow(QMainWindow):
         # Create object service early (before StorageService) to preserve
         # the previous construction order and avoid moveToThread races.
         self.object_service = ObjectService(None, debug_level=None)  # Use default debug level
+        self.object_service.add_objects(build_default_scene())
 
         # Now instantiate the storage service (its QThread will be created
         # inside ServiceBase.__init__). We'll start it later after UI wiring.
@@ -440,11 +442,13 @@ class MainWindow(QMainWindow):
         # Connect GLWidget signals to settings panel for UI sync
         self.glWidget.camera_reset.connect(self.settings_panel.reset_ui_to_defaults)
         
-        # Populate settings panel with objects after they're created
+        # Keep object lists in the panels in step with the scene.
         self.settings_panel.refresh_object_list()
-        
-        # Populate command panel with objects after they're created
         self.command_panel.refresh_object_list()
+        self.object_service.objects_changed.connect(self.settings_panel.refresh_object_list)
+        self.object_service.objects_changed.connect(self.command_panel.refresh_object_list)
+        self.object_service.objects_changed.connect(self.object_panel.populate)
+        self.object_service.object_removed.connect(self._on_object_removed)
         
         # Connect command panel joystick control signal
         self.command_panel.joystick_control_enabled.connect(self.on_joystick_control_enabled)
@@ -462,6 +466,10 @@ class MainWindow(QMainWindow):
         self.status_panel.show()
 
 
+
+    def _on_object_removed(self, obj):
+        if self.glWidget.get_locked_object() is obj:
+            self.glWidget.set_locked_object(None)
 
     def _show_panel(self, tag: str):
         """Show a dock panel and keep the navbar selection in sync."""

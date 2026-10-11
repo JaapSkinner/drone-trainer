@@ -48,7 +48,8 @@ class DockManager(QDockWidget):
         self._object_service = object_service
 
         # Create mavlink panel (can connect service later)
-        self.mavlink_panel = MavlinkPanel(self, mavlink_service=mavlink_service)
+        self.mavlink_panel = MavlinkPanel(self, mavlink_service=mavlink_service,
+                                          object_service=object_service)
 
         # Create object panel with mavlink service reference
         self.object_panel = ObjectPanel(
