@@ -3,7 +3,7 @@ import logging
 from PyQt5.QtWidgets import QDockWidget
 from PyQt5.QtCore import Qt
 
-from ui.dock.panels.object_panel import ObjectPanel
+from ui.dock.panels.objects_panel import ObjectsPanel
 from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
 from ui.dock.panels.leaderboard_panel import LeaderboardPanel
@@ -54,12 +54,9 @@ class DockManager(QDockWidget):
         self.mavlink_panel = MavlinkPanel(self, mavlink_service=mavlink_service,
                                           object_service=object_service)
 
-        # Create object panel with mavlink service reference
-        self.object_panel = ObjectPanel(
-            gl_widget, self,
-            object_service=object_service,
-            mavlink_service=mavlink_service
-        )
+        self.objects_panel = ObjectsPanel(
+            self, object_service=object_service, mavlink_service=mavlink_service,
+            motion_capture_service=motion_capture_service)
 
         self.motion_capture_panel = MotionCapturePanel(
             self, motion_capture_service=motion_capture_service, object_service=object_service)
@@ -78,7 +75,7 @@ class DockManager(QDockWidget):
             LeaderboardPanel(self),
             self.motion_capture_panel,
             self.mavlink_panel,
-            self.object_panel,
+            self.objects_panel,
             self.settings_panel,
             CommandPanel(self, object_service=object_service)
         ]
@@ -124,9 +121,4 @@ class DockManager(QDockWidget):
         self._mavlink_service = mavlink_service
         self.mavlink_panel.set_mavlink_service(mavlink_service)
         self.settings_panel.set_mavlink_service(mavlink_service)
-
-        # Connect object panel's config change signal to mavlink service
-        if mavlink_service is not None:
-            self.object_panel.mavlink_config_changed.connect(
-                lambda obj, config: mavlink_service.update_object_config(obj, config)
-            )
+        self.objects_panel.ctx.mavlink_service = mavlink_service

@@ -471,9 +471,8 @@ class SettingsPanel(QWidget):
         self.lock_object_combo.addItem("None (Origin)", None)
         
         for obj in self.object_service.get_objects():
-            # Only include controllable objects, exclude debug/utility objects
-            is_controllable = getattr(obj, 'controllable', False)
-            if is_controllable:
+            # Any real object can be followed; skip scene helpers (grid, axes).
+            if not getattr(obj, 'helper', False):
                 self.lock_object_combo.addItem(obj.name, obj)
         
         # Restore selection if still valid

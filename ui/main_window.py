@@ -415,7 +415,8 @@ class MainWindow(QMainWindow):
         self.dock = DockManager(self.glWidget, self, self.object_service,
                                 motion_capture_service=self.motion_capture_service)
         self.dock.motion_capture_panel.config_changed.connect(self.save_motion_capture_config)
-        self.object_panel = self.dock.object_panel      # Object/Live Data panel
+        self.objects_panel = self.dock.objects_panel
+        self.objects_panel.focus_requested.connect(self.focus_object)
         self.settings_panel = self.dock.settings_panel  # Settings panel
         self.command_panel = self.dock.get_panel("command")
 
@@ -462,7 +463,6 @@ class MainWindow(QMainWindow):
         self.command_panel.refresh_object_list()
         self.object_service.objects_changed.connect(self.settings_panel.refresh_object_list)
         self.object_service.objects_changed.connect(self.command_panel.refresh_object_list)
-        self.object_service.objects_changed.connect(self.object_panel.populate)
         self.object_service.object_removed.connect(self._on_object_removed)
         
         # Connect command panel joystick control signal
@@ -482,6 +482,15 @@ class MainWindow(QMainWindow):
 
 
 
+    def focus_object(self, obj):
+        """Lock the camera onto ``obj`` and keep the settings dropdown in sync."""
+        combo = self.settings_panel.lock_object_combo
+        index = next((i for i in range(combo.count()) if combo.itemData(i) is obj), -1)
+        if index >= 0:
+            combo.setCurrentIndex(index)  # emits lock_object_changed → on_lock_object_changed
+        else:
+            self.on_lock_object_changed(obj)
+
     def _on_object_removed(self, obj):
         if self.glWidget.get_locked_object() is obj:
             self.glWidget.set_locked_object(None)
@@ -495,7 +504,6 @@ class MainWindow(QMainWindow):
     @pyqtSlot(object)
     def on_input_update(self, obj):
         """Handle input device updates (replaces on_joystick_update)"""
-        self.object_panel.refresh()
         # Update command panel position display live
         if hasattr(self, 'command_panel'):
             self.command_panel.refresh()
