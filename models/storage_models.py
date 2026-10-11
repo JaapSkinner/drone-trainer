@@ -132,6 +132,7 @@ class ConnectionEntry:
     heartbeat_interval: float = 1.0
     mocap_rate_hz: float = 100.0
     linked_object_name: str = ""
+    auto_connect: bool = True
 
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""

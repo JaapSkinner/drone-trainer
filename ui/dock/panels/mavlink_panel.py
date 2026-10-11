@@ -57,7 +57,8 @@ class ConnectionCard(QFrame):
     test_clicked = pyqtSignal(str)  # connection_name
     edit_clicked = pyqtSignal(str)  # connection_name
 
-    def __init__(self, config: MavlinkConnectionConfig, connection_name: str, is_active: bool = True, parent=None):
+    def __init__(self, config: MavlinkConnectionConfig, connection_name: str, is_active: bool = True,
+                 parent=None, connecting: bool = False):
         """Initialize a connection card.
         
         Args:
@@ -71,6 +72,7 @@ class ConnectionCard(QFrame):
         # Store the resolved connection name for consistent signal emission
         self.connection_name = connection_name
         self.is_active = is_active
+        self.connecting = connecting
         self._init_ui()
     
     def _init_ui(self):
@@ -94,20 +96,23 @@ class ConnectionCard(QFrame):
         
         # Status indicator
         if self.is_active:
-            status_text = "●"
-            status_color = "green"
+            status_text, status_color = "● Connected", "green"
+        elif getattr(self, "connecting", False):
+            status_text, status_color = "◌ Connecting…", "#b36b00"
+        elif getattr(self.config, "auto_connect", False):
+            status_text, status_color = "○ Waiting for vehicle", "gray"
         else:
-            status_text = "○"
-            status_color = "gray"
+            status_text, status_color = "○ Disconnected", "gray"
         
         self.status_label = QLabel(status_text)
-        self.status_label.setStyleSheet(f"color: {status_color}; font-size: 14px;")
+        self.status_label.setStyleSheet(f"color: {status_color}; font-size: 11px;")
         header.addWidget(self.status_label)
         
         layout.addLayout(header)
         
         # Connection details
-        details = QLabel(f"{self.config.connection_string} | ID: {self.config.system_id}")
+        id_text = f"system ID {self.config.system_id}" if self.is_active else "system ID detected on connect"
+        details = QLabel(f"{self.config.connection_string} · {id_text}")
         details.setStyleSheet("color: #666; font-size: 10px;")
         layout.addWidget(details)
         
@@ -152,7 +157,8 @@ class ConnectionCard(QFrame):
             buttons.addWidget(edit_btn)
 
             # Connect button for inactive connections - emit resolved connection_name
-            connect_btn = QPushButton("Connect")
+            connect_btn = QPushButton("Connecting…" if getattr(self, "connecting", False) else "Connect")
+            connect_btn.setEnabled(not getattr(self, "connecting", False))
             connect_btn.setFixedHeight(24)
             connect_btn.setStyleSheet("color: #0a0;")
             connect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
@@ -219,6 +225,7 @@ class MavlinkPanel(QWidget):
         self._connection_cards: dict = {}  # connection_name -> ConnectionCard
         self._telemetry_labels: dict = {}
         self._storage_service = None  # Set via set_storage_service()
+        self._user_attempts = {}  # connection name → "new" | "saved" (attempts the user started)
         
         self.init_ui()
         
@@ -278,10 +285,7 @@ class MavlinkPanel(QWidget):
         form_layout.addRow("Address:", self.connection_input)
         
         # System ID input
-        self.system_id_input = QSpinBox()
-        self.system_id_input.setRange(1, 255)
-        self.system_id_input.setValue(1)
-        form_layout.addRow("System ID:", self.system_id_input)
+        # No System ID field: it is read from the vehicle's heartbeat when it connects.
         
         # Button row
         btn_row = QHBoxLayout()
@@ -467,8 +471,6 @@ class MavlinkPanel(QWidget):
     def _use_discovered_device(self, device):
         """Use a discovered device's connection string."""
         self.connection_input.setText(device.connection_string)
-        if device.system_id > 0:
-            self.system_id_input.setValue(device.system_id)
     
     def on_test_connection_clicked(self):
         """Run a connection quality test (non-blocking).
@@ -843,48 +845,30 @@ class MavlinkPanel(QWidget):
         return widget
     
     def on_connect_clicked(self):
-        """Handle connect button click."""
+        """Connect in the background; the result arrives in _on_attempt_finished."""
         if self.mavlink_service is None:
             return
-        
         connection_string = self.connection_input.text().strip()
-        system_id = self.system_id_input.value()
-        name = self.name_input.text().strip()
-        
         if not connection_string:
             return
-        
-        config = MavlinkConnectionConfig(
-            connection_string=connection_string,
-            system_id=system_id,
-            name=name  # Will be auto-generated if empty
-        )
-        
-        # Try to connect
+        config = MavlinkConnectionConfig(connection_string=connection_string,
+                                         name=self.name_input.text().strip())  # name auto-generated if empty
         self.connect_btn.setEnabled(False)
-        self.connect_btn.setText("Connecting...")
-        
-        success = self.mavlink_service.add_connection(config)
-        
-        self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("Connect")
-        
-        if success:
-            # Clear name input for next connection
-            self.name_input.clear()
-            self._refresh_connections_list()
-        else:
-            # Show error message
-            QMessageBox.warning(
-                self,
-                "Connection Failed",
-                f"Failed to connect to {connection_string}\n\n"
-                "Please check:\n"
-                "• Connection string is correct\n"
-                "• Device is powered on and sending heartbeats\n"
-                "• No firewall blocking the connection"
-            )
-            # Don't refresh - failed connections don't create new entries
+        self.connect_btn.setText("Connecting…")
+        name = self.mavlink_service.add_connection_async(config)
+        self._user_attempts[name] = "new"
+        self._refresh_connections_list()
+
+    def _on_attempt_finished(self, name: str, success: bool, message: str):
+        kind = self._user_attempts.pop(name, None)
+        if kind == "new":
+            self.connect_btn.setEnabled(True)
+            self.connect_btn.setText("Connect")
+            if success:
+                self.name_input.clear()
+        self._refresh_connections_list()
+        if not success and kind is not None:
+            QMessageBox.warning(self, "Connection failed", f"Couldn't connect '{name}'.\n\n{message}")
 
     def _refresh_connections_list(self):
         """Refresh the connections list showing all active and inactive connections."""
@@ -918,7 +902,8 @@ class MavlinkPanel(QWidget):
             is_active = conn is not None and conn.is_connected
             
             # Pass the resolved name to ensure consistent signal emission
-            card = ConnectionCard(config, connection_name=name, is_active=is_active)
+            card = ConnectionCard(config, connection_name=name, is_active=is_active,
+                                  connecting=self.mavlink_service.is_connecting(name))
             card.action_clicked.connect(self._on_connection_action)
             card.link_object_clicked.connect(self._on_link_object_clicked)
             card.test_clicked.connect(self._on_test_single_connection)
@@ -937,32 +922,15 @@ class MavlinkPanel(QWidget):
         conn = self.mavlink_service.get_connection_by_name(connection_name)
         
         if conn is not None and conn.is_connected:
-            # Disconnect
-            self.mavlink_service.remove_connection(conn.config.system_id)
+            # Disconnect, and stay disconnected (no auto-reconnect) until connected again.
+            self.mavlink_service.disconnect_by_user(conn.config.system_id)
             self._refresh_connections_list()
         else:
-            # Connect - get saved config or create new
             all_conns = self.mavlink_service.get_all_connections()
             if connection_name in all_conns:
-                config = all_conns[connection_name]
-                success = self.mavlink_service.add_connection(config)
-
-                if success:
-                    # Refresh to show as active
-                    self._refresh_connections_list()
-                else:
-                    # Show error message
-                    QMessageBox.warning(
-                        self,
-                        "Connection Failed",
-                        f"Failed to connect to {config.connection_string}\n\n"
-                        "Please check:\n"
-                        "• Connection string is correct\n"
-                        "• Device is powered on and sending heartbeats\n"
-                        "• No firewall blocking the connection\n\n"
-                        "You can edit the connection to fix the settings."
-                    )
-                    # Don't refresh - failed connections don't change the UI state
+                self._user_attempts[connection_name] = "saved"
+                self.mavlink_service.add_connection_async(all_conns[connection_name])
+                self._refresh_connections_list()
 
     def _on_link_object_clicked(self, connection_name: str):
         """Handle link object button click - show object selection dialog."""
@@ -1189,14 +1157,18 @@ class MavlinkPanel(QWidget):
                     connection_string=new_address,
                     system_id=new_system_id,
                     name=new_name if new_name else connection_name,
-                    linked_object_name=old_linked_object
+                    linked_object_name=old_linked_object,
+                    auto_connect=getattr(config, "auto_connect", True),
                 )
 
                 # Remove old saved connection (by old name) using public API
                 self.mavlink_service.remove_saved_connection(connection_name)
 
-                # Save updated config with new name
+                # Save updated config with new name, and keep objects linked to it.
                 self.mavlink_service.save_connection_config(updated_config)
+                self.mavlink_service.rename_links(
+                    connection_name, updated_config.name,
+                    objects=self.object_service.get_objects() if self.object_service else ())
 
                 # Persist the edit to storage
                 if self._storage_service is not None:
@@ -1214,6 +1186,7 @@ class MavlinkPanel(QWidget):
                         heartbeat_interval=updated_config.heartbeat_interval,
                         mocap_rate_hz=updated_config.mocap_rate_hz,
                         linked_object_name=updated_config.linked_object_name,
+                        auto_connect=updated_config.auto_connect,
                     ))
 
             # Refresh the connections list
@@ -1297,6 +1270,7 @@ class MavlinkPanel(QWidget):
             mavlink_service.connection_changed.connect(self.on_connection_changed)
             mavlink_service.health_updated.connect(self.on_health_updated)
             mavlink_service.console_output.connect(self._on_console_output)
+            mavlink_service.connection_attempt_finished.connect(self._on_attempt_finished)
 
             # Refresh the connections list
             self._refresh_connections_list()

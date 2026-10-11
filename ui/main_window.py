@@ -167,6 +167,7 @@ class MainWindow(QMainWindow):
                 mocap_rate_hz=entry.mocap_rate_hz,
                 name=entry.name,
                 linked_object_name=entry.linked_object_name,
+                auto_connect=entry.auto_connect,
             )
             self.mavlink_service.save_connection_config(config)
         
@@ -745,6 +746,7 @@ class MainWindow(QMainWindow):
                 heartbeat_interval=config.heartbeat_interval,
                 mocap_rate_hz=config.mocap_rate_hz,
                 linked_object_name=config.linked_object_name,
+                auto_connect=getattr(config, "auto_connect", True),
             )
             self.storage_service.upsert_connection(entry)
             current_names.add(name)
@@ -1070,6 +1072,7 @@ class MainWindow(QMainWindow):
                             mocap_rate_hz=entry.mocap_rate_hz,
                             name=entry.name,
                             linked_object_name=entry.linked_object_name,
+                            auto_connect=entry.auto_connect,
                         )
                         self.mavlink_service.save_connection_config(config)
                     except Exception:

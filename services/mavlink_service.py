@@ -689,6 +689,7 @@ class MavlinkService(ServiceBase):
     health_updated = pyqtSignal(float, int)      # rate_hz, active_connections
     console_output = pyqtSignal(int, str)        # system_id, text line
     connection_test_complete = pyqtSignal(object)  # dict of test results
+    connection_attempt_finished = pyqtSignal(str, bool, str)  # name, success, message
 
     # Service update rates
     TELEMETRY_UPDATE_INTERVAL_MS = 50   # 20Hz for telemetry (low priority)
@@ -738,6 +739,11 @@ class MavlinkService(ServiceBase):
         
         self.status_label = "MAVLink: Not Connected"
         self._status_label = "Not Connected"
+
+        # Background connection attempts (add_connection_async)
+        self._attempting = set()
+        self._attempt_lock = threading.Lock()
+        self._reconnect_timer: Optional[QTimer] = None
     
     def get_global_settings(self) -> MavlinkGlobalSettings:
         """Get the current global MAVLink settings.
@@ -788,6 +794,9 @@ class MavlinkService(ServiceBase):
         
         if self._mocap_timer is not None:
             self._mocap_timer.setInterval(rate_to_interval(settings.default_mocap_rate_hz, 10))
+
+        if self._reconnect_timer is not None:
+            self._reconnect_timer.setInterval(max(1000, int(1000 * (settings.reconnect_interval or 5.0))))
     
     def register_mavlink_object(self, obj, config: MavlinkObjectConfig = None):
         """Register a scene object for MAVLink operations.
@@ -931,6 +940,12 @@ class MavlinkService(ServiceBase):
         self._setpoint_timer.timeout.connect(self.safe(self._process_setpoints))
         self._setpoint_timer.start()
 
+        # Auto-reconnect: retry saved connections now and every reconnect_interval.
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.timeout.connect(self.safe(self._auto_reconnect))
+        self._reconnect_timer.start()
+        QTimer.singleShot(0, self.safe(self._auto_reconnect))
+
         # Settings may have been applied before the service started.
         self._apply_timer_intervals()
 
@@ -941,7 +956,7 @@ class MavlinkService(ServiceBase):
         """Stop all timers and disconnect all connections."""
         # Stop timers
         for timer in [self._heartbeat_timer, self._telemetry_timer, 
-                      self._mocap_timer, self._setpoint_timer]:
+                      self._mocap_timer, self._setpoint_timer, self._reconnect_timer]:
             if timer is not None:
                 timer.stop()
                 timer.deleteLater()
@@ -950,6 +965,7 @@ class MavlinkService(ServiceBase):
         self._telemetry_timer = None
         self._mocap_timer = None
         self._setpoint_timer = None
+        self._reconnect_timer = None
 
         # If a connection test worker is running, try to stop it cleanly
         if hasattr(self, '_test_worker') and self._test_worker is not None:
@@ -967,8 +983,18 @@ class MavlinkService(ServiceBase):
         """Main update loop - not used as we use separate timers for priority handling."""
         pass
     
+    def _prepare_name(self, config: MavlinkConnectionConfig):
+        if not config.name:
+            config.name = self.generate_connection_name()
+        elif config.name in self._saved_connections:
+            pass  # reconnecting a saved connection: keep its name (objects link by name)
+        elif not self.is_connection_name_unique(config.name):
+            config.name = self.generate_connection_name(config.name)
+
     def add_connection(self, config: MavlinkConnectionConfig) -> bool:
-        """Add and establish a new MAVLink connection.
+        """Add and establish a new MAVLink connection (blocks for up to ~6 s).
+
+        Prefer :meth:`add_connection_async` from the UI.
         
         Args:
             config: Connection configuration
@@ -976,55 +1002,98 @@ class MavlinkService(ServiceBase):
         Returns:
             True if connection was established successfully
         """
-        # Generate a unique name if not provided
-        if not config.name:
-            config.name = self.generate_connection_name()
-        elif not self.is_connection_name_unique(config.name):
-            # Name already exists, generate a new one
-            config.name = self.generate_connection_name(config.name)
-        
+        self._prepare_name(config)
         connection = MavlinkConnection(config)
-        
-        if connection.connect():
-            self._connections[connection.status.system_id] = connection
-            self._active_connections = len(self._connections)
+        return self._finish_connect(connection, connection.connect())[0]
 
-            # Wire console output from this connection back through our signal
-            sys_id = connection.status.system_id
-            connection.set_console_output_callback(
-                lambda text, sid=sys_id: self.console_output.emit(sid, text)
-            )
+    def add_connection_async(self, config: MavlinkConnectionConfig) -> str:
+        """Connect on a background thread; the result arrives via ``connection_attempt_finished``.
 
-            # Remove from saved connections if it was there (by name or by matching connection string)
-            # This prevents duplicates when reconnecting with a different auto-generated name
-            if config.name in self._saved_connections:
-                del self._saved_connections[config.name]
-            
-            # Also remove any saved connection with the same connection string or system ID
-            to_remove = []
-            for saved_name, saved_config in self._saved_connections.items():
-                if (saved_config.connection_string == config.connection_string or
-                    saved_config.system_id == connection.status.system_id):
-                    to_remove.append(saved_name)
-            for saved_name in to_remove:
+        Returns the connection's (possibly generated) name.
+        """
+        self._prepare_name(config)
+        with self._attempt_lock:
+            if config.name in self._attempting:
+                return config.name
+            self._attempting.add(config.name)
+        threading.Thread(target=self._connect_worker, args=(config,), daemon=True,
+                         name=f"mavlink-connect-{config.name}").start()
+        return config.name
+
+    def is_connecting(self, name: str) -> bool:
+        with self._attempt_lock:
+            return name in self._attempting
+
+    def _connect_worker(self, config: MavlinkConnectionConfig):
+        connection = MavlinkConnection(config)
+        try:
+            ok = connection.connect()
+        except Exception:
+            logger.exception("MAVLink connect raised for %s", config.name)
+            ok = False
+        self.call_in_service_thread(self._finish_connect_async, connection, ok)
+
+    def _finish_connect_async(self, connection, ok: bool):
+        name = connection.config.name
+        success, message = self._finish_connect(connection, ok)
+        with self._attempt_lock:
+            self._attempting.discard(name)
+        self.connection_attempt_finished.emit(name, success, message)
+
+    def _finish_connect(self, connection, ok: bool):
+        """Register a connection whose connect() returned ``ok``. Returns (success, message)."""
+        config = connection.config
+        if not ok:
+            connection.disconnect()  # free the socket so a retry can bind it again
+            logger.warning("No heartbeat from %s (%s)", config.name, config.connection_string)
+            return False, (f"No heartbeat from {config.connection_string}. Check the vehicle is on and "
+                           "sending MAVLink to this PC, and that the address/port is right.")
+
+        sys_id = connection.status.system_id
+        existing = self._connections.get(sys_id)
+        if existing is not None and existing is not connection:
+            connection.disconnect()
+            message = (f"'{existing.config.name}' already uses MAVLink system ID {sys_id}. Give each vehicle "
+                       "a unique MAV_SYS_ID (PX4 parameter) so they can be told apart.")
+            logger.warning(message)
+            return False, message
+
+        self._connections[sys_id] = connection
+        self._active_connections = len(self._connections)
+        config.auto_connect = True
+
+        # Wire console output from this connection back through our signal
+        connection.set_console_output_callback(
+            lambda text, sid=sys_id: self.console_output.emit(sid, text)
+        )
+
+        # Drop the saved entry (by name, connection string or system ID) so it isn't listed twice.
+        for saved_name, saved_config in list(self._saved_connections.items()):
+            if (saved_name == config.name or saved_config.connection_string == config.connection_string
+                    or saved_config.system_id == sys_id):
                 del self._saved_connections[saved_name]
 
-            self.connection_changed.emit(connection.status.system_id, True)
-            logger.info(
-                "MAVLink connected: name=%s system_id=%s connection=%s",
-                config.name,
-                connection.status.system_id,
-                config.connection_string,
-            )
-            self._update_status_label()
-            return True
-        
-        # Connection failed - do NOT save to saved_connections
-        # Failed connections should not persist in the UI
-        print(f"[MavlinkService] ERROR: Failed to establish connection: {config.name}")
-        logger.error("Failed to establish MAVLink connection: %s", config.name)
-        return False
-    
+        self.connection_changed.emit(sys_id, True)
+        logger.info("MAVLink connected: name=%s system_id=%s connection=%s",
+                    config.name, sys_id, config.connection_string)
+        self._update_status_label()
+        return True, ""
+
+    def disconnect_by_user(self, system_id: int):
+        """Disconnect and don't reconnect automatically until the user connects again."""
+        conn = self._connections.get(system_id)
+        if conn is not None:
+            conn.config.auto_connect = False
+        self.remove_connection(system_id)
+
+    def _auto_reconnect(self):
+        """Retry saved connections that should be connected (settings: auto reconnect)."""
+        if not self._global_settings.auto_reconnect:
+            return
+        for name, config in list(self._saved_connections.items()):
+            if config.auto_connect and not self.is_connecting(name) and self.get_connection_by_name(name) is None:
+                self.add_connection_async(config)
+
     def remove_connection(self, system_id: int):
         """Remove and disconnect a MAVLink connection.
         
@@ -1309,9 +1378,23 @@ class MavlinkService(ServiceBase):
         
         conn = self._connections.get(system_id)
         if conn is not None:
+            old_name = conn.config.name
             conn.config.name = new_name
+            self.rename_links(old_name, new_name)
             return True
         return False
+
+    def rename_links(self, old_name: str, new_name: str, objects=()):
+        """Point objects linked to connection ``old_name`` at ``new_name``.
+
+        ``objects`` adds scene objects that may not be registered here yet.
+        """
+        if not old_name or old_name == new_name:
+            return
+        for obj in {id(o): o for o in [*self._mavlink_objects, *objects]}.values():
+            cfg = getattr(obj, "mavlink_config", None)
+            if cfg is not None and cfg.linked_connection_name == old_name:
+                cfg.linked_connection_name = new_name
     
     def link_connection_to_object(self, connection_name: str, object_name: str):
         """Link a MAVLink connection to a scene object.

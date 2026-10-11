@@ -5,6 +5,10 @@ import unittest
 
 from models import frames
 from models.structs import MavlinkObjectConfig
+from unittest import mock
+
+from models.structs import MavlinkConnectionConfig
+from services import mavlink_service
 from services.mavlink_service import MavlinkService
 
 
@@ -143,6 +147,105 @@ class MocapSafetyTests(unittest.TestCase):
         self.obj.tracked = False
         self.obj.mavlink_config.send_mocap_untracked = True
         self.assertEqual(self.sent(), 1)
+
+
+def _fake_connect(heartbeat_system_id=7, succeed=True):
+    """Replacement for MavlinkConnection.connect that needs no vehicle."""
+    def connect(self):
+        if not succeed:
+            return False
+        self.status.system_id = heartbeat_system_id
+        self.config.system_id = heartbeat_system_id
+        self.status.connected = True
+        self.status.last_heartbeat = time.time()
+        self._state = mavlink_service.ConnectionState.CONNECTED
+        return True
+    return connect
+
+
+class ConnectionWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self._patch = mock.patch.object(mavlink_service.MavlinkConnection, "connect", _fake_connect())
+        self._patch.start()
+        self.service = MavlinkService()
+
+    def tearDown(self):
+        self._patch.stop()
+
+    def test_reconnecting_a_saved_connection_keeps_its_name(self):
+        self.service.save_connection_config(MavlinkConnectionConfig("udpin:0.0.0.0:14550", name="Drone-1"))
+        saved = self.service.get_all_connections()["Drone-1"]
+        self.assertTrue(self.service.add_connection(saved))
+        self.assertIsNotNone(self.service.get_connection_by_name("Drone-1"))
+        self.assertEqual(sorted(self.service.get_all_connections()), ["Drone-1"])
+
+    def test_renaming_a_connection_keeps_object_links(self):
+        self.service.add_connection(MavlinkConnectionConfig("udpin:0.0.0.0:14550", name="Drone-1"))
+        obj = _Tracked((0, 0, 0, 1, 0, 0, 0), "quad")
+        self.service.link_object(obj, "Drone-1")
+        self.assertTrue(self.service.rename_connection(7, "Lab quad"))
+        self.assertEqual(obj.mavlink_config.linked_connection_name, "Lab quad")
+        self.assertEqual(self.service.mocap_stream_state(obj), "streaming")
+
+
+class AsyncConnectionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from qt_test_utils import get_app
+        cls.app = get_app()
+
+    def connect_with(self, **fake):
+        patch = mock.patch.object(mavlink_service.MavlinkConnection, "connect", _fake_connect(**fake))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def attempt(self, service, config):
+        from qt_test_utils import wait_until
+        results = []
+        service.connection_attempt_finished.connect(lambda *args: results.append(args))
+        name = service.add_connection_async(config)
+        self.assertTrue(wait_until(lambda: results, timeout_s=3.0))
+        return name, results[0]
+
+    def test_background_connect_reports_success(self):
+        self.connect_with(heartbeat_system_id=3)
+        service = MavlinkService()
+        name, (reported, ok, message) = self.attempt(service, MavlinkConnectionConfig("udpin:0.0.0.0:14550", name="Quad"))
+        self.assertEqual((name, reported, ok, message), ("Quad", "Quad", True, ""))
+        self.assertTrue(service.get_connection_by_name("Quad").is_connected)
+        self.assertFalse(service.is_connecting("Quad"))
+
+    def test_failed_connect_explains_and_frees_the_socket(self):
+        self.connect_with(succeed=False)
+        service = MavlinkService()
+        with mock.patch.object(mavlink_service.MavlinkConnection, "disconnect") as disconnect:
+            _name, (_n, ok, message) = self.attempt(service, MavlinkConnectionConfig("udpin:0.0.0.0:14551"))
+        self.assertFalse(ok)
+        self.assertIn("No heartbeat", message)
+        disconnect.assert_called()
+
+    def test_second_vehicle_with_the_same_system_id_is_refused(self):
+        self.connect_with(heartbeat_system_id=1)
+        service = MavlinkService()
+        self.assertTrue(service.add_connection(MavlinkConnectionConfig("udpin:0.0.0.0:14550", name="A")))
+        _name, (_n, ok, message) = self.attempt(service, MavlinkConnectionConfig("udpin:0.0.0.0:14560", name="B"))
+        self.assertFalse(ok)
+        self.assertIn("MAV_SYS_ID", message)
+        self.assertEqual(service.get_connection_by_name("A").config.connection_string, "udpin:0.0.0.0:14550")
+
+    def test_auto_reconnect_restores_saved_connections_but_respects_user_disconnect(self):
+        from qt_test_utils import wait_until
+        self.connect_with(heartbeat_system_id=4)
+        service = MavlinkService()
+        service.save_connection_config(MavlinkConnectionConfig("udpin:0.0.0.0:14550", name="Quad"))
+        service._auto_reconnect()
+        self.assertTrue(wait_until(lambda: service.get_connection_by_name("Quad") is not None, timeout_s=3.0))
+
+        service.disconnect_by_user(4)
+        service._auto_reconnect()
+        self.assertFalse(service.is_connecting("Quad"))
+        self.assertIsNone(service.get_connection_by_name("Quad"))
+        self.assertFalse(service.get_all_connections()["Quad"].auto_connect)
 
 
 if __name__ == "__main__":

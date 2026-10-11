@@ -55,6 +55,7 @@ class MavlinkConnectionConfig:
     mocap_rate_hz: float = 100.0
     name: str = ""  # User-friendly name, auto-generated if empty
     linked_object_name: str = ""  # Name of linked scene object
+    auto_connect: bool = True  # reconnect automatically (cleared when the user disconnects)
 
 
 @dataclass
