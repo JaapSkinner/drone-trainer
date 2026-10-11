@@ -511,6 +511,7 @@ class ObjectsPanel(QWidget):
     LIVE_REFRESH_MS = 100
 
     focus_requested = pyqtSignal(object)  # camera should lock onto this object
+    add_drone_requested = pyqtSignal()
 
     def __init__(self, parent=None, object_service=None, mavlink_service=None, motion_capture_service=None):
         super().__init__(parent)
@@ -526,6 +527,11 @@ class ObjectsPanel(QWidget):
         layout.addWidget(title)
 
         toolbar = QHBoxLayout()
+        self.add_drone_button = QPushButton("+ Add drone…")
+        self.add_drone_button.setToolTip("Step-by-step: model, motion capture tracking and flight controller")
+        self.add_drone_button.setStyleSheet("font-weight: 600;")
+        self.add_drone_button.clicked.connect(lambda: self.add_drone_requested.emit())
+        toolbar.addWidget(self.add_drone_button)
         self.add_button = QPushButton("+ Add object")
         self.add_button.clicked.connect(self._on_add_clicked)
         toolbar.addWidget(self.add_button)

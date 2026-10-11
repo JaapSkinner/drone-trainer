@@ -66,7 +66,14 @@ source .venv/bin/activate
 make run
 ```
 
-## Motion capture quick start
+## Setting up a drone
+
+Press **Add a drone** (Home panel, Objects panel or Command panel) and follow the four steps:
+model → motion capture subject → flight controller connection → review. The Command panel then
+shows a live checklist (tracking / vehicle / mocap → vehicle) for the selected drone, with
+**Drone setup…** to change it. Full guide: [docs/DRONE_SETUP.md](docs/DRONE_SETUP.md).
+
+## Motion capture quick start (manual route)
 
 1. Open **Motion Capture** in the navbar and pick the source.
    - **Vicon**: in Vicon Tracker enable the *UDP Object Stream* and send it to this PC's IP on the
@@ -120,6 +127,7 @@ main window. CI runs the same command on every pull request.
 | Script | Purpose |
 |---|---|
 | `scripts/fake_vicon.py` | Synthetic Vicon UDP stream (circling quads + a wand) |
+| `scripts/fake_px4.py` | Stand-in PX4: sends heartbeats, reports the motion capture it receives |
 | `scripts/render_snapshot.py` | Render the scene headlessly to a PNG; `--check` runs the renderer pixel tests |
 | `scripts/bench_render.py` | Frame-time benchmark with many moving meshes |
 | `scripts/build_mavlink.py` | Build the DTRG MAVLink dialect (`make mavlink`) |

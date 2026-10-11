@@ -58,6 +58,9 @@ class DockManager(QDockWidget):
             self, object_service=object_service, mavlink_service=mavlink_service,
             motion_capture_service=motion_capture_service)
 
+        self.home_panel = HomePanel(self)
+        self.command_panel = CommandPanel(self, object_service=object_service, control_service=control_service,
+                                          motion_capture_service=motion_capture_service)
         self.trainer_panel = TrainerPanel(self, trainer_service=trainer_service, object_service=object_service)
         self.leaderboard_panel = LeaderboardPanel(self, trainer_service=trainer_service)
 
@@ -73,14 +76,14 @@ class DockManager(QDockWidget):
 
         # Public references for external access
         self.panels = [
-            HomePanel(self),
+            self.home_panel,
             self.trainer_panel,
             self.leaderboard_panel,
             self.motion_capture_panel,
             self.mavlink_panel,
             self.objects_panel,
             self.settings_panel,
-            CommandPanel(self, object_service=object_service, control_service=control_service)
+            self.command_panel
         ]
         for panel in self.panels:
             if hasattr(panel, "NavTag"):
@@ -125,3 +128,5 @@ class DockManager(QDockWidget):
         self.mavlink_panel.set_mavlink_service(mavlink_service)
         self.settings_panel.set_mavlink_service(mavlink_service)
         self.objects_panel.ctx.mavlink_service = mavlink_service
+        self.command_panel.mavlink_service = mavlink_service
+        self.command_panel.drone_status.mavlink_service = mavlink_service

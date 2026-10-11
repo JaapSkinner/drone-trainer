@@ -137,7 +137,10 @@ class _MotionCaptureEditor(FeatureEditor):
         if not self.obj.tracked:
             text, colour = "Not following", "#666"
         elif age is None:
-            text, colour = "Waiting for this subject", "#b36b00"
+            from ui.widgets.drone_status import similar_subject
+            similar = similar_subject(self.ctx.motion_capture_service, self.obj.tracking_id)
+            text = f"Waiting — did you mean '{similar}'?" if similar else "Waiting for this subject"
+            colour = "#b36b00"
         elif age > 1.0:
             text, colour = f"Lost ({age:.0f} s ago)", "#c82333"
         else:

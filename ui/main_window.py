@@ -445,6 +445,10 @@ class MainWindow(QMainWindow):
         self.dock.motion_capture_panel.config_changed.connect(self.save_motion_capture_config)
         self.objects_panel = self.dock.objects_panel
         self.objects_panel.focus_requested.connect(self.focus_object)
+        # Every way into the step-by-step drone setup.
+        self.objects_panel.add_drone_requested.connect(lambda: self.open_drone_setup())
+        self.dock.home_panel.add_drone_requested.connect(lambda: self.open_drone_setup())
+        self.dock.command_panel.drone_setup_requested.connect(self.open_drone_setup)
         self.settings_panel = self.dock.settings_panel  # Settings panel
         self.command_panel = self.dock.get_panel("command")
 
@@ -528,6 +532,24 @@ class MainWindow(QMainWindow):
             scene_io.save_scene(self.object_service.get_objects(), self._session_scene_path)
         except OSError:
             logger.exception("Could not save the scene for next session")
+
+    def open_drone_setup(self, obj=None):
+        """Open the Add-a-drone wizard (or re-run it for ``obj``). Returns the dialog."""
+        from ui.dialogs.add_drone_wizard import AddDroneWizard
+        wizard = AddDroneWizard(self.object_service, self.motion_capture_service, self.mavlink_service,
+                                edit_object=obj, parent=self)
+        wizard.drone_ready.connect(self._on_drone_ready)
+        self._drone_wizard = wizard
+        wizard.open()  # window-modal but non-blocking, so live mocap keeps updating it
+        return wizard
+
+    def _on_drone_ready(self, obj, options):
+        self._sync_connections_to_storage()
+        if options.get("control"):
+            self.command_panel.select_object(obj)
+            self._show_panel("command")
+        if options.get("follow"):
+            self.focus_object(obj)
 
     def focus_object(self, obj):
         """Lock the camera onto ``obj`` and keep the settings dropdown in sync."""

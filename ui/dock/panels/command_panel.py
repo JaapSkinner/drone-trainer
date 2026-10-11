@@ -27,6 +27,7 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from models import frames
 from services.control_service import ControlService
 from services.input_service import InputType
+from ui.widgets.drone_status import DroneStatusWidget
 
 
 class CommandPanel(QWidget):
@@ -40,6 +41,7 @@ class CommandPanel(QWidget):
     set_home_requested = pyqtSignal(tuple)  # Emits (x, y, height)
     ghost_mode_changed = pyqtSignal(bool)
     controlled_object_changed = pyqtSignal(object)  # Emits SceneObject
+    drone_setup_requested = pyqtSignal(object)  # object to set up, or None to add a new drone
     joystick_control_enabled = pyqtSignal(bool)  # Emits whether joystick control is active
     input_type_changed = pyqtSignal(object)  # Emits InputType for joystick settings
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity value
@@ -55,9 +57,12 @@ class CommandPanel(QWidget):
     MODE_TARGET = 2
     MODE_JOYSTICK = 3
     
-    def __init__(self, parent=None, object_service=None, control_service=None):
+    def __init__(self, parent=None, object_service=None, control_service=None,
+                 motion_capture_service=None, mavlink_service=None):
         super().__init__(parent)
         self.object_service = object_service
+        self.motion_capture_service = motion_capture_service
+        self.mavlink_service = mavlink_service
         self.control = control_service or ControlService(object_service, parent=self)
         self.control.setpoints_changed.connect(self._on_setpoints_changed)
         self.home_position = (0.0, 0.0)  # Just X, Y - height is separate
@@ -72,6 +77,8 @@ class CommandPanel(QWidget):
         self.current_mode = self.MODE_HOME
         
         self.init_ui()
+        if object_service is not None:
+            object_service.controlled_object_changed.connect(self._on_controlled_object_changed)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -181,7 +188,7 @@ class CommandPanel(QWidget):
         return group
     
     def _create_object_selection(self):
-        """Create the controlled object selection dropdown."""
+        """Create the controlled object selection dropdown and its readiness checklist."""
         group = QGroupBox("Controlled Object")
         layout = QVBoxLayout(group)
         
@@ -190,8 +197,43 @@ class CommandPanel(QWidget):
         layout.addWidget(self.object_combo)
         
         # Note: Dropdown will be populated after UI is fully constructed via refresh_object_list()
+
+        # Is it tracked / connected / streaming? With a button into the drone setup.
+        self.drone_status = DroneStatusWidget(self.motion_capture_service, self.mavlink_service)
+        self.drone_status.setup_requested.connect(self.drone_setup_requested)
+        layout.addWidget(self.drone_status)
         
         return group
+
+    @staticmethod
+    def _is_drone(obj) -> bool:
+        return bool(obj.tracked or obj.mavlink_config.enabled)
+
+    @staticmethod
+    def _object_label(obj) -> str:
+        parts = []
+        if obj.tracked and obj.tracking_id:
+            parts.append(f"tracked: {obj.tracking_id}")
+        if obj.mavlink_config.enabled and obj.mavlink_config.linked_connection_name:
+            parts.append(f"vehicle: {obj.mavlink_config.linked_connection_name}")
+        return f"{obj.name}  ({' · '.join(parts)})" if parts else obj.name
+
+    def select_object(self, obj):
+        """Make ``obj`` the controlled object (selects it in the dropdown)."""
+        self.refresh_object_list()
+        index = next((i for i in range(self.object_combo.count()) if self.object_combo.itemData(i) is obj), -1)
+        if index >= 0:
+            self.object_combo.setCurrentIndex(index)
+
+    @pyqtSlot(object)
+    def _on_controlled_object_changed(self, obj):
+        """Keep the dropdown in step when something else changes the controlled object."""
+        index = next((i for i in range(self.object_combo.count()) if self.object_combo.itemData(i) is obj), 0)
+        if index != self.object_combo.currentIndex():
+            self.object_combo.blockSignals(True)
+            self.object_combo.setCurrentIndex(index)
+            self.object_combo.blockSignals(False)
+        self.drone_status.set_object(obj)
     
     def _create_ghost_mode_section(self):
         """Create the ghost mode toggle and send position button."""
@@ -807,6 +849,7 @@ class CommandPanel(QWidget):
     def _on_object_selected(self, index):
         """Handle controlled object selection."""
         obj = self.object_combo.itemData(index)
+        self.drone_status.set_object(obj)
         if obj is None:
             # "— None —" selected — clear controlled object and disable input
             if self.object_service:
@@ -1027,11 +1070,10 @@ class CommandPanel(QWidget):
         # First item is always the "no object" sentinel
         self.object_combo.addItem("— None —", None)
 
-        for obj in self.object_service.get_objects():
-            # Only include controllable objects, exclude debug/utility objects
-            is_controllable = getattr(obj, 'controllable', False)
-            if is_controllable:
-                self.object_combo.addItem(obj.name, obj)
+        controllable = [o for o in self.object_service.get_objects() if getattr(o, 'controllable', False)]
+        # Real drones (tracked or with a flight controller) first, labelled.
+        for obj in sorted(controllable, key=lambda o: not self._is_drone(o)):
+            self.object_combo.addItem(self._object_label(obj), obj)
 
         # Restore previous selection if still present; otherwise stay on None
         restored = False
@@ -1046,6 +1088,8 @@ class CommandPanel(QWidget):
 
         self.object_combo.blockSignals(False)
         
+        self.drone_status.set_object(self.object_combo.currentData())
+
         # Sync setpoints and update displays
         self._sync_setpoints_from_object()
         self._update_position_display()

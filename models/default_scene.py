@@ -6,14 +6,15 @@ from models.rect_prism import RectPrism
 
 
 def build_default_scene():
-    green_cube = RectPrism(name="Green Cube", colour=(0.0, 1.0, 0.0))
+    # The cubes are props (not controllable), so the Command panel only offers the quad.
+    green_cube = RectPrism(name="Green Cube", colour=(0.0, 1.0, 0.0), controllable=False)
     green_cube.set_pose((2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
-    blue_cube = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5))
+    blue_cube = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5), controllable=False)
     blue_cube.set_pose((0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0))
     return [
         Grid(name="Grid", colour=(0.68, 0.68, 0.68, 1.0)),
         Axes(name="Axes"),
-        RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0)),
+        RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0), controllable=False),
         green_cube,
         blue_cube,
         # The STL is in millimetres and 84 mm across; 0.004 shows it as a ~0.34 m quad.

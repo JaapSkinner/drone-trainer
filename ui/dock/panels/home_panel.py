@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton
 from PyQt5.QtGui import QPixmap, QFont, QCursor
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 import webbrowser
 from ui.style import load_stylesheet
 
 class HomePanel(QWidget):
     NavTag = "home"
+    add_drone_requested = pyqtSignal()
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -42,6 +43,16 @@ class HomePanel(QWidget):
         desc.setAlignment(Qt.AlignCenter)
         layout.addWidget(desc)
 
+        layout.addSpacing(12)
+
+        # Getting started: the one step most sessions begin with.
+        start_btn = QPushButton("Add a drone")
+        start_btn.setObjectName("addDroneBtn")
+        start_btn.setProperty("class", "home-panel-btn")
+        start_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        start_btn.setToolTip("Set up a drone step by step: model, tracking and flight controller")
+        start_btn.clicked.connect(lambda: self.add_drone_requested.emit())
+        layout.addWidget(start_btn)
         layout.addSpacing(12)
 
         # Load and apply custom stylesheet for this panel
