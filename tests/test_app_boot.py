@@ -101,6 +101,15 @@ class AppBootTests(unittest.TestCase):
             window.close()
             process_events_for(0.1)
 
+    def test_second_close_does_not_save_again(self):
+        window = self._boot()
+        window.close()
+        process_events_for(0.1)
+        scene_path = os.path.join(self._data_dir.name, "scene.json")
+        os.remove(scene_path)
+        window.close()  # e.g. QApplication.aboutToQuit after the user closed the window
+        self.assertFalse(os.path.exists(scene_path))
+
 
 if __name__ == "__main__":
     unittest.main()

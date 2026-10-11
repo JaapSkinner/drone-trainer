@@ -763,7 +763,12 @@ class MainWindow(QMainWindow):
         """Properly stop all services before closing the application.
 
         Persist settings and connections, stop threaded services and timers.
+        Runs once: the window can be closed again by QApplication.aboutToQuit.
         """
+        if getattr(self, "_shut_down", False):
+            event.accept()
+            return
+        self._shut_down = True
         # Persist latest connection state and some UI state
         try:
             if hasattr(self, 'storage_service') and hasattr(self, 'mavlink_service'):
