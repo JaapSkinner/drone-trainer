@@ -21,7 +21,7 @@ class SettingsPanelTests(unittest.TestCase):
         panel = SettingsPanel()
         self.assertTrue(hasattr(panel, "settings_groups"))
         titles = [self._clean_title(g.toggle_button.text()) for g in panel.settings_groups]
-        self.assertEqual(titles, ["Appearance", "Viewport", "MAVLink", "Import / Export"])
+        self.assertEqual(titles, ["Appearance", "Viewport", "MAVLink", "Live plots", "Import / Export"])
 
     def test_settings_panel_has_no_input_controls_section(self):
         panel = SettingsPanel()

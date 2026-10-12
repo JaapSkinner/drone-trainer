@@ -86,6 +86,8 @@ class AppSettings:
     object_mavlink_configs: dict = field(default_factory=dict)
     # MotionCaptureConfig.to_dict()
     motion_capture: dict = field(default_factory=dict)
+    # PlotStreamConfig.to_dict(): live plots to PlotJuggler
+    plot_stream: dict = field(default_factory=dict)
     # Trainer: pilot name shown in the navbar and on results
     pilot_name: str = ""
     # Trainer: {"game": last game key, "settings": {game key: {setting: value}}}

@@ -2,8 +2,9 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider,
                              QGroupBox, QFormLayout, QPushButton, QComboBox,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
                              QScrollArea, QHBoxLayout, QToolButton, QFrame, QSizePolicy)
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import QButtonGroup
+from models.plot_stream import DEFAULT_PORTS, PlotStreamConfig
 from models.structs import MavlinkGlobalSettings
 from ui import animation, theme
 
@@ -108,6 +109,8 @@ class SettingsPanel(QWidget):
     theme_changed = pyqtSignal(str)
     # Shadows and height lines under objects in the 3-D view
     ground_cues_changed = pyqtSignal(bool)
+    # Live plots (PlotJuggler streaming)
+    plot_stream_changed = pyqtSignal(object)   # PlotStreamConfig
 
     def __init__(self, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
@@ -155,6 +158,12 @@ class SettingsPanel(QWidget):
         mavlink_box.setContentWidget(self._create_section_widget(self._create_mavlink_settings_group()))
         layout.addWidget(mavlink_box)
         self.settings_groups.append(mavlink_box)
+
+        plots_box = CollapsibleBox("Live plots", icon_name="activity",
+                                   subtitle="Stream poses, setpoints and telemetry to PlotJuggler")
+        plots_box.setContentWidget(self._create_plot_stream_group())
+        layout.addWidget(plots_box)
+        self.settings_groups.append(plots_box)
 
         io_box = CollapsibleBox("Import / Export", icon_name="save", subtitle="Back up or share all settings")
         io_box.setContentWidget(self._create_section_widget(self._create_io_group()))
@@ -251,6 +260,141 @@ class SettingsPanel(QWidget):
         viewport_group.setLayout(viewport_layout)
         return viewport_group
     
+    # -- live plots ---------------------------------------------------------------
+
+    PLOT_SOURCES = (("objects", "Object poses", "Position (scene and NED) and attitude of every object"),
+                    ("setpoints", "Setpoints", "Commanded position and yaw, and the error to it"),
+                    ("motion_capture", "Motion capture subjects", "Raw subjects with rate and age"),
+                    ("mavlink", "MAVLink telemetry", "Attitude, local position, velocity, battery"))
+
+    def _create_plot_stream_group(self):
+        widget = QWidget()
+        column = QVBoxLayout(widget)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(10)
+        self._plot_updating = False
+
+        self.plot_enable_check = QCheckBox("Send live data to PlotJuggler")
+        self.plot_enable_check.toggled.connect(self._on_plot_settings_edited)
+        column.addWidget(self.plot_enable_check)
+
+        form = QFormLayout()
+        form.setVerticalSpacing(8)
+        transport_row = QHBoxLayout()
+        transport_row.setSpacing(0)
+        self.plot_transport_buttons = {}
+        self._plot_transport_group = QButtonGroup(widget)
+        for position, (key, text) in enumerate((("udp", "UDP"), ("websocket", "WebSocket"))):
+            button = theme.button(text)
+            button.setCheckable(True)
+            button.setProperty("segment", "first" if position == 0 else "last")
+            button.clicked.connect(lambda _checked=False, k=key: self._on_plot_transport_clicked(k))
+            self._plot_transport_group.addButton(button)
+            self.plot_transport_buttons[key] = button
+            transport_row.addWidget(button)
+        transport_row.addStretch()
+        form.addRow("Send over:", transport_row)
+
+        address_row = QHBoxLayout()
+        self.plot_host_edit = QLineEdit()
+        self.plot_host_edit.setPlaceholderText("127.0.0.1")
+        self.plot_host_edit.setToolTip("The PC running PlotJuggler (127.0.0.1 = this PC)")
+        self.plot_host_edit.editingFinished.connect(self._on_plot_settings_edited)
+        address_row.addWidget(self.plot_host_edit, 1)
+        self.plot_port_spin = QSpinBox()
+        self.plot_port_spin.setRange(1, 65535)
+        self.plot_port_spin.setKeyboardTracking(False)
+        self.plot_port_spin.valueChanged.connect(self._on_plot_settings_edited)
+        address_row.addWidget(self.plot_port_spin)
+        form.addRow("PlotJuggler at:", address_row)
+
+        self.plot_rate_spin = QSpinBox()
+        self.plot_rate_spin.setRange(1, 200)
+        self.plot_rate_spin.setSuffix(" Hz")
+        self.plot_rate_spin.setKeyboardTracking(False)
+        self.plot_rate_spin.valueChanged.connect(self._on_plot_settings_edited)
+        form.addRow("Rate:", self.plot_rate_spin)
+        column.addLayout(form)
+
+        column.addWidget(theme.section("Send"))
+        self.plot_source_checks = {}
+        for key, text, tooltip in self.PLOT_SOURCES:
+            check = QCheckBox(text)
+            check.setToolTip(tooltip)
+            check.toggled.connect(self._on_plot_settings_edited)
+            column.addWidget(check)
+            self.plot_source_checks[key] = check
+
+        self.plot_status = theme.StatusLine("Off", "off")
+        column.addWidget(self.plot_status)
+        self.plot_help = theme.label("", "hint", wrap=True)
+        self.plot_help.setTextFormat(Qt.RichText)
+        column.addWidget(self.plot_help)
+
+        self.set_plot_stream_config(PlotStreamConfig())
+        return widget
+
+    def plot_stream_config(self) -> PlotStreamConfig:
+        transport = next((k for k, b in self.plot_transport_buttons.items() if b.isChecked()), "udp")
+        return PlotStreamConfig(
+            enabled=self.plot_enable_check.isChecked(), transport=transport,
+            host=self.plot_host_edit.text().strip() or "127.0.0.1", port=self.plot_port_spin.value(),
+            rate_hz=float(self.plot_rate_spin.value()),
+            **{key: check.isChecked() for key, check in self.plot_source_checks.items()})
+
+    def set_plot_stream_config(self, config: PlotStreamConfig):
+        """Show ``config`` (doesn't emit plot_stream_changed)."""
+        self._plot_updating = True
+        try:
+            self.plot_enable_check.setChecked(config.enabled)
+            self.plot_transport_buttons.get(config.transport, self.plot_transport_buttons["udp"]).setChecked(True)
+            self.plot_host_edit.setText(config.host)
+            self.plot_port_spin.setValue(config.port)
+            self.plot_rate_spin.setValue(int(round(config.rate_hz)))
+            for key, check in self.plot_source_checks.items():
+                check.setChecked(bool(getattr(config, key)))
+        finally:
+            self._plot_updating = False
+        self._update_plot_help()
+
+    def _on_plot_transport_clicked(self, transport):
+        # Follow the PlotJuggler default port of the other server unless a custom one was set.
+        if self.plot_port_spin.value() in DEFAULT_PORTS.values():
+            self.plot_port_spin.blockSignals(True)
+            self.plot_port_spin.setValue(DEFAULT_PORTS[transport])
+            self.plot_port_spin.blockSignals(False)
+        self._on_plot_settings_edited()
+
+    def _on_plot_settings_edited(self, *_):
+        if self._plot_updating:
+            return
+        self._update_plot_help()
+        self.plot_stream_changed.emit(self.plot_stream_config())
+
+    def _update_plot_help(self):
+        config = self.plot_stream_config()
+        server = "WebSocket Server" if config.transport == "websocket" else "UDP Server"
+        self.plot_help.setText(
+            f"In PlotJuggler: <b>Streaming → {server}</b>, port <b>{config.port}</b>, protocol <b>JSON</b>. "
+            f"Tick <i>use field as timestamp</i> and enter <b>timestamp</b>, then <b>Start</b>. Series appear "
+            f"as <i>/objects/&lt;name&gt;/position/x</i>, <i>/mavlink/&lt;name&gt;/attitude_deg/roll</i> …")
+
+    @pyqtSlot(object)
+    def show_plot_stream_stats(self, stats):
+        """Live status from PlotStreamService.stats_changed."""
+        config = self.plot_stream_config()
+        if not config.enabled or stats.state == "off":
+            self.plot_status.set_state("off", "Off")
+        elif stats.state == "connecting":
+            self.plot_status.set_state("warn", f"Waiting for PlotJuggler's WebSocket Server at {config.address}")
+        elif stats.state == "error":
+            self.plot_status.set_state("bad", stats.message or "Can't send")
+        elif config.transport == "websocket":
+            self.plot_status.set_state("ok", f"Connected · {stats.rate_hz:.0f} msg/s")
+        else:
+            self.plot_status.set_state("ok", f"Sending to {config.address} · {stats.rate_hz:.0f} msg/s, "
+                                             f"{stats.bytes_per_s / 1024:.1f} KB/s")
+
     def _create_io_group(self):
         """Create a small group containing Import / Export buttons."""
         group = QGroupBox("Import / Export")

@@ -30,6 +30,9 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 - **Motion capture calibration**: align the mocap origin/axes with the lab by hand or by moving an
   object around (see below).
 
+- **Live plots**: stream object poses, setpoints, motion capture and MAVLink telemetry to PlotJuggler
+  (UDP or WebSocket, JSON) — Settings → Live plots. See [docs/LIVE_PLOTS.md](docs/LIVE_PLOTS.md).
+
 - **Look and feel**: a native Qt desktop UI with light and dark themes (Settings → Appearance), the
   Inter typeface, Lucide icons and short animations (wizard steps, panel switches, confirmations).
 
@@ -135,6 +138,7 @@ main window. CI runs the same command on every pull request.
 | Script | Purpose |
 |---|---|
 | `scripts/fake_vicon.py` | Synthetic Vicon UDP stream (circling quads + a wand) |
+| `scripts/fake_plotjuggler.py` | Stand-in PlotJuggler UDP/WebSocket server: prints the series it receives |
 | `scripts/fake_px4.py` | Stand-in PX4: sends heartbeats, reports the motion capture it receives |
 | `scripts/render_snapshot.py` | Render the scene headlessly to a PNG; `--check` runs the renderer pixel tests |
 | `scripts/bench_render.py` | Frame-time benchmark with many moving meshes (renderer only) |

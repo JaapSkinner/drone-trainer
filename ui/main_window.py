@@ -30,6 +30,8 @@ from services.storage_service import StorageService
 from services.motion_capture_service import MotionCaptureService
 from services.control_service import ControlService
 from services.trainer_service import TrainerService
+from services.plot_stream_service import PlotStreamService
+from models.plot_stream import PlotStreamConfig
 
 from ui.gl_widget.gl_widget import GLWidget
 from ui.gl_widget.setpoint_overlay import SetpointOverlay
@@ -222,6 +224,16 @@ class MainWindow(QMainWindow):
         self.input_service.start()
         self.mavlink_service.start()
         self.motion_capture_service.start()
+
+        # Live plots: stream poses, setpoints and telemetry to PlotJuggler.
+        self.plot_stream_service = PlotStreamService(self.object_service, self.control_service,
+                                                     self.motion_capture_service, self.mavlink_service)
+        plot_config = PlotStreamConfig.from_dict(saved.plot_stream)
+        self.plot_stream_service.set_config(plot_config)
+        self.settings_panel.set_plot_stream_config(plot_config)
+        self.settings_panel.plot_stream_changed.connect(self._on_plot_stream_changed)
+        self.plot_stream_service.stats_changed.connect(self.settings_panel.show_plot_stream_stats)
+        self.plot_stream_service.start()
         
         # Apply persisted per-object MAVLink configs
         try:
@@ -765,6 +777,18 @@ class MainWindow(QMainWindow):
         settings.trainer = prefs
         self.storage_service.update_settings(settings)
 
+    @pyqtSlot(object)
+    def _on_plot_stream_changed(self, config):
+        """Settings → Live plots edited: apply and remember."""
+        was_enabled = self.plot_stream_service.get_config().enabled
+        self.plot_stream_service.set_config(config)
+        settings = self.storage_service.get_settings()
+        settings.plot_stream = config.to_dict()
+        self.storage_service.update_settings(settings)
+        if config.enabled and not was_enabled:
+            toast(f"Live plots on — start PlotJuggler's {'WebSocket' if config.transport == 'websocket' else 'UDP'} "
+                  f"Server on port {config.port}")
+
     @pyqtSlot(bool)
     def _on_ground_cues_changed(self, enabled: bool):
         self.glWidget.ground_overlay.enabled = enabled
@@ -962,8 +986,8 @@ class MainWindow(QMainWindow):
         # Stop services to ensure timers are stopped in their own threads
         # Include storage_service and object_service so their QThreads are
         # cleanly stopped before the app tears down Qt objects.
-        for svc_name in ('status_service', 'input_service', 'mavlink_service', 'motion_capture_service',
-                         'storage_service', 'object_service'):
+        for svc_name in ('status_service', 'input_service', 'plot_stream_service', 'mavlink_service',
+                         'motion_capture_service', 'storage_service', 'object_service'):
             svc = getattr(self, svc_name, None)
             if svc is not None:
                 try:
