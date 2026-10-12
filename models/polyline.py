@@ -1,8 +1,6 @@
 import numpy as np
-from OpenGL.GL import (GL_CURRENT_BIT, GL_LIGHTING, GL_LINE_BIT, glColor4f, glDisable, glLineWidth,
-                       glPopAttrib, glPushAttrib)
 
-from models.gl_buffers import draw_lines
+from models.render_items import DrawItem, Lines
 from models.scene_object import SceneObject
 
 
@@ -30,12 +28,11 @@ class Polyline(SceneObject):
         self.segments = np.asarray(segments if segments is not None else np.zeros((0, 3)), dtype=np.float32)
         self.width = float(width)
 
-    def _draw(self):
-        glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
-        try:
-            glDisable(GL_LIGHTING)
-            glLineWidth(self.width)
-            glColor4f(*self.effective_colour())
-            draw_lines(self.segments)
-        finally:
-            glPopAttrib()
+    def local_items(self):
+        if len(self.segments) == 0:
+            return []
+        # Usually rebuilt every frame by an overlay, so drawn from memory rather than uploaded.
+        if getattr(self, "_lines_source", None) is not self.segments:
+            self._lines = Lines(self.segments, name=self.name, static=False)
+            self._lines_source = self.segments
+        return [DrawItem(self._lines, colour=self.effective_colour(), lit=False, width=self.width)]

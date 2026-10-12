@@ -1,14 +1,10 @@
-from OpenGL.GL import (GL_BACK, GL_CULL_FACE, GL_CURRENT_BIT, GL_LIGHTING, GL_LINE_BIT,
-                       GL_POLYGON_OFFSET_FILL, glColor4f, glCullFace, glDisable, glEnable,
-                       glLineWidth, glPolygonOffset, glPopAttrib, glPushAttrib, glScalef)
-
 from models import mesh_data
-from models.gl_buffers import MeshBuffer, draw_lines
+from models.render_items import DrawItem, Lines, Mesh, scale_matrix
 from models.scene_object import SceneObject
 
-# Shared geometry for every box (tiny, so kept in client memory).
-_CUBE = MeshBuffer(mesh_data.unit_cube(), use_vbo=False)
-_CUBE_EDGES = mesh_data.unit_cube_edges()
+# Unit cube (and its 12 edges) shared by every box and gate.
+_CUBE = Mesh.from_mesh_data(mesh_data.unit_cube(), "cube")
+_CUBE_EDGES = Lines(mesh_data.unit_cube_edges(), name="cube edges")
 
 
 class RectPrism(SceneObject):
@@ -34,27 +30,15 @@ class RectPrism(SceneObject):
     def bounding_radius(self) -> float:
         return 0.5 * float(sum(d * d for d in self.dimensions)) ** 0.5
 
-    def _draw(self):
-        glScalef(*self.dimensions)
-        glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
-        try:
-            # Push the faces back slightly so the outline never z-fights with them.
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(1.0, 1.0)
-            if self.is_translucent():
-                # One see-through layer: hide the far faces of the box.
-                glEnable(GL_CULL_FACE)
-                glCullFace(GL_BACK)
-            glColor4f(*self.effective_colour())
-            _CUBE.draw()
-            glDisable(GL_CULL_FACE)
-            glDisable(GL_POLYGON_OFFSET_FILL)
-
-            if self.edge_colour is not None:
-                glDisable(GL_LIGHTING)
-                glLineWidth(self.edge_width)
-                r, g, b, a = self.edge_colour
-                glColor4f(r, g, b, a * self.draw_alpha_scale)
-                draw_lines(_CUBE_EDGES)
-        finally:
-            glPopAttrib()
+    def local_items(self):
+        size = scale_matrix(*self.dimensions)
+        colour = self.effective_colour()
+        # Faces are pushed back slightly so the outline never z-fights with them; a translucent
+        # box hides its far faces so it reads as one see-through layer.
+        items = [DrawItem(_CUBE, size, colour, lit=self.shaded, cull=colour[3] < 1.0,
+                          offset=self.edge_colour is not None)]
+        if self.edge_colour is not None:
+            r, g, b, a = self.edge_colour
+            items.append(DrawItem(_CUBE_EDGES, size.copy(), (r, g, b, a * self.draw_alpha_scale),
+                                  lit=False, width=self.edge_width))
+        return items

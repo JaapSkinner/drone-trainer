@@ -1,7 +1,6 @@
 import numpy as np
-from OpenGL.GL import GL_CURRENT_BIT, GL_LINE_BIT, glColor4f, glLineWidth, glPopAttrib, glPushAttrib
 
-from models.gl_buffers import draw_lines
+from models.render_items import DrawItem, Lines
 from models.scene_object import SceneObject
 
 
@@ -22,7 +21,7 @@ class Grid(SceneObject):
                          colour=colour if colour is not None else DEFAULT_COLOUR)
         self.half_extent = int(half_extent)
         self.spacing = float(spacing)
-        self._lines = self._build_lines()
+        self._lines = Lines(self._build_lines(), name="grid")
 
     def _build_lines(self) -> np.ndarray:
         n, s = self.half_extent, self.spacing
@@ -32,11 +31,5 @@ class Grid(SceneObject):
             lines += [(-n * s, 0.0, i * s), (n * s, 0.0, i * s)]
         return np.array(lines, dtype=np.float32)
 
-    def _draw(self):
-        glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT)
-        try:
-            glLineWidth(1.0)
-            glColor4f(*self.effective_colour())
-            draw_lines(self._lines)
-        finally:
-            glPopAttrib()
+    def local_items(self):
+        return [DrawItem(self._lines, colour=self.effective_colour(), lit=False, width=1.0)]

@@ -1,10 +1,9 @@
-from OpenGL.GL import GL_BACK, GL_CULL_FACE, glColor4f, glCullFace, glEnable, glScalef
-
 from models import mesh_data
-from models.gl_buffers import MeshBuffer
+from models.render_items import DrawItem, Mesh, scale_matrix
 from models.scene_object import SceneObject
 
-_SPHERE = MeshBuffer(mesh_data.uv_sphere(), use_vbo=False)
+# Unit-diameter sphere shared by every Sphere (setpoints, markers, zones…).
+_SPHERE = Mesh.from_mesh_data(mesh_data.uv_sphere(), "sphere")
 
 
 class Sphere(SceneObject):
@@ -17,10 +16,7 @@ class Sphere(SceneObject):
     def bounding_radius(self) -> float:
         return self.radius
 
-    def _draw(self):
-        d = 2.0 * self.radius
-        glScalef(d, d, d)
-        glEnable(GL_CULL_FACE)  # closed surface; also keeps translucent spheres single-layer
-        glCullFace(GL_BACK)
-        glColor4f(*self.effective_colour())
-        _SPHERE.draw()
+    def local_items(self):
+        # Closed surface: culling also keeps a translucent sphere to a single layer.
+        return [DrawItem(_SPHERE, scale_matrix(2.0 * self.radius), self.effective_colour(),
+                         lit=self.shaded, cull=True)]

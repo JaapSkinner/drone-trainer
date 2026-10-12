@@ -1,6 +1,7 @@
 import time
 
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QSurfaceFormat
 from PyQt5.QtWidgets import QLabel, QOpenGLWidget
 
 from models import grid
@@ -14,12 +15,17 @@ class GLWidget(QOpenGLWidget):
     # Base zoom speed factor for mouse wheel zoom
     BASE_ZOOM_SPEED = 0.001
     HUD_REFRESH_MS = 250
+    MSAA_SAMPLES = 4   # multisample antialiasing: smooth edges and lines
 
     # Signal emitted when camera is reset (for UI synchronization)
     camera_reset = pyqtSignal()
 
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
+        surface = QSurfaceFormat(self.format())
+        surface.setSamples(self.MSAA_SAMPLES)
+        surface.setDepthBufferSize(24)
+        self.setFormat(surface)
         self.setMinimumSize(800, 600)
         self.setFocusPolicy(Qt.StrongFocus)  # Enable keyboard focus
 
@@ -80,6 +86,7 @@ class GLWidget(QOpenGLWidget):
                       angle_y=self.camera_angle_y, target=target)
 
     def initializeGL(self):
+        # Also runs again if Qt recreates the context (e.g. the widget moves to another window).
         self.renderer.initialize()
 
     @pyqtSlot(object)

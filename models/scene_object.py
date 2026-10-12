@@ -1,10 +1,10 @@
-from OpenGL.GL import (GL_ENABLE_BIT, GL_LIGHTING, glDisable, glMultMatrixf,
-                       glPopAttrib, glPopMatrix, glPushAttrib, glPushMatrix)
 import time
+from typing import List
 
 import numpy as np
 from abc import ABC, abstractmethod
 from models import frames
+from models.render_items import IDENTITY, DrawItem, pose_matrix
 from models.structs import MavlinkObjectConfig
 
 
@@ -172,25 +172,33 @@ class SceneObject(ABC):
         """
         return self.mavlink_config
 
-    @abstractmethod
-    def _draw(self):
-        """Draw the object in its own (local) coordinates.
+    # -- rendering --------------------------------------------------------------
 
-        ``draw()`` has already applied the object's pose, so subclasses only
-        apply their own scale/offsets.
+    @abstractmethod
+    def local_items(self) -> List[DrawItem]:
+        """What to draw, in the object's own (local) coordinates.
+
+        Return fresh :class:`DrawItem` s each call (the renderer places them with
+        the pose). Use ``effective_colour()`` so fades and highlights apply, and
+        shared, static geometry so it is uploaded to the GPU once.
         """
 
-    def draw(self):
-        glPushMatrix()
-        glPushAttrib(GL_ENABLE_BIT)
-        try:
-            glMultMatrixf(frames.gl_model_matrix(self.pose))
-            if not self.shaded:
-                glDisable(GL_LIGHTING)
-            self._draw()
-        finally:
-            glPopAttrib()
-            glPopMatrix()
+    def model_matrix(self) -> np.ndarray:
+        """Local → scene transform for the current pose (cached until the pose changes)."""
+        pose = tuple(self.pose)
+        if getattr(self, "_matrix_pose", None) != pose:
+            self._matrix = pose_matrix(pose)
+            self._matrix_pose = pose
+        return self._matrix
+
+    def draw_items(self) -> List[DrawItem]:
+        """This frame's draw items in the scene frame."""
+        items = self.local_items()
+        if items:
+            base = self.model_matrix()
+            for item in items:
+                item.model = base if item.model is IDENTITY else base @ item.model
+        return items
 
     def release_gl(self):
         """Free GPU resources (called when the object leaves the scene)."""

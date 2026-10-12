@@ -134,7 +134,8 @@ main window. CI runs the same command on every pull request.
 | `scripts/fake_vicon.py` | Synthetic Vicon UDP stream (circling quads + a wand) |
 | `scripts/fake_px4.py` | Stand-in PX4: sends heartbeats, reports the motion capture it receives |
 | `scripts/render_snapshot.py` | Render the scene headlessly to a PNG; `--check` runs the renderer pixel tests |
-| `scripts/bench_render.py` | Frame-time benchmark with many moving meshes |
+| `scripts/bench_render.py` | Frame-time benchmark with many moving meshes (renderer only) |
+| `scripts/bench_app.py` | Frame rate of the whole app with N tracked meshes and live (fake) Vicon; `--profile` shows where GUI time goes |
 | `scripts/build_mavlink.py` | Build the DTRG MAVLink dialect (`make mavlink`) |
 
 ## Architecture in brief

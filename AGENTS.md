@@ -36,9 +36,15 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
 - **Training games** live in `services/trainer/games.py`: subclass `TrainingGame`, declare `SETTINGS`
   (the Trainer panel builds its form from them) and add it to `GAMES`. Games only read the pilot
   object's pose; keep them tick-driven with explicit times so they can be unit-tested.
-- **Rendering**: subclasses of `SceneObject` draw in local coordinates in `_draw()` (the pose matrix is
-  already applied). Upload geometry once (`models/gl_buffers.MeshBuffer`); never rebuild GPU data per
-  frame. Check visual changes with `scripts/render_snapshot.py`.
+- **Rendering**: scene objects never call OpenGL. A `SceneObject` subclass implements `local_items()`,
+  returning `models/render_items.DrawItem`s (geometry, a local 4×4 matrix, colour, lit/cull flags) in its
+  own coordinates; the pose is applied for it. Geometry (`Mesh`, `Lines`) is immutable and shared: build it
+  once at module level or in `__init__` (never per frame), mark per-frame lines `static=False`, and load
+  meshes through `cad_mesh.load_display_mesh` so drones from one file share a GPU copy. All GL lives in
+  `ui/gl_widget/scene_renderer.py` + `gpu.py` (GLSL 1.20 shaders, so OpenGL 2.1 is enough). Check pixels
+  with `scripts/render_snapshot.py --check`, speed with `scripts/bench_render.py` (renderer) and
+  `scripts/bench_app.py` (whole app with live mocap). Code that runs per mocap sample (`models/frames.py`,
+  calibration) uses plain float maths: numpy's per-call overhead dominates on 3- and 4-vectors.
 - Don't swallow exceptions with bare `except: pass`. Log them (`logger.exception(...)`) or let them
   propagate.
 

@@ -49,6 +49,10 @@ IDENTITY_POSE: Pose = (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
 
 # ---------------------------------------------------------------------------
 # Quaternion basics — all quaternions are (w, x, y, z)
+#
+# These run for every motion capture sample (thousands a second with several
+# subjects), so they use plain float arithmetic: numpy's per-call overhead is
+# far larger than the work on 3- and 4-element vectors.
 # ---------------------------------------------------------------------------
 
 def quat_normalize(q: Sequence[float]) -> Quat:
@@ -77,13 +81,12 @@ def quat_conjugate(q: Sequence[float]) -> Quat:
 
 
 def quat_from_axis_angle(axis: Sequence[float], angle_rad: float) -> Quat:
-    ax = np.asarray(axis, dtype=float)
-    n = np.linalg.norm(ax)
+    x, y, z = (float(c) for c in axis)
+    n = math.sqrt(x * x + y * y + z * z)
     if n < 1e-12:
         return IDENTITY_QUAT
-    ax = ax / n
-    s = math.sin(angle_rad / 2.0)
-    return (math.cos(angle_rad / 2.0), ax[0] * s, ax[1] * s, ax[2] * s)
+    s = math.sin(angle_rad / 2.0) / n
+    return (math.cos(angle_rad / 2.0), x * s, y * s, z * s)
 
 
 def quat_to_matrix(q: Sequence[float]) -> np.ndarray:
@@ -120,14 +123,18 @@ def rotate_vector(q: Sequence[float], v: Sequence[float]) -> Vec3:
     return tuple(float(c) for c in quat_to_matrix(q) @ np.asarray(v, dtype=float))
 
 
+def _dot4(a: Sequence[float], b: Sequence[float]) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+
+
 def quats_equivalent(a: Sequence[float], b: Sequence[float], tol: float = 1e-6) -> bool:
     """True if two quaternions represent the same rotation (q and -q are equal)."""
-    return abs(abs(float(np.dot(quat_normalize(a), quat_normalize(b)))) - 1.0) < tol
+    return abs(abs(_dot4(quat_normalize(a), quat_normalize(b))) - 1.0) < tol
 
 
 def quat_angle(a: Sequence[float], b: Sequence[float]) -> float:
     """Angle (radians, 0..π) of the rotation taking ``a`` to ``b``."""
-    d = abs(float(np.dot(quat_normalize(a), quat_normalize(b))))
+    d = abs(_dot4(quat_normalize(a), quat_normalize(b)))
     return 2.0 * math.acos(min(1.0, d))
 
 
@@ -194,9 +201,11 @@ class FrameTransform:
             raise ValueError("Frame transforms must be proper rotations (det = +1)")
         self.scale = float(scale)
         self._q = matrix_to_quat(self.rotation)
+        self._rows = tuple(tuple(float(v) * self.scale for v in row) for row in self.rotation)
 
     def position(self, p: Sequence[float]) -> Vec3:
-        return tuple(float(c) for c in self.rotation @ (np.asarray(p, dtype=float) * self.scale))
+        x, y, z = (float(c) for c in p)
+        return tuple(r0 * x + r1 * y + r2 * z for r0, r1, r2 in self._rows)
 
     def orientation(self, q: Sequence[float]) -> Quat:
         return quat_normalize(quat_multiply(self._q, quat_multiply(q, quat_conjugate(self._q))))

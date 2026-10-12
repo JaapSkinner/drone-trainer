@@ -1,6 +1,10 @@
 import os
 import sys
 import logging
+
+# Before anything imports OpenGL.GL: no per-call GL error checks in the app (see the module).
+from ui.gl_widget import pyopengl_options
+pyopengl_options.configure()
 from PyQt5.QtWidgets import QApplication, QSplashScreen
 from PyQt5.QtCore import Qt
 from services.app_logging import configure_logging
@@ -15,6 +19,8 @@ def main():
     # Crisp text and icons on high-DPI screens (must be set before the QApplication).
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # The viewport talks to desktop OpenGL through PyOpenGL: don't let Qt on Windows pick ANGLE (GLES).
+    QApplication.setAttribute(Qt.AA_UseDesktopOpenGL, True)
     app = QApplication(sys.argv)
     app.setApplicationName("Drone Trainer")
     app.setWindowIcon(app_icon())

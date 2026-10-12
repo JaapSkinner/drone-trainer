@@ -4,10 +4,10 @@ The opening lies in the gate's local XY plane (local Y is up) and you pass
 through along local ±Z. The pose is the centre of the opening.
 """
 import numpy as np
-from OpenGL.GL import GL_CURRENT_BIT, glColor4f, glPopAttrib, glPopMatrix, glPushAttrib, glPushMatrix, glScalef, glTranslatef
 
 from models import frames
 from models.rect_prism import _CUBE
+from models.render_items import DrawItem, translate_scale_matrix
 from models.scene_object import SceneObject
 
 
@@ -34,18 +34,10 @@ class GateFrame(SceneObject):
                 ((-(w + b) / 2, 0.0, 0.0), (b, h, b)),
                 (((w + b) / 2, 0.0, 0.0), (b, h, b))]
 
-    def _draw(self):
-        glPushAttrib(GL_CURRENT_BIT)
-        try:
-            glColor4f(*self.effective_colour())
-            for centre, size in self._bars():
-                glPushMatrix()
-                glTranslatef(*centre)
-                glScalef(*size)
-                _CUBE.draw()
-                glPopMatrix()
-        finally:
-            glPopAttrib()
+    def local_items(self):
+        colour = self.effective_colour()
+        return [DrawItem(_CUBE, translate_scale_matrix(centre, size), colour, lit=self.shaded)
+                for centre, size in self._bars()]
 
 
 def gate_crossed(gate, start, end, margin=0.0) -> bool:

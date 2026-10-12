@@ -47,16 +47,20 @@ class MocapCalibration:
         self.rotation = frames.quat_normalize(self.rotation)
         self.translation = tuple(float(v) for v in self.translation)
         self._matrix = frames.quat_to_matrix(self.rotation)
+        # Applied to every mocap sample, so precompute (calibrations aren't changed in place).
+        self._rows = tuple(tuple(float(v) for v in row) for row in self._matrix)
+        self._identity = (frames.quats_equivalent(self.rotation, frames.IDENTITY_QUAT, tol=1e-12)
+                          and not any(abs(v) > 1e-12 for v in self.translation))
 
     # -- applying ----------------------------------------------------------------
 
     @property
     def is_identity(self) -> bool:
-        return (frames.quats_equivalent(self.rotation, frames.IDENTITY_QUAT, tol=1e-12)
-                and not any(abs(v) > 1e-12 for v in self.translation))
+        return self._identity
 
     def apply_point(self, p: Sequence[float]) -> Vec3:
-        return tuple(float(v) for v in self._matrix @ np.asarray(p, dtype=float) + self.translation)
+        x, y, z = (float(c) for c in p)
+        return tuple(r0 * x + r1 * y + r2 * z + t for (r0, r1, r2), t in zip(self._rows, self.translation))
 
     def apply(self, pose: Sequence[float]) -> tuple:
         """Calibrate a scene pose (x, y, z, qw, qx, qy, qz)."""

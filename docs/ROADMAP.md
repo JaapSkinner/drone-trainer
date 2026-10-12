@@ -280,6 +280,19 @@ Sizes: **S** ≈ a focused PR, **M** ≈ a solid day for an agent, **L** ≈ spl
 - Replace `glutSolidCube` with own geometry, `glutBitmapCharacter` debug text with a QPainter overlay
   on the GL widget; remove `glutInit` from `main.py`.
 
+#### WP5.3 Renderer v2 (draw items + shaders) — done on `claude/rendering-engine`
+- Scene objects describe themselves as `DrawItem`s (`models/render_items.py`) instead of calling GL;
+  the renderer draws them with GLSL 1.20 programs (per-pixel key + fill + hemisphere light), batches
+  meshes by geometry, shares one GPU copy per mesh file, frees buffers when geometry is collected, and
+  draws the background gradient in a shader. 4× multisampling in the viewport. Per-mocap-sample maths
+  moved off numpy (decode + calibrate 23.5 → 5.5 µs). PyOpenGL error checks off in the app.
+- **Measured** (`scripts/bench_app.py`, GTX 1060 via WSL D3D12, 1280×720, tracked 14k-triangle
+  quads at 100 Hz): 20 drones 4.3 → 1.9 ms/frame, 40 drones 5.2 → 2.5 ms/frame. On `main` (old
+  immediate-mode meshes) moving meshes ran at ~3 FPS.
+- **Next ideas:** level of detail for meshes far from the camera, instancing for many identical
+  drones, ground shadows / altitude lines under drones (helps judge height), picking objects with
+  the mouse.
+
 ### Phase 6 — Trainer & Leaderboard (#6) — needs Section 2 answers; after Phases 3–4
 
 #### WP6.1 Training game framework + Trainer panel — M

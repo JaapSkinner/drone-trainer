@@ -67,20 +67,42 @@ def run_check(ctx) -> int:
     if not (0.3 * red_top[0] < r < 0.7 * red_top[0] and b > 80 and g < 60):
         failures.append(f"translucent overlap is {r, g, b}; unblended red was {tuple(red_top)}")
 
-    # 4. Moving a mesh doesn't create GL buffers.
-    from models import gl_buffers
-    before = gl_buffers.live_buffer_count()
+    # 4. Moving a mesh doesn't create GL buffers, and a second mesh from the same file shares one.
+    buffers = renderer.buffers
+    before = buffers.live_count
+    twin = CadMesh("cad_files/basic_quadcopter.stl", scale=0.05, colour=(0.0, 0.8, 0.0))
     for i in range(30):
         mesh.set_pose((-2.5 + 0.01 * i, 0.0, 2.5, 1.0, 0.0, 0.0, 0.0))
-        renderer.render([mesh], camera, w, h, viewport=(0, 0, w, h))
-    if gl_buffers.live_buffer_count() != before:
-        failures.append(f"buffer count changed {before} -> {gl_buffers.live_buffer_count()}")
+        twin.set_pose((2.5, 0.0, -2.5 + 0.01 * i, 1.0, 0.0, 0.0, 0.0))
+        renderer.render([mesh, twin], camera, w, h, viewport=(0, 0, w, h))
+    if buffers.live_count != before:
+        failures.append(f"buffer count changed {before} -> {buffers.live_count}")
 
-    # 5. Releasing frees the buffer at the next frame.
+    # 5. The buffer is freed at the next frame once no object uses the mesh any more.
     mesh.release_gl()
+    renderer.render([twin], camera, w, h, viewport=(0, 0, w, h))
+    if buffers.live_count != before:
+        failures.append(f"buffer freed while another object still uses it: {buffers.live_count} live")
+    twin.release_gl()
     renderer.render([], camera, w, h, viewport=(0, 0, w, h))
-    if gl_buffers.live_buffer_count() != before - 1:
-        failures.append(f"buffer not freed: {gl_buffers.live_buffer_count()} live")
+    if buffers.live_count != before - 1:
+        failures.append(f"buffer not freed: {buffers.live_count} live")
+
+    # 6. Lines, per-vertex colours, translucent spheres and overlays all draw without GL errors.
+    from OpenGL.GL import GL_NO_ERROR, glGetError
+    from models.default_scene import build_default_scene
+    from models.polyline import Polyline
+    from models.sphere import Sphere
+    ghost = Sphere(radius=0.3, colour=(1.0, 0.0, 0.0, 0.4))
+    renderer.background_gradient = ((0.9, 0.9, 0.95, 1.0), (0.7, 0.7, 0.75, 1.0))
+    renderer.render(build_default_scene() + [ghost], camera, w, h, viewport=(0, 0, w, h),
+                    overlays=[Polyline([(0, 0, 0), (1, 1, 1)], (0, 0, 0, 1), width=2.0)])
+    error = glGetError()
+    if error != GL_NO_ERROR:
+        failures.append(f"GL error 0x{error:x} drawing the default scene")
+    corner = tuple(int(c) for c in ctx.read_rgb()[2, 2])
+    if not (175 <= corner[0] <= 235 and corner[2] >= corner[0]):
+        failures.append(f"background gradient corner is {corner}")
 
     for f in failures:
         print("FAIL:", f)

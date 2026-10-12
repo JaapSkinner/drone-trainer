@@ -178,6 +178,3 @@ class ObjectService(ServiceBase):
         self.status_changed.emit(ServiceLevel.RUNNING.value, "Controlled object cleared.")
         self.controlled_object_changed.emit(None)
 
-    def draw_objects(self):
-        for obj in self.objects:
-            obj.draw()
