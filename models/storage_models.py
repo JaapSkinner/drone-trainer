@@ -78,6 +78,8 @@ class AppSettings:
     # Additional UI preferences
     window_maximized: bool = False
     ui_theme: str = "default"
+    # 3-D view: shadows and height lines under objects
+    ground_shadows: bool = True
     font_point_size: int = 11
     last_active_connection: str = ""
     # Per-object minimal MAVLink configs: { object_name: {enabled: bool, linked_connection_name: str, system_id: int, send_mocap: bool} }

@@ -44,6 +44,7 @@ class CommandPanel(QWidget):
     ghost_mode_changed = pyqtSignal(bool)
     controlled_object_changed = pyqtSignal(object)  # Emits SceneObject
     drone_setup_requested = pyqtSignal(object)  # object to set up, or None to add a new drone
+    fly_requested = pyqtSignal(object)  # "Fly selected": MainWindow switches control (asks first if needed)
     joystick_control_enabled = pyqtSignal(bool)  # Emits whether joystick control is active
     input_type_changed = pyqtSignal(object)  # Emits InputType for joystick settings
     sensitivity_changed = pyqtSignal(float)  # Emits sensitivity value
@@ -81,6 +82,8 @@ class CommandPanel(QWidget):
         self.init_ui()
         if object_service is not None:
             object_service.controlled_object_changed.connect(self._on_controlled_object_changed)
+            object_service.selection_changed.connect(self._on_selection_changed)
+        self._update_fly_selected()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -163,6 +166,12 @@ class CommandPanel(QWidget):
         self.object_combo = QComboBox()
         self.object_combo.currentIndexChanged.connect(self._on_object_selected)
         layout.addWidget(self.object_combo)
+
+        # Shown when something else is selected (clicked in the 3-D view or the Objects panel).
+        self.fly_selected_button = theme.button("Fly selected", "subtle", "move",
+                                                tooltip="Control the selected object instead")
+        self.fly_selected_button.clicked.connect(self._on_fly_selected_clicked)
+        layout.addWidget(self.fly_selected_button)
         
         # Note: Dropdown will be populated after UI is fully constructed via refresh_object_list()
 
@@ -172,6 +181,23 @@ class CommandPanel(QWidget):
         layout.addWidget(self.drone_status)
         
         return group
+
+    @pyqtSlot(object)
+    def _on_selection_changed(self, _obj):
+        self._update_fly_selected()
+
+    def _update_fly_selected(self):
+        selected = self.object_service.get_selected_object() if self.object_service is not None else None
+        controlled = self.object_service.get_controlled_object() if self.object_service is not None else None
+        show = selected is not None and selected is not controlled and getattr(selected, "controllable", False)
+        if show:
+            self.fly_selected_button.setText(f"Fly {selected.name}")
+        self.fly_selected_button.setVisible(show)
+
+    def _on_fly_selected_clicked(self):
+        selected = self.object_service.get_selected_object() if self.object_service is not None else None
+        if selected is not None:
+            self.fly_requested.emit(selected)
 
     @staticmethod
     def _is_drone(obj) -> bool:
@@ -202,6 +228,7 @@ class CommandPanel(QWidget):
             self.object_combo.setCurrentIndex(index)
             self.object_combo.blockSignals(False)
         self.drone_status.set_object(obj)
+        self._update_fly_selected()
     
     def _create_ghost_mode_section(self):
         """Create the ghost mode toggle and send position button."""

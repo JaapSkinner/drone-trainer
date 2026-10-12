@@ -23,11 +23,15 @@ class ObjectService(ServiceBase):
     object_changed = pyqtSignal(object)        # a property other than pose changed
     objects_changed = pyqtSignal()             # anything structural (add/remove/rename/clear)
     controlled_object_changed = pyqtSignal(object)  # SceneObject or None
+    # The object picked in the viewport or the Objects panel (or None). Unlike the controlled
+    # object, selecting never changes what the input flies.
+    selection_changed = pyqtSignal(object)
 
     def __init__(self, input_service=None, debug_level=None):
         super().__init__(debug_level=debug_level or DebugLevel.LOG)
         self.objects: List[SceneObject] = []
         self.controlled_object = None
+        self.selected_object = None
         self.input_service = input_service
 
     def on_start(self):
@@ -85,6 +89,8 @@ class ObjectService(ServiceBase):
         obj.release_gl()
         if obj is self.controlled_object:
             self.clear_controlled_object()
+        if obj is self.selected_object:
+            self.select_object(None)
         self.status_changed.emit(ServiceLevel.RUNNING.value, f"Object {obj.name} removed.")
         self.object_removed.emit(obj)
         self.objects_changed.emit()
@@ -152,6 +158,22 @@ class ObjectService(ServiceBase):
 
     def get_controlled_object(self):
         return self.controlled_object
+
+    # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
+
+    def get_selected_object(self):
+        return self.selected_object
+
+    def select_object(self, obj: Optional[SceneObject]) -> None:
+        """Select ``obj`` (None clears). Objects not in the scene can't be selected."""
+        if obj is not None and obj not in self.objects:
+            obj = None
+        if obj is self.selected_object:
+            return
+        self.selected_object = obj
+        self.selection_changed.emit(obj)
 
     def set_controlled_object(self, name: str = "", obj: SceneObject = None) -> None:
         if obj is None:

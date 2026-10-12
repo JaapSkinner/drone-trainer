@@ -106,6 +106,8 @@ class SettingsPanel(QWidget):
     export_settings_requested = pyqtSignal()
     # "light" | "dark"
     theme_changed = pyqtSignal(str)
+    # Shadows and height lines under objects in the 3-D view
+    ground_cues_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
@@ -234,6 +236,13 @@ class SettingsPanel(QWidget):
         
         viewport_layout.addRow("Zoom Sensitivity:", zoom_container)
         
+        self.ground_cues_check = QCheckBox("Shadows and height lines under objects")
+        self.ground_cues_check.setToolTip("A soft shadow straight below each object and a line down to the floor "
+                                          "from each drone, to judge where and how high it is")
+        self.ground_cues_check.setChecked(True)
+        self.ground_cues_check.toggled.connect(self.ground_cues_changed)
+        viewport_layout.addRow("", self.ground_cues_check)
+
         # Reset Camera Button
         self.reset_camera_btn = QPushButton("Reset Camera")
         self.reset_camera_btn.clicked.connect(self.on_reset_camera_clicked)
@@ -418,6 +427,9 @@ class SettingsPanel(QWidget):
         info_text = QLabel("""<b>Mouse Controls:</b><br>
         • Left Click + Drag: Orbit camera<br>
         • Scroll Wheel: Zoom in/out<br>
+        • Click an object: select it (shows its card in Objects)<br>
+        • Double-click an object: fly it (Command panel)<br>
+        • Right-click an object: fly, follow, show, set up<br>
         <br>
         <b>Lock View:</b><br>
         • Select an object to orbit around it<br>

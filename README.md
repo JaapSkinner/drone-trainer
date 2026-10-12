@@ -12,7 +12,10 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 ## What it does today
 
 - **3D viewport** of the lab: grid, boxes, spheres and STL/OBJ meshes, translucency, orbit/zoom,
-  lock the camera onto any object.
+  lock the camera onto any object. A soft shadow under each object and a line down from each drone
+  show where it is over the floor and how high (Settings → Viewport). **Click** an object to select it
+  (its card opens in Objects), **double-click** to fly it, **right-click** for fly / follow / show /
+  drone setup. Selecting never changes which drone you're flying by itself.
 - **Objects panel**: every object is a card — edit pose, size, colour and opacity, and attach
   *features*: **Motion capture** (follow a Vicon/OptiTrack subject, lock pose), **MAVLink vehicle**
   (stream the pose to a PX4 connection as mocap) and **Controllable** (drive it from the Command panel).

@@ -92,6 +92,13 @@ class DrawItem:
     # right for rotation with uniform scale, and for axis-aligned normals (boxes) at any
     # scale; a mesh scaled non-uniformly by (sx, sy, sz) needs (1/sx², 1/sy², 1/sz²).
     normal_scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # Meshes: glow along the silhouette, (r, g, b, strength) — the selection/hover highlight.
+    rim: Optional[RGBA] = None
+    # Unlit meshes: fade alpha out towards the edge of a unit disc (soft ground shadows).
+    falloff: bool = False
+    # Translucent marks on the floor (shadows, rings, height lines): drawn after the opaque scene
+    # and before other translucent objects, grouped by geometry instead of depth-sorted.
+    ground: bool = False
 
     @property
     def translucent(self) -> bool:

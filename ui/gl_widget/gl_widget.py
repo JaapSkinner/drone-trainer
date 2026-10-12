@@ -1,12 +1,13 @@
 import time
 
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QPoint, QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QSurfaceFormat
 from PyQt5.QtWidgets import QLabel, QOpenGLWidget
 
-from models import grid
+from models import grid, picking
 from models.grid import Grid
 from ui import theme
+from ui.gl_widget.ground_overlay import GroundOverlay
 
 from ui.gl_widget.scene_renderer import Camera, SceneRenderer
 
@@ -16,9 +17,17 @@ class GLWidget(QOpenGLWidget):
     BASE_ZOOM_SPEED = 0.001
     HUD_REFRESH_MS = 250
     MSAA_SAMPLES = 4   # multisample antialiasing: smooth edges and lines
+    CLICK_SLOP_PX = 4  # a press that moves less than this before release is a click, not an orbit
+    HOVER_PICK_MS = 40
+    SELECTED_RIM = 0.9
+    HOVER_RIM = 0.45
 
     # Signal emitted when camera is reset (for UI synchronization)
     camera_reset = pyqtSignal()
+    # Mouse on objects (object or None for empty space)
+    object_clicked = pyqtSignal(object)
+    object_double_clicked = pyqtSignal(object)
+    object_context_menu = pyqtSignal(object, QPoint)   # object (or None), global position
 
     def __init__(self, object_service, parent=None):
         super().__init__(parent)
@@ -37,6 +46,17 @@ class GLWidget(QOpenGLWidget):
         # Overlays (SetpointOverlay, TrainerService…) provide drawables() and may provide
         # alpha_for(obj) and colour_for(obj).
         self.overlays = []
+        # Shadows / height lines / selection ring; always drawn first (see overlay_arguments).
+        self.ground_overlay = GroundOverlay(object_service, hovered=self._get_hovered)
+        self.hovered_object = None
+        self._press_pos = None
+        self._press_button = None
+        self._dragging = False
+        self._hover_pos = None
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.timeout.connect(self._update_hover)
+        self.setMouseTracking(True)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
@@ -109,7 +129,7 @@ class GLWidget(QOpenGLWidget):
 
     def overlay_arguments(self) -> dict:
         """Renderer keyword arguments combining every overlay."""
-        overlays = list(self.overlays)
+        overlays = [self.ground_overlay, *self.overlays]
         alpha_sources = [o.alpha_for for o in overlays if hasattr(o, "alpha_for")]
         colour_sources = [o.colour_for for o in overlays if hasattr(o, "colour_for")] + [self._theme_colour_for]
 
@@ -121,7 +141,50 @@ class GLWidget(QOpenGLWidget):
 
         return {"overlays": [d for o in overlays for d in o.drawables()],
                 "alpha_for": alpha_for if alpha_sources else None,
-                "colour_for": colour_for}
+                "colour_for": colour_for,
+                "rim_for": self._rim_for}
+
+    def _rim_for(self, obj):
+        """Silhouette glow: strong on the selected object, faint on the one under the mouse."""
+        selected = self.object_service.get_selected_object() if self.object_service is not None else None
+        if obj is selected:
+            strength = self.SELECTED_RIM
+        elif obj is self.hovered_object:
+            strength = self.HOVER_RIM
+        else:
+            return None
+        r, g, b, _ = theme.rgba("accent")
+        return (r, g, b, strength)
+
+    # -- picking ------------------------------------------------------------------
+
+    def object_at(self, x: float, y: float):
+        """The pickable object under widget pixel (x, y), or None."""
+        if self.object_service is None:
+            return None
+        origin, direction = picking.screen_ray(self.camera(), x, y, self.width(), self.height())
+        obj, _ = picking.pick(self.object_service.get_objects(), origin, direction)
+        return obj
+
+    def _get_hovered(self):
+        return self.hovered_object
+
+    def _set_hovered(self, obj):
+        if obj is not self.hovered_object:
+            self.hovered_object = obj
+            self.setCursor(Qt.PointingHandCursor if obj is not None else Qt.ArrowCursor)
+            self.update()
+
+    @pyqtSlot()
+    def _update_hover(self):
+        if self._hover_pos is not None and self._press_pos is None:
+            self._set_hovered(self.object_at(self._hover_pos.x(), self._hover_pos.y()))
+
+    def leaveEvent(self, event):
+        self._hover_timer.stop()
+        self._hover_pos = None
+        self._set_hovered(None)
+        super().leaveEvent(event)
 
     @staticmethod
     def _theme_colour_for(obj):
@@ -155,17 +218,39 @@ class GLWidget(QOpenGLWidget):
         pass  # QOpenGLWidget sets the viewport before each paintGL
 
     def mousePressEvent(self, event):
+        self._press_pos = event.pos()
+        self._press_button = event.button()
+        self._dragging = False
         if event.button() == Qt.LeftButton:
             self.mouse_left_button_down = True
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
 
     def mouseReleaseEvent(self, event):
+        clicked = self._press_pos is not None and not self._dragging and event.button() == self._press_button
+        self._press_pos = None
         if event.button() == Qt.LeftButton:
             self.mouse_left_button_down = False
+        if not clicked:
+            return
+        obj = self.object_at(event.x(), event.y())
+        if event.button() == Qt.LeftButton:
+            self.object_clicked.emit(obj)
+        elif event.button() == Qt.RightButton:
+            self.object_context_menu.emit(obj, event.globalPos())
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.object_double_clicked.emit(self.object_at(event.x(), event.y()))
+        # Qt still sends the release that ends the double click: don't count it as a click too.
+        self._press_pos = None
 
     def mouseMoveEvent(self, event):
-        if self.mouse_left_button_down:
+        if self._press_pos is not None and not self._dragging:
+            moved = event.pos() - self._press_pos
+            if abs(moved.x()) + abs(moved.y()) >= self.CLICK_SLOP_PX:
+                self._dragging = True     # from here on it's an orbit, not a click
+        if self.mouse_left_button_down and self._dragging:
             dx = event.x() - self.mouse_last_x
             dy = event.y() - self.mouse_last_y
             self.camera_angle_y -= dx * 0.5
@@ -173,6 +258,10 @@ class GLWidget(QOpenGLWidget):
             self.camera_angle_x = max(-90.0, min(90.0, self.camera_angle_x))
             self.mouse_last_x = event.x()
             self.mouse_last_y = event.y()
+        elif self._press_pos is None:
+            self._hover_pos = event.pos()
+            if not self._hover_timer.isActive():
+                self._hover_timer.start(self.HOVER_PICK_MS)
 
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming in/out."""

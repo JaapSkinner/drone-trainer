@@ -7,7 +7,7 @@ load scenes.
 """
 import os
 
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                              QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -63,6 +63,7 @@ class ObjectCard(QFrame):
     """One object's card. Rebuilt by the panel when the object list changes."""
 
     focus_requested = pyqtSignal(object)
+    select_requested = pyqtSignal(object)   # clicked (or opened) by the user
 
     def __init__(self, obj, ctx: FeatureContext, expanded=False, parent=None):
         super().__init__(parent)
@@ -91,7 +92,7 @@ class ObjectCard(QFrame):
         row = QHBoxLayout()
         row.setSpacing(6)
         self.expand_button = theme.tool_button("chevron-right", "Show / hide details")
-        self.expand_button.clicked.connect(lambda: self.set_expanded(not self.expanded))
+        self.expand_button.clicked.connect(self._on_expand_clicked)
         row.addWidget(self.expand_button)
 
         self.colour_button = QPushButton()
@@ -124,6 +125,20 @@ class ObjectCard(QFrame):
             delete.clicked.connect(self._on_delete_clicked)
             row.addWidget(delete)
         return row
+
+    def _on_expand_clicked(self):
+        opening = not self.expanded
+        self.set_expanded(opening)
+        if opening:
+            self.select_requested.emit(self.obj)
+
+    def mousePressEvent(self, event):
+        # Clicks on the card itself (labels and gaps; inputs keep their own clicks) select it.
+        self.select_requested.emit(self.obj)
+        super().mousePressEvent(event)
+
+    def set_selected(self, selected: bool):
+        theme.set_props(self, selected="true" if selected else "false")
 
     # -- body -------------------------------------------------------------
 
@@ -290,7 +305,7 @@ class ObjectCard(QFrame):
             self.opacity_label.setText(f"{alpha}%")
         finally:
             self._updating = False
-        theme.set_props(self, selected="true" if self.obj.tracked else "false")
+        theme.set_props(self, tracking="true" if self.obj.tracked else "false")
         self._rebuild_features()
         self.refresh_live()
 
@@ -570,6 +585,7 @@ class ObjectsPanel(QWidget):
         if object_service is not None:
             object_service.objects_changed.connect(self.rebuild)
             object_service.object_changed.connect(self._on_object_changed)
+            object_service.selection_changed.connect(self._on_selection_changed)
         self.rebuild()
 
         self._live_timer = QTimer(self)
@@ -608,13 +624,40 @@ class ObjectsPanel(QWidget):
                 self._add_card(obj)
         live_ids = {id(o) for o in objects}
         self._expanded &= live_ids
+        selected = self.object_service.get_selected_object()
+        if selected is not None and self.card_for(selected) is not None:
+            self.card_for(selected).set_selected(True)
 
     def _add_card(self, obj):
         card = ObjectCard(obj, self.ctx, expanded=id(obj) in self._expanded)
         card.focus_requested.connect(self.focus_requested)
+        card.select_requested.connect(self._on_card_select_requested)
         self._cards[id(obj)] = card
         self.cards_layout.addWidget(card)
         return card
+
+    @pyqtSlot(object)
+    def _on_card_select_requested(self, obj):
+        if self.object_service is not None:
+            self.object_service.select_object(obj)
+
+    @pyqtSlot(object)
+    def _on_selection_changed(self, obj):
+        """Highlight the selected object's card, open it and bring it into view."""
+        for card in self._cards.values():
+            card.set_selected(card.obj is obj)
+        card = self.card_for(obj) if obj is not None else None
+        if card is not None:
+            if not card.expanded:
+                card.set_expanded(True)
+            QTimer.singleShot(0, self._scroll_to_selected)   # once the opened card has its size
+
+    @pyqtSlot()
+    def _scroll_to_selected(self):
+        selected = self.object_service.get_selected_object() if self.object_service is not None else None
+        card = self.card_for(selected) if selected is not None else None
+        if card is not None:
+            self.scroll.ensureWidgetVisible(card, 0, 12)
 
     def _on_object_changed(self, obj):
         card = self.card_for(obj)

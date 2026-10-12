@@ -1,7 +1,7 @@
 import logging
 import os
 from collections import deque
-from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal
+from PyQt5.QtCore import QPoint, Qt, pyqtSlot, pyqtSignal
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -174,6 +175,10 @@ class MainWindow(QMainWindow):
         # Apply persisted viewport zoom sensitivity
         if hasattr(self, 'glWidget') and self.glWidget:
             self.glWidget.set_zoom_sensitivity(saved.zoom_sensitivity)
+            self.glWidget.ground_overlay.enabled = bool(saved.ground_shadows)
+            self.settings_panel.ground_cues_check.blockSignals(True)
+            self.settings_panel.ground_cues_check.setChecked(bool(saved.ground_shadows))
+            self.settings_panel.ground_cues_check.blockSignals(False)
             # Restore camera position/angles if present
             try:
                 if getattr(saved, 'camera_distance', None) is not None:
@@ -281,6 +286,7 @@ class MainWindow(QMainWindow):
         self.settings_panel.zoom_sensitivity_changed.connect(self._on_save_zoom_sensitivity)
         self.settings_panel.mavlink_settings_changed.connect(self._on_save_mavlink_settings)
         self.settings_panel.theme_changed.connect(self._on_theme_changed)
+        self.settings_panel.ground_cues_changed.connect(self._on_ground_cues_changed)
         self.mavlink_service.connection_changed.connect(self._on_connection_changed)
 
         # Pass storage service to mavlink panel so connection edits/deletes
@@ -435,6 +441,12 @@ class MainWindow(QMainWindow):
         self.dock.command_panel.drone_setup_requested.connect(self.open_drone_setup)
         self.settings_panel = self.dock.settings_panel  # Settings panel
         self.command_panel = self.dock.get_panel("command")
+        # Clicking objects in the 3-D view: click selects, double-click flies, right-click menu.
+        self.glWidget.object_clicked.connect(self.object_service.select_object)
+        self.glWidget.object_double_clicked.connect(self.fly_object)
+        self.glWidget.object_context_menu.connect(self._show_object_menu)
+        self.object_service.selection_changed.connect(self._on_selection_changed)
+        self.command_panel.fly_requested.connect(self.fly_object)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.dock)
@@ -539,6 +551,69 @@ class MainWindow(QMainWindow):
             self._show_panel("command")
         if options.get("follow"):
             self.focus_object(obj)
+
+    # -- selecting and flying objects ---------------------------------------------
+
+    @pyqtSlot(object)
+    def _on_selection_changed(self, _obj):
+        self.glWidget.update()
+
+    def _is_live(self, obj) -> bool:
+        """Is ``obj`` a real vehicle right now (connected, or tracked with fresh data)?"""
+        cfg = obj.mavlink_config
+        if cfg.enabled and cfg.linked_connection_name:
+            conn = self.mavlink_service.get_connection_by_name(cfg.linked_connection_name)
+            if conn is not None and conn.is_connected:
+                return True
+        age = obj.tracking_age()
+        return bool(obj.tracked and age is not None and age < 1.0)
+
+    @pyqtSlot(object)
+    def fly_object(self, obj):
+        """Make ``obj`` the controlled object, asking first if that takes control away from a live drone."""
+        if obj is None:
+            return
+        self.object_service.select_object(obj)
+        if not obj.controllable:
+            toast(f"{obj.name} can't be flown — add the Controllable feature in Objects", "warn")
+            return
+        current = self.object_service.get_controlled_object()
+        if current is not None and current is not obj and self._is_live(current):
+            answer = QMessageBox.question(
+                self, "Switch drone",
+                f"Fly {obj.name} instead of {current.name}?\n\n{current.name} keeps holding its current setpoint.",
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+            if answer != QMessageBox.Yes:
+                return
+        self.command_panel.select_object(obj)
+        self._show_panel("command")
+        toast(f"Flying {obj.name}")
+
+    @pyqtSlot(object, QPoint)
+    def _show_object_menu(self, obj, global_pos):
+        """Right-click on an object in the 3-D view."""
+        if obj is None:
+            return
+        self.object_service.select_object(obj)
+        menu = QMenu(self)
+        fly = menu.addAction(theme.icon("move", "accent", 16), "Fly this drone", lambda: self.fly_object(obj))
+        fly.setEnabled(obj.controllable and obj is not self.object_service.get_controlled_object())
+        if self.glWidget.get_locked_object() is obj:
+            menu.addAction(theme.icon("locate-fixed", None, 16), "Stop following", lambda: self.focus_object(None))
+        else:
+            menu.addAction(theme.icon("locate-fixed", None, 16), "Follow with camera",
+                           lambda: self.focus_object(obj))
+        menu.addAction(theme.icon("boxes", None, 16), "Show in Objects", lambda: self._show_in_objects(obj))
+        menu.addSeparator()
+        menu.addAction(theme.icon("sliders-horizontal", None, 16), "Drone setup…", lambda: self.open_drone_setup(obj))
+        self._object_menu = menu   # kept so tests can inspect it
+        menu.popup(global_pos)
+        return menu
+
+    def _show_in_objects(self, obj):
+        self.object_service.select_object(obj)
+        self._show_panel("objects")
+        self.objects_panel._scroll_to_selected()
 
     def focus_object(self, obj):
         """Lock the camera onto ``obj`` and keep the settings dropdown in sync."""
@@ -688,6 +763,14 @@ class MainWindow(QMainWindow):
     def _on_trainer_preferences_changed(self, prefs):
         settings = self.storage_service.get_settings()
         settings.trainer = prefs
+        self.storage_service.update_settings(settings)
+
+    @pyqtSlot(bool)
+    def _on_ground_cues_changed(self, enabled: bool):
+        self.glWidget.ground_overlay.enabled = enabled
+        self.glWidget.update()
+        settings = self.storage_service.get_settings()
+        settings.ground_shadows = enabled
         self.storage_service.update_settings(settings)
 
     @pyqtSlot(str)

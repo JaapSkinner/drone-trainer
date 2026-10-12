@@ -73,6 +73,8 @@ class Palette:
     viewport_bottom: str
     grid: str
     grid_major: str
+    viewport_shadow: str       # #AARRGGBB: soft shadow under objects
+    viewport_height_line: str  # #AARRGGBB: line from a drone down to the floor
 
 
 LIGHT = Palette(
@@ -89,6 +91,7 @@ LIGHT = Palette(
     hud_bg="rgba(255, 255, 255, 222)",
     viewport_top="#F7F9FB", viewport_bottom="#DDE3EA",
     grid="#C5CCD5", grid_major="#9AA4B1",
+    viewport_shadow="#4A121A28", viewport_height_line="#8C5B6575",
 )
 
 DARK = Palette(
@@ -105,6 +108,7 @@ DARK = Palette(
     hud_bg="rgba(22, 25, 31, 225)",
     viewport_top="#1C2129", viewport_bottom="#0C0E12",
     grid="#2C333D", grid_major="#46505D",
+    viewport_shadow="#99000000", viewport_height_line="#8C8A94A3",
 )
 
 PALETTES = {"light": LIGHT, "dark": DARK}
@@ -304,6 +308,8 @@ QFrame[role="card-alt"] {{ background: {p.surface_alt}; border: 1px solid {p.bor
 QFrame[role="chip"] {{ background: {p.surface_alt}; border: 1px solid {p.border}; border-radius: 8px; }}
 QFrame[role="hud"] {{ background: {p.hud_bg}; border: 1px solid {p.border}; border-radius: 12px; }}
 QFrame[role="card"][selected="true"] {{ border: 1px solid {p.accent}; }}
+QFrame#ObjectCard[tracking="true"] {{ border: 1px solid {p.success}; }}
+QFrame#ObjectCard[selected="true"] {{ border: 2px solid {p.accent}; }}
 QFrame[role="card"] QGroupBox {{ background: transparent; border: none; border-top: 1px solid {p.border};
     border-radius: 0; margin-top: 20px; padding: 10px 0 0 0; }}
 QFrame[role="card"] QGroupBox::title {{ left: 0; top: 2px; padding: 0; }}

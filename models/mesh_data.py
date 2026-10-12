@@ -261,3 +261,42 @@ def uv_sphere(segments: int = 24, rings: int = 12) -> MeshData:
                 tris.append((p01, p11, p10))
     unit = np.array(tris, dtype=np.float32).reshape(-1, 3)
     return MeshData(unit * 0.5, unit.copy())
+
+
+def unit_disc(segments: int = 40) -> MeshData:
+    """Flat disc of diameter 1 in the XZ plane, facing up (+Y)."""
+    tris = []
+    for s in range(segments):
+        a0, a1 = 2.0 * math.pi * s / segments, 2.0 * math.pi * (s + 1) / segments
+        # Counter-clockwise seen from above (+Y).
+        tris.append(((0.0, 0.0, 0.0), (0.5 * math.cos(a1), 0.0, 0.5 * math.sin(a1)),
+                     (0.5 * math.cos(a0), 0.0, 0.5 * math.sin(a0))))
+    positions = np.array(tris, dtype=np.float32).reshape(-1, 3)
+    normals = np.tile(np.array([0.0, 1.0, 0.0], dtype=np.float32), (len(positions), 1))
+    return MeshData(positions, normals)
+
+
+def unit_circle_segments(segments: int = 64) -> np.ndarray:
+    """Circle of diameter 1 in the XZ plane as (2N, 3) line-segment endpoints."""
+    points = []
+    for s in range(segments):
+        for k in (s, s + 1):
+            a = 2.0 * math.pi * k / segments
+            points.append((0.5 * math.cos(a), 0.0, 0.5 * math.sin(a)))
+    return np.array(points, dtype=np.float32)
+
+
+def unit_annulus(inner: float = 0.86, segments: int = 64) -> MeshData:
+    """Flat ring in the XZ plane facing up: outer diameter 1, inner diameter ``inner``."""
+    tris = []
+    ro, ri = 0.5, 0.5 * inner
+    for s in range(segments):
+        a0, a1 = 2.0 * math.pi * s / segments, 2.0 * math.pi * (s + 1) / segments
+        o0 = (ro * math.cos(a0), 0.0, ro * math.sin(a0))
+        o1 = (ro * math.cos(a1), 0.0, ro * math.sin(a1))
+        i0 = (ri * math.cos(a0), 0.0, ri * math.sin(a0))
+        i1 = (ri * math.cos(a1), 0.0, ri * math.sin(a1))
+        tris += [(i0, o1, o0), (i0, i1, o1)]   # counter-clockwise seen from above
+    positions = np.array(tris, dtype=np.float32).reshape(-1, 3)
+    normals = np.tile(np.array([0.0, 1.0, 0.0], dtype=np.float32), (len(positions), 1))
+    return MeshData(positions, normals)

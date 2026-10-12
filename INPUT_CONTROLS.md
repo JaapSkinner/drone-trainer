@@ -31,6 +31,17 @@ The 3D viewport supports mouse-based camera controls:
 - **Scroll Wheel Up**: Zoom in (move camera closer)
 - **Scroll Wheel Down**: Zoom out (move camera further away)
 
+### Selecting and flying objects
+- **Hover** over an object: a faint ring appears on the floor under it and the cursor becomes a hand.
+- **Click** an object: selects it — an accent ring under it, and its card opens in the **Objects** panel.
+  Click empty space to clear the selection. Clicking a card in the Objects panel selects it too.
+- **Double-click** an object: fly it — it becomes the controlled object in the **Command** panel. If you are
+  flying another drone that is connected or tracked, you are asked first; that drone keeps its setpoint.
+- **Right-click** an object: *Fly this drone*, *Follow with camera*, *Show in Objects*, *Drone setup…*.
+- With something selected, the Command panel shows a **Fly …** button to switch to it.
+
+A click never changes which drone you are flying on its own: selecting and flying are separate.
+
 ### Lock View to Object
 
 You can lock the camera view to follow a specific object:

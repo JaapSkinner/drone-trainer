@@ -43,7 +43,9 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
   meshes through `cad_mesh.load_display_mesh` so drones from one file share a GPU copy. All GL lives in
   `ui/gl_widget/scene_renderer.py` + `gpu.py` (GLSL 1.20 shaders, so OpenGL 2.1 is enough). Check pixels
   with `scripts/render_snapshot.py --check`, speed with `scripts/bench_render.py` (renderer) and
-  `scripts/bench_app.py` (whole app with live mocap). Code that runs per mocap sample (`models/frames.py`,
+  `scripts/bench_app.py` (whole app with live mocap). Clicking is ray casting against the same draw items
+  (`models/picking.py`); `ObjectService.selected_object` is the selection, separate from the controlled
+  object (never make a single click change what is being flown). Code that runs per mocap sample (`models/frames.py`,
   calibration) uses plain float maths: numpy's per-call overhead dominates on 3- and 4-vectors.
 - Don't swallow exceptions with bare `except: pass`. Log them (`logger.exception(...)`) or let them
   propagate.

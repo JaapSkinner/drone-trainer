@@ -104,6 +104,30 @@ def run_check(ctx) -> int:
     if not (175 <= corner[0] <= 235 and corner[2] >= corner[0]):
         failures.append(f"background gradient corner is {corner}")
 
+    # 7. Ground cues: the floor under a raised object is darker with its shadow drawn.
+    from services.object_service import ObjectService
+    from ui.gl_widget.ground_overlay import GroundOverlay
+    renderer.background_gradient = None
+    floater = Sphere(name="floater", radius=0.2, colour=(0.2, 0.4, 1.0))
+    floater.set_pose((0.0, 1.5, 0.0, 1.0, 0.0, 0.0, 0.0))
+    scene = ObjectService()
+    scene.add_object(floater)
+    renderer.render([floater], camera, w, h, viewport=(0, 0, w, h))
+    floor = pixel(ctx.read_rgb(), (0.0, 0.0, 0.0))
+    renderer.render([floater], camera, w, h, viewport=(0, 0, w, h), overlays=GroundOverlay(scene).drawables())
+    shaded = pixel(ctx.read_rgb(), (0.0, 0.0, 0.0))
+    if not shaded.sum() < floor.sum() - 60:
+        failures.append(f"no shadow under a raised object: floor {tuple(floor)} -> {tuple(shaded)}")
+
+    # 8. The selection glow changes the object's silhouette.
+    renderer.render([red], camera, w, h, viewport=(0, 0, w, h))
+    plain = ctx.read_rgb()
+    renderer.render([red], camera, w, h, viewport=(0, 0, w, h), rim_for=lambda obj: (0.3, 0.3, 1.0, 1.0))
+    glowing = ctx.read_rgb()
+    changed = int(np.any(np.abs(glowing.astype(int) - plain.astype(int)) > 30, axis=2).sum())
+    if changed < 300:
+        failures.append(f"selection glow changed only {changed} pixels")
+
     for f in failures:
         print("FAIL:", f)
     print("render check:", "OK" if not failures else f"{len(failures)} failure(s)",

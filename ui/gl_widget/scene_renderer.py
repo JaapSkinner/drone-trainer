@@ -6,7 +6,8 @@ programs (lit meshes, lines), uploading each piece of geometry once.
 
 Frame order: free buffers of geometry that went away → clear → background
 gradient → opaque meshes (grouped by geometry so buffers are bound once) →
-opaque lines → translucent items back-to-front with depth writes off.
+opaque lines → translucent floor marks (shadows; grouped, not sorted) →
+other translucent items back-to-front. Translucent passes don't write depth.
 """
 from __future__ import annotations
 
@@ -85,9 +86,11 @@ uniform mat4 u_model;
 uniform vec3 u_normal_scale;   // see DrawItem.normal_scale
 varying vec3 v_normal;
 varying vec3 v_world;
+varying vec2 v_local;          // local x, z (for soft discs)
 void main() {
     vec4 world = u_model * vec4(a_position, 1.0);
     v_world = world.xyz;
+    v_local = a_position.xz;
     v_normal = mat3(u_model) * (u_normal_scale * a_normal);
     gl_Position = u_view_proj * world;
 }
@@ -102,21 +105,32 @@ uniform vec3 u_fill_dir;    // towards a soft fill light from the other side
 uniform vec3 u_eye;
 uniform vec3 u_sky;         // hemisphere ambient: light from above…
 uniform vec3 u_ground;      // …and bounced up from the floor
+uniform vec4 u_rim;         // silhouette glow: rgb, strength (0 = none)
+uniform float u_falloff;    // 1: fade out towards the edge of a unit disc
 varying vec3 v_normal;
 varying vec3 v_world;
+varying vec2 v_local;
 void main() {
     if (u_lit < 0.5) {
-        gl_FragColor = u_colour;
+        vec4 colour = u_colour;
+        if (u_falloff > 0.5) {
+            float r = 2.0 * length(v_local);   // 0 at the centre, 1 at the rim
+            colour.a *= 1.0 - smoothstep(0.2, 1.0, r);
+        }
+        gl_FragColor = colour;
         return;
     }
     vec3 n = normalize(v_normal);
     if (!gl_FrontFacing) n = -n;    // open meshes: light their inside too
+    vec3 view = normalize(u_eye - v_world);
     float key = max(dot(n, u_light_dir), 0.0);
     float fill = max(dot(n, u_fill_dir), 0.0);
-    vec3 h = normalize(u_light_dir + normalize(u_eye - v_world));
+    vec3 h = normalize(u_light_dir + view);
     float specular = key > 0.0 ? 0.14 * pow(max(dot(n, h), 0.0), 48.0) : 0.0;
     vec3 ambient = mix(u_ground, u_sky, 0.5 + 0.5 * n.y);
-    gl_FragColor = vec4(u_colour.rgb * (ambient + 0.6 * key + 0.2 * fill) + vec3(specular), u_colour.a);
+    vec3 rgb = u_colour.rgb * (ambient + 0.6 * key + 0.2 * fill) + vec3(specular);
+    rgb += u_rim.rgb * (u_rim.a * pow(1.0 - max(dot(n, view), 0.0), 2.0));
+    gl_FragColor = vec4(rgb, u_colour.a);
 }
 """
 
@@ -162,6 +176,7 @@ void main() {
 }
 """
 
+_NO_RIM = (0.0, 0.0, 0.0, 0.0)
 _SCREEN_QUAD = np.array([(-1, -1), (1, -1), (-1, 1), (1, 1)], dtype=np.float32)
 _MESH_STRIDE = 6 * 4      # interleaved position + normal (float32)
 _LINE_STRIDE = 7 * 4      # interleaved position + RGBA
@@ -220,14 +235,16 @@ class SceneRenderer:
 
     def render(self, objects: Iterable, camera: Camera, width: int, height: int,
                viewport: Optional[Sequence[int]] = None, overlays: Iterable = (),
-               alpha_for: Optional[Callable] = None, colour_for: Optional[Callable] = None):
+               alpha_for: Optional[Callable] = None, colour_for: Optional[Callable] = None,
+               rim_for: Optional[Callable] = None):
         """Draw one frame.
 
         ``width``/``height`` set the aspect ratio. Pass ``viewport`` to also
         call glViewport (QOpenGLWidget sets the viewport itself).
         ``overlays`` are extra drawables (e.g. setpoint markers) and
         ``alpha_for(obj)`` scales each scene object's opacity for this frame and
-        ``colour_for(obj)`` may return an RGBA to draw it with instead (or None).
+        ``colour_for(obj)`` may return an RGBA to draw it with instead (or None), and
+        ``rim_for(obj)`` an (r, g, b, strength) silhouette glow (selection/hover) or None.
         """
         self.buffers.flush()
         if viewport is not None:
@@ -250,26 +267,40 @@ class SceneRenderer:
         # Opaque items in any order (meshes grouped by geometry); translucent ones per
         # object, far to near, so blending composes correctly.
         eye = camera.eye()
-        opaque, translucent = [], []
+        opaque, ground, translucent = [], [], []
         for obj in visible:
             items = obj.draw_items()
             if not items:
                 continue
-            solid = [i for i in items if not i.translucent]
-            opaque.extend(solid)
-            if len(solid) != len(items):
-                distance = float(np.linalg.norm(np.asarray(obj.pose[:3], dtype=float) - eye))
-                translucent.append((distance, [i for i in items if i.translucent]))
+            rim = rim_for(obj) if rim_for is not None else None
+            if rim is not None:
+                for item in items:
+                    if item.is_mesh and item.lit:
+                        item.rim = rim
+            see_through = []
+            for item in items:
+                if not item.translucent:
+                    opaque.append(item)
+                elif item.ground:
+                    ground.append(item)
+                else:
+                    see_through.append(item)
+            if see_through:
+                x, y, z = obj.pose[:3]
+                distance = math.sqrt((x - eye[0]) ** 2 + (y - eye[1]) ** 2 + (z - eye[2]) ** 2)
+                translucent.append((distance, see_through))
         translucent.sort(key=lambda entry: -entry[0])
         meshes = sorted((i for i in opaque if i.is_mesh), key=lambda i: id(i.geometry))
         lines = [i for i in opaque if not i.is_mesh]
-        self.last_item_count = len(opaque) + sum(len(items) for _, items in translucent)
+        ground.sort(key=lambda i: (not i.is_mesh, id(i.geometry)))
+        self.last_item_count = len(opaque) + len(ground) + sum(len(items) for _, items in translucent)
 
         view_proj = camera.projection_matrix(width / max(1, height)) @ camera.view_matrix()
         self._begin_frame(view_proj, eye)
         self._draw_items(meshes + lines)
-        if translucent:
+        if ground or translucent:
             glDepthMask(GL_FALSE)
+            self._draw_items(ground)
             self._draw_items([i for _, items in translucent for i in items])
             glDepthMask(GL_TRUE)
         self._end_frame()
@@ -290,7 +321,7 @@ class SceneRenderer:
         lines.use()
         lines.set_mat4("u_view_proj", view_proj)
         self._state = {"program": None, "geometry": None, "cull": False, "offset": False, "lit": None,
-                       "width": None, "normal_scale": None}
+                       "width": None, "normal_scale": None, "rim": None, "falloff": None}
 
     def _end_frame(self):
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -307,7 +338,7 @@ class SceneRenderer:
             kind = "mesh" if item.is_mesh else "lines"
             if state["program"] != kind:
                 self._programs[kind].use()
-                state["program"], state["geometry"], state["lit"], state["normal_scale"] = kind, None, None, None
+                state.update(program=kind, geometry=None, lit=None, normal_scale=None, rim=None, falloff=None)
             program = self._programs[kind]
             if state["geometry"] is not geometry:
                 self._bind(geometry, kind)
@@ -327,6 +358,13 @@ class SceneRenderer:
                 if item.lit and item.normal_scale != state["normal_scale"]:
                     program.set_vec3("u_normal_scale", item.normal_scale)
                     state["normal_scale"] = item.normal_scale
+                rim = item.rim or _NO_RIM
+                if rim != state["rim"]:
+                    program.set_vec4("u_rim", rim)
+                    state["rim"] = rim
+                if item.falloff != state["falloff"]:
+                    program.set_float("u_falloff", 1.0 if item.falloff else 0.0)
+                    state["falloff"] = item.falloff
                 glDrawArrays(GL_TRIANGLES, 0, geometry.vertex_count)
             else:
                 if item.width != state["width"]:
