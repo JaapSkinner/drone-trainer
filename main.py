@@ -2,21 +2,25 @@ import os
 import sys
 import logging
 from PyQt5.QtWidgets import QApplication, QSplashScreen
-from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from services.app_logging import configure_logging
 from services.paths import APP_ROOT
 from ui.main_window import MainWindow
+from ui.splash import splash_pixmap
 
 def main():
     # Asset paths (icons, stylesheets, meshes) are relative to the app root.
     os.chdir(APP_ROOT)
     configure_logging(level=logging.INFO)
+    # Crisp text and icons on high-DPI screens (must be set before the QApplication).
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
+    app.setApplicationName("Drone Trainer")
 
     # Show splash screen
-    splash_pix = QPixmap('ui/assets/splashscreen.png')
-    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash = QSplashScreen(splash_pixmap(app.devicePixelRatio()), Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+    splash.setAttribute(Qt.WA_TranslucentBackground)
     splash.show()
     app.processEvents()
 

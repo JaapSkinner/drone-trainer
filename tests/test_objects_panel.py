@@ -71,8 +71,8 @@ class ObjectsPanelTests(unittest.TestCase):
     def test_cards_for_objects_and_helpers(self):
         self.assertIsNotNone(self.panel.card_for(self.box))
         helper_card = self.panel.card_for(self.grid)
-        self.assertNotIn("✕", [b.text() for b in helper_card.findChildren(QToolButton)])
-        self.assertIn("✕", [b.text() for b in self.panel.card_for(self.box).findChildren(QToolButton)])
+        self.assertNotIn("Delete object", [b.toolTip() for b in helper_card.findChildren(QToolButton)])
+        self.assertIn("Delete object", [b.toolTip() for b in self.panel.card_for(self.box).findChildren(QToolButton)])
 
     def test_editing_pose_moves_the_object(self):
         card = self._card(self.box)

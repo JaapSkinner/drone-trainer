@@ -9,13 +9,15 @@ from models.mocap_calibration import MocapCalibration
 from models.sphere import Sphere
 from models.structs import MotionCaptureConfig
 from services.service_base import ServiceLevel
+from ui import theme
 from ui.dock.panels.mocap_calibration_dialog import MocapCalibrationDialog
+from ui.widgets.toast import toast
 
-_STATUS_COLOURS = {
-    ServiceLevel.RUNNING: "#1e7e34",
-    ServiceLevel.WARNING: "#b36b00",
-    ServiceLevel.ERROR: "#c82333",
-    ServiceLevel.STOPPED: "#666666",
+_STATUS_TONES = {
+    ServiceLevel.RUNNING: "success",
+    ServiceLevel.WARNING: "warning",
+    ServiceLevel.ERROR: "danger",
+    ServiceLevel.STOPPED: "muted",
 }
 
 
@@ -35,10 +37,11 @@ class MotionCapturePanel(QWidget):
         self._connected = False
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
         layout.setAlignment(Qt.AlignTop)
-        title = QLabel("Motion Capture")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
+        layout.addWidget(theme.page_header("Motion Capture", "Connect to Vicon or OptiTrack and choose which "
+                                                             "subjects move which objects."))
 
         layout.addWidget(self._build_connection_group())
         layout.addWidget(self._build_subjects_group(), 1)
@@ -89,10 +92,10 @@ class MotionCapturePanel(QWidget):
         form.addRow("", self.auto_connect_check)
 
         button_row = QHBoxLayout()
-        self.connect_button = QPushButton("Connect")
+        self.connect_button = theme.button("Connect", "primary", "plug")
         self.connect_button.clicked.connect(self._on_connect_clicked)
         button_row.addWidget(self.connect_button)
-        self.calibrate_button = QPushButton("Calibrate…")
+        self.calibrate_button = theme.button("Calibrate…", None, "crosshair")
         self.calibrate_button.setToolTip("Align the motion capture axes and origin with the lab")
         self.calibrate_button.clicked.connect(self.open_calibration)
         button_row.addWidget(self.calibrate_button)
@@ -100,11 +103,10 @@ class MotionCapturePanel(QWidget):
 
         self.calibration_label = QLabel()
         self.calibration_label.setWordWrap(True)
-        self.calibration_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.calibration_label.setProperty("role", "hint")
         form.addRow("Calibration:", self.calibration_label)
 
-        self.status_label = QLabel("Not connected")
-        self.status_label.setWordWrap(True)
+        self.status_label = theme.label("Not connected", "pill", "muted")
         form.addRow("Status:", self.status_label)
         return group
 
@@ -121,7 +123,7 @@ class MotionCapturePanel(QWidget):
         hint = QLabel("In Vicon Tracker enable the UDP Object Stream and send it to this PC's IP "
                       "and the port above.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #666; font-size: 11px;")
+        hint.setProperty("role", "hint")
         form.addRow(hint)
         return widget
 
@@ -144,7 +146,7 @@ class MotionCapturePanel(QWidget):
         hint = QLabel("In Motive enable NatNet streaming. Rigid body names are matched to "
                       "objects' tracking IDs.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #666; font-size: 11px;")
+        hint.setProperty("role", "hint")
         form.addRow(hint)
         return widget
 
@@ -155,6 +157,9 @@ class MotionCapturePanel(QWidget):
         self.subjects_table = QTableWidget(0, len(self.COLUMNS))
         self.subjects_table.setHorizontalHeaderLabels(self.COLUMNS)
         self.subjects_table.verticalHeader().setVisible(False)
+        self.subjects_table.verticalHeader().setDefaultSectionSize(32)
+        self.subjects_table.setShowGrid(False)
+        self.subjects_table.setAlternatingRowColors(True)
         self.subjects_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.subjects_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.subjects_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -164,17 +169,17 @@ class MotionCapturePanel(QWidget):
         self.subjects_table.itemSelectionChanged.connect(self._update_action_buttons)
         layout.addWidget(self.subjects_table)
 
-        self.empty_label = QLabel("Connect to see tracked subjects.")
-        self.empty_label.setStyleSheet("color: #666; font-style: italic;")
+        self.empty_label = theme.label("Connect to see tracked subjects.", "hint", wrap=True)
         layout.addWidget(self.empty_label)
 
         buttons = QHBoxLayout()
-        self.assign_button = QPushButton("Assign to object…")
+        self.assign_button = theme.button("Assign…", None, "link", "sm",
+                                          tooltip="Make an existing object follow this subject")
         self.assign_button.clicked.connect(self._on_assign_clicked)
-        self.create_button = QPushButton("Create object")
+        self.create_button = theme.button("New object", None, "plus", "sm")
         self.create_button.setToolTip("Add a marker that follows this subject")
         self.create_button.clicked.connect(self._on_create_clicked)
-        self.unassign_button = QPushButton("Unassign")
+        self.unassign_button = theme.button("Unassign", "ghost", "unplug", "sm")
         self.unassign_button.clicked.connect(self._on_unassign_clicked)
         for b in (self.assign_button, self.create_button, self.unassign_button):
             buttons.addWidget(b)
@@ -249,6 +254,7 @@ class MotionCapturePanel(QWidget):
         return dialog
 
     def _on_calibration_applied(self, calibration):
+        toast("Calibration applied")
         self._calibration_dict = calibration.to_dict()
         self._show_calibration(calibration)
         self._emit_config()  # MainWindow applies and saves it
@@ -279,6 +285,7 @@ class MotionCapturePanel(QWidget):
     def on_connection_changed(self, connected: bool):
         self._connected = connected
         self.connect_button.setText("Disconnect" if connected else "Connect")
+        theme.decorate(self.connect_button, None if connected else "primary", "unplug" if connected else "plug")
         self._set_settings_enabled(not connected)
         if not connected:
             self.on_subjects_updated([])
@@ -287,7 +294,7 @@ class MotionCapturePanel(QWidget):
     def on_status_changed(self, level: int, label: str):
         level_enum = ServiceLevel(level)
         self.status_label.setText(label or level_enum.name.capitalize())
-        self.status_label.setStyleSheet(f"color: {_STATUS_COLOURS.get(level_enum, '#666')};")
+        theme.set_tone(self.status_label, _STATUS_TONES.get(level_enum, "muted"))
 
     @pyqtSlot(object)
     def on_subjects_updated(self, subjects):

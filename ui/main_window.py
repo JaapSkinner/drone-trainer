@@ -19,7 +19,6 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt5.QtGui import QFontDatabase, QFont
 import json
 
 from services.input_service import InputService, InputType
@@ -38,7 +37,8 @@ from models.structs import MotionCaptureConfig, MavlinkGlobalSettings, MavlinkCo
 from models.storage_models import AppSettings, ConnectionEntry
 from models.default_scene import build_default_scene
 from ui.navbar.navbar import SideNavbar
-from ui.style import load_stylesheet
+from ui import theme
+from ui.widgets.toast import Toast, notifier as toast_notifier, toast
 from ui.status_panel.status_panel import StatusPanel
 from services.app_logging import get_log_file_path
 from services.paths import session_scene_path
@@ -82,14 +82,6 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._root_log_handler = None
         self._service_status_seen = {}
-        # Load and set global font
-        font_id = QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
-        if font_id != -1:
-            family = QFontDatabase.applicationFontFamilies(font_id)[0]
-            QFontDatabase.addApplicationFont('ui/assets/fonts/NotoSan.ttf')
-            self.setFont(QFont(family, 11))
-            QApplication.setFont(QFont(family, 11))
-
         # --- Persistent storage (loaded synchronously before other services) ---
         # Load settings from disk first (synchronously) so the UI can use them
         # for initial configuration. Create the ObjectService before the
@@ -97,6 +89,9 @@ class MainWindow(QMainWindow):
         # storage service constructs its internal QThread.
         saved = StorageService.load_settings_from_disk()
         initial_connections = StorageService.load_connections_from_disk()
+
+        # Look and feel (fonts, colours, icons) before any widget is built.
+        theme.apply(saved.ui_theme if saved.ui_theme in theme.PALETTES else "light")
 
         # Create object service early (before StorageService) to preserve
         # the previous construction order and avoid moveToThread races.
@@ -200,14 +195,6 @@ class MainWindow(QMainWindow):
                     self.showMaximized()
             except Exception:
                 pass
-            # Restore application font size if present
-            try:
-                if getattr(saved, 'font_point_size', None):
-                    f = QApplication.font()
-                    f.setPointSize(int(saved.font_point_size))
-                    QApplication.setFont(f)
-            except Exception:
-                pass
         # Sync the settings panel slider
         self.settings_panel.zoom_sensitivity_slider.blockSignals(True)
         self.settings_panel.zoom_sensitivity_slider.setValue(int(saved.zoom_sensitivity * 100))
@@ -291,6 +278,7 @@ class MainWindow(QMainWindow):
         # --- Wire auto-save hooks ---
         self.settings_panel.zoom_sensitivity_changed.connect(self._on_save_zoom_sensitivity)
         self.settings_panel.mavlink_settings_changed.connect(self._on_save_mavlink_settings)
+        self.settings_panel.theme_changed.connect(self._on_theme_changed)
         self.mavlink_service.connection_changed.connect(self._on_connection_changed)
 
         # Pass storage service to mavlink panel so connection edits/deletes
@@ -304,7 +292,6 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        self.setStyleSheet(load_stylesheet('ui/main_window.qss'))
         self.log_message_received.connect(self._append_log_console_message)
         self._setup_app_console()
 
@@ -318,6 +305,7 @@ class MainWindow(QMainWindow):
         self.app_console_output.setReadOnly(True)
         self.app_console_output.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.app_console_output.setMaximumBlockCount(4000)
+        self.app_console_output.setProperty("role", "console")
         self.app_console_dock.setWidget(self.app_console_output)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.app_console_dock)
         self.app_console_dock.hide()
@@ -329,19 +317,12 @@ class MainWindow(QMainWindow):
         self.toggle_console_action.triggered.connect(self._toggle_app_console)
         self.addAction(self.toggle_console_action)
 
-        self.console_toggle_button = QPushButton("Console", self.centralWidget())
-        self.console_toggle_button.setToolTip("Open/close application console")
+        self.console_toggle_button = QPushButton(" Console", self.centralWidget())
+        self.console_toggle_button.setObjectName("ConsoleToggle")
+        self.console_toggle_button.setToolTip("Open/close the application console (F12)")
+        self.console_toggle_button.setCursor(Qt.PointingHandCursor)
+        theme.set_icon(self.console_toggle_button, "terminal", size=14)
         self.console_toggle_button.clicked.connect(self._toggle_app_console)
-        self.console_toggle_button.setStyleSheet(
-            "QPushButton {"
-            " background: rgba(30, 30, 30, 180);"
-            " color: #ffffff;"
-            " border: 1px solid rgba(255,255,255,90);"
-            " border-radius: 14px;"
-            " padding: 6px 12px;"
-            "}"
-            "QPushButton:hover { background: rgba(40, 40, 40, 220); }"
-        )
         self.console_toggle_button.adjustSize()
         self.console_toggle_button.raise_()
         self._position_overlay_widgets()
@@ -448,6 +429,7 @@ class MainWindow(QMainWindow):
         # Every way into the step-by-step drone setup.
         self.objects_panel.add_drone_requested.connect(lambda: self.open_drone_setup())
         self.dock.home_panel.add_drone_requested.connect(lambda: self.open_drone_setup())
+        self.dock.home_panel.navigate_requested.connect(self._show_panel)
         self.dock.command_panel.drone_setup_requested.connect(self.open_drone_setup)
         self.settings_panel = self.dock.settings_panel  # Settings panel
         self.command_panel = self.dock.get_panel("command")
@@ -512,6 +494,10 @@ class MainWindow(QMainWindow):
         self.status_panel.show()
         self.status_panel.anchor_top_right()
 
+        # Short confirmations ("Scene saved") over the bottom of the 3-D view
+        self.toast = Toast(self.glWidget)
+        toast_notifier.requested.connect(self.toast.show_message)
+
 
 
     @staticmethod
@@ -545,6 +531,7 @@ class MainWindow(QMainWindow):
 
     def _on_drone_ready(self, obj, options):
         self._sync_connections_to_storage()
+        toast(f"{obj.name} is set up")
         if options.get("control"):
             self.command_panel.select_object(obj)
             self._show_panel("command")
@@ -564,6 +551,7 @@ class MainWindow(QMainWindow):
         if self.glWidget.get_locked_object() is obj:
             self.glWidget.set_locked_object(None)
 
+    @pyqtSlot(str)
     def _show_panel(self, tag: str):
         """Show a dock panel and keep the navbar selection in sync."""
         tag = self.dock.resolve_tag(tag)
@@ -698,6 +686,15 @@ class MainWindow(QMainWindow):
     def _on_trainer_preferences_changed(self, prefs):
         settings = self.storage_service.get_settings()
         settings.trainer = prefs
+        self.storage_service.update_settings(settings)
+
+    @pyqtSlot(str)
+    def _on_theme_changed(self, name: str):
+        """Switch light/dark and remember it."""
+        theme.apply(name)
+        self.settings_panel.set_theme_name(name)
+        settings = self.storage_service.get_settings()
+        settings.ui_theme = name
         self.storage_service.update_settings(settings)
 
     def _on_save_zoom_sensitivity(self, value: float):
@@ -1055,6 +1052,10 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        if s.ui_theme in theme.PALETTES and s.ui_theme != theme.current_name():
+            theme.apply(s.ui_theme)
+            self.settings_panel.set_theme_name(s.ui_theme)
+
         # Update settings panel UI (zoom slider)
         try:
             self.settings_panel.zoom_sensitivity_slider.blockSignals(True)
@@ -1118,13 +1119,6 @@ class MainWindow(QMainWindow):
         try:
             if getattr(s, 'window_maximized', False):
                 self.showMaximized()
-        except Exception:
-            pass
-        try:
-            if getattr(s, 'font_point_size', None):
-                f = QApplication.font()
-                f.setPointSize(int(s.font_point_size))
-                QApplication.setFont(f)
         except Exception:
             pass
 

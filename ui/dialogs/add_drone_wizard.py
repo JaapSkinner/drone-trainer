@@ -14,14 +14,16 @@ import re
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
-                             QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                             QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                              QListWidgetItem, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout,
                              QWidget)
 
 from models.cad_mesh import CadMesh
 from models.sphere import Sphere
 from models.structs import MavlinkConnectionConfig
-from ui.widgets.drone_status import COLOURS, OK, OFF, SYMBOLS, WARN, BAD
+from ui import animation, theme
+from ui.widgets.drone_status import OK, OFF, WARN, BAD
+from ui.widgets.step_indicator import StepIndicator
 
 QUAD_MESH = "cad_files/basic_quadcopter.stl"
 QUAD_SCALE = 0.004          # the STL is in mm and 84 mm across → ~0.34 m
@@ -32,28 +34,43 @@ STEPS = ("Drone", "Tracking", "Vehicle", "Review")
 
 
 def _hint(text):
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setStyleSheet("color: #666;")
-    return label
+    return theme.hint(text)
 
 
-def _heading(text):
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setStyleSheet("font-size: 15px; font-weight: 600; margin-bottom: 4px;")
-    return label
+def _heading(text, subtitle=""):
+    """A page's title and a one-line explanation under it."""
+    box = QWidget()
+    column = QVBoxLayout(box)
+    column.setContentsMargins(0, 0, 0, 8)
+    column.setSpacing(2)
+    column.addWidget(theme.label(text, "subtitle", wrap=True))
+    if subtitle:
+        column.addWidget(theme.hint(subtitle))
+    return box
 
 
-def _status(label, state, text):
-    label.setText(f"{SYMBOLS[state]} {text}")
-    label.setStyleSheet(f"color: {COLOURS[state]};")
+def _status(line, state, text):
+    line.set_state(state, text)
+
+
+def _option(text, description):
+    """A radio button drawn as a selectable card: a bold choice and a line explaining it."""
+    radio = QRadioButton()
+    radio.setProperty("variant", "card")
+    radio.setCursor(Qt.PointingHandCursor)
+    column = QVBoxLayout(radio)
+    column.setContentsMargins(40, 10, 14, 10)   # room for the radio indicator on the left
+    column.setSpacing(1)
+    column.addWidget(theme.label(text, "option-title"))
+    column.addWidget(theme.label(description, "hint", wrap=True))
+    radio.setMinimumHeight(column.sizeHint().height() + 4)
+    return radio
 
 
 def _swatch_style(colour):
     r, g, b = (int(round(c * 255)) for c in colour[:3])
-    return (f"QPushButton {{ background: rgb({r},{g},{b}); border: 1px solid #888; border-radius: 4px;"
-            " min-width: 28px; max-width: 28px; min-height: 20px; }")
+    return (f"QPushButton {{ background: rgb({r},{g},{b}); border: 1px solid {theme.colour('border_strong')};"
+            " border-radius: 8px; min-width: 34px; max-width: 34px; min-height: 22px; padding: 0; }")
 
 
 class AddDroneWizard(QDialog):
@@ -71,37 +88,53 @@ class AddDroneWizard(QDialog):
         self._mesh_path = ""
         self._pending_connection = None   # name of a connection this wizard started
         self.setWindowTitle(f"Drone setup — {edit_object.name}" if edit_object else "Add a drone")
-        self.resize(560, 600)
+        self.resize(600, 640)
 
         layout = QVBoxLayout(self)
-        self.steps_label = QLabel()
-        self.steps_label.setStyleSheet("color: #555; padding-bottom: 6px;")
-        layout.addWidget(self.steps_label)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
+        header = QFrame()
+        header.setObjectName("WizardHeader")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(28, 22, 28, 10)
+        header_layout.setSpacing(12)
+        header_layout.addWidget(theme.title(f"Set up {edit_object.name}" if edit_object else "Add a drone"))
+        self.step_indicator = StepIndicator(STEPS)
+        header_layout.addWidget(self.step_indicator)
+        layout.addWidget(header)
+
+        body = QVBoxLayout()
+        body.setContentsMargins(28, 20, 28, 12)
         self.pages = QStackedWidget()
         for build in (self._build_drone_page, self._build_tracking_page,
                       self._build_vehicle_page, self._build_review_page):
             self.pages.addWidget(build())
-        layout.addWidget(self.pages, 1)
+        body.addWidget(self.pages, 1)
 
-        self.error_label = QLabel()
-        self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet(f"color: {COLOURS[BAD]};")
-        layout.addWidget(self.error_label)
+        self.error_label = theme.label("", "banner", "danger", wrap=True)
+        self.error_label.hide()
+        body.addWidget(self.error_label)
+        layout.addLayout(body, 1)
 
-        buttons = QHBoxLayout()
-        self.cancel_button = QPushButton("Cancel")
+        footer = QFrame()
+        footer.setObjectName("WizardFooter")
+        buttons = QHBoxLayout(footer)
+        buttons.setContentsMargins(28, 14, 28, 18)
+        self.cancel_button = theme.button("Cancel", "ghost")
         self.cancel_button.clicked.connect(self.reject)
         buttons.addWidget(self.cancel_button)
         buttons.addStretch()
-        self.back_button = QPushButton("< Back")
+        self.back_button = theme.button("Back", None, "chevron-left")
         self.back_button.clicked.connect(self.back)
         buttons.addWidget(self.back_button)
-        self.next_button = QPushButton("Next >")
+        self.next_button = theme.button("Next", "primary", "chevron-right")
+        self.next_button.setLayoutDirection(Qt.RightToLeft)   # icon after the text
+        self.next_button.setMinimumWidth(110)
         self.next_button.setDefault(True)
         self.next_button.clicked.connect(self.next)
         buttons.addWidget(self.next_button)
-        layout.addLayout(buttons)
+        layout.addWidget(footer)
 
         self._prefill()
         if self.mocap is not None:
@@ -121,8 +154,14 @@ class AddDroneWizard(QDialog):
     def _build_drone_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(_heading("Name your drone and pick how it looks"))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(_heading("Name your drone and pick how it looks",
+                                  "The name is how it appears in every list; it doesn't have to match motion "
+                                  "capture."))
         form = QFormLayout()
+        form.setVerticalSpacing(12)
+        form.setHorizontalSpacing(16)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.drone_form = form
         self.name_edit = QLineEdit()
         form.addRow("Name:", self.name_edit)
@@ -135,9 +174,8 @@ class AddDroneWizard(QDialog):
         form.addRow("Model:", self.model_combo)
 
         mesh_row = QHBoxLayout()
-        self.mesh_label = QLabel("No file chosen")
-        self.mesh_label.setStyleSheet("color: #666;")
-        browse = QPushButton("Browse…")
+        self.mesh_label = theme.label("No file chosen", "hint")
+        browse = theme.button("Browse…", None, "folder-open")
         browse.clicked.connect(self._choose_mesh)
         mesh_row.addWidget(self.mesh_label, 1)
         mesh_row.addWidget(browse)
@@ -164,9 +202,10 @@ class AddDroneWizard(QDialog):
     def _build_tracking_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(_heading("How is the drone tracked?"))
-        self.tracked_radio = QRadioButton("By motion capture (Vicon / OptiTrack)")
-        self.simulated_radio = QRadioButton("Not tracked — a simulated drone you fly from the Command panel")
+        self.tracked_radio = _option("By motion capture", "Vicon or OptiTrack follows its markers")
+        self.simulated_radio = _option("Not tracked", "A simulated drone you fly from the Command panel")
         group = QButtonGroup(page)
         for radio in (self.tracked_radio, self.simulated_radio):
             group.addButton(radio)
@@ -175,28 +214,27 @@ class AddDroneWizard(QDialog):
 
         self.tracking_box = QWidget()
         box = QVBoxLayout(self.tracking_box)
-        box.setContentsMargins(20, 4, 0, 0)
+        box.setContentsMargins(0, 10, 0, 0)
         mocap_row = QHBoxLayout()
-        self.mocap_status = QLabel()
+        self.mocap_status = theme.StatusLine()
         mocap_row.addWidget(self.mocap_status, 1)
-        self.mocap_connect_button = QPushButton("Connect motion capture")
+        self.mocap_connect_button = theme.button("Connect motion capture", "subtle", "plug")
         self.mocap_connect_button.clicked.connect(self._connect_mocap)
         mocap_row.addWidget(self.mocap_connect_button)
         box.addLayout(mocap_row)
 
-        box.addWidget(QLabel("Pick the drone's subject:"))
+        box.addWidget(theme.section("Pick the drone's subject"))
         self.subject_list = QListWidget()
         self.subject_list.setMinimumHeight(130)
         self.subject_list.currentItemChanged.connect(self._on_subject_picked)
         box.addWidget(self.subject_list)
         subject_row = QHBoxLayout()
-        subject_row.addWidget(QLabel("Subject name:"))
+        subject_row.addWidget(QLabel("Subject name"))
         self.subject_edit = QLineEdit()
         self.subject_edit.setPlaceholderText("as named in Vicon Tracker / Motive")
         subject_row.addWidget(self.subject_edit, 1)
         box.addLayout(subject_row)
-        self.subject_status = QLabel()
-        self.subject_status.setWordWrap(True)
+        self.subject_status = theme.StatusLine()
         box.addWidget(self.subject_status)
         box.addWidget(_hint("Not sure which one it is? Pick it up and move it — its position changes in the list."))
         layout.addWidget(self.tracking_box)
@@ -207,9 +245,11 @@ class AddDroneWizard(QDialog):
     def _build_vehicle_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(_heading("Is there a flight controller to talk to?"))
-        self.no_vehicle_radio = QRadioButton("No — show and track it only")
-        self.vehicle_radio = QRadioButton("Yes — connect to its PX4 flight controller over MAVLink")
+        self.no_vehicle_radio = _option("No flight controller", "Only show and track it")
+        self.vehicle_radio = _option("PX4 over MAVLink", "Connect to its flight controller to send it "
+                                                         "positions and motion capture")
         group = QButtonGroup(page)
         for radio in (self.no_vehicle_radio, self.vehicle_radio):
             group.addButton(radio)
@@ -218,7 +258,8 @@ class AddDroneWizard(QDialog):
 
         self.vehicle_box = QWidget()
         box = QFormLayout(self.vehicle_box)
-        box.setContentsMargins(20, 4, 0, 0)
+        box.setContentsMargins(0, 10, 0, 0)
+        box.setVerticalSpacing(10)
         self.connection_combo = QComboBox()
         self.connection_combo.currentIndexChanged.connect(self._update_vehicle_fields)
         box.addRow("Connection:", self.connection_combo)
@@ -234,7 +275,7 @@ class AddDroneWizard(QDialog):
         self.address_edit = QLineEdit()
         self.address_edit.setToolTip("udpin:0.0.0.0:<port> listens for the drone on that UDP port")
         address_row.addWidget(self.address_edit, 1)
-        self.find_button = QPushButton("Find vehicles")
+        self.find_button = theme.button("Find vehicles", None, "search")
         self.find_button.clicked.connect(self._find_vehicles)
         address_row.addWidget(self.find_button)
         new_form.addRow("Address:", address_row)
@@ -248,10 +289,9 @@ class AddDroneWizard(QDialog):
         box.addRow(self.new_connection_box)
 
         connect_row = QHBoxLayout()
-        self.vehicle_status = QLabel()
-        self.vehicle_status.setWordWrap(True)
+        self.vehicle_status = theme.StatusLine()
         connect_row.addWidget(self.vehicle_status, 1)
-        self.vehicle_connect_button = QPushButton("Connect now")
+        self.vehicle_connect_button = theme.button("Connect now", "subtle", "plug")
         self.vehicle_connect_button.clicked.connect(self._connect_vehicle)
         connect_row.addWidget(self.vehicle_connect_button)
         box.addRow(connect_row)
@@ -267,17 +307,20 @@ class AddDroneWizard(QDialog):
     def _build_review_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(_heading("Check and finish"))
-        self.review_rows = QVBoxLayout()
-        layout.addLayout(self.review_rows)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(_heading("Check and finish", "Green means ready. You can come back to anything else."))
+        card = QFrame()
+        card.setProperty("role", "card")
+        self.review_rows = QVBoxLayout(card)
+        self.review_rows.setContentsMargins(16, 14, 16, 14)
+        self.review_rows.setSpacing(10)
+        layout.addWidget(card)
         self._review_labels = {}
         for key in ("drone", "tracking", "vehicle", "mocap"):
-            label = QLabel()
-            label.setWordWrap(True)
-            label.setStyleSheet("padding: 2px 0;")
-            self.review_rows.addWidget(label)
-            self._review_labels[key] = label
-        layout.addSpacing(10)
+            line = theme.StatusLine()
+            self.review_rows.addWidget(line)
+            self._review_labels[key] = line
+        layout.addSpacing(14)
         self.control_check = QCheckBox("Fly it now — select it in the Command panel")
         self.control_check.setChecked(True)
         layout.addWidget(self.control_check)
@@ -352,12 +395,16 @@ class AddDroneWizard(QDialog):
         return self.pages.currentIndex()
 
     def go_to(self, index):
+        previous = self.pages.currentIndex()
         self.pages.setCurrentIndex(index)
-        self.error_label.setText("")
-        self.steps_label.setText("  ›  ".join(
-            f"<b>{i + 1}. {name}</b>" if i == index else f"{i + 1}. {name}" for i, name in enumerate(STEPS)))
+        if index != previous:
+            animation.slide_fade_in(self.pages.currentWidget(), dx=28 if index > previous else -28)
+        self.step_indicator.set_current(index)
+        self._show_error("")
         self.back_button.setEnabled(index > 0)
-        self.next_button.setText("Finish" if index == len(STEPS) - 1 else "Next >")
+        last = index == len(STEPS) - 1
+        self.next_button.setText("Finish" if last else "Next")
+        theme.set_icon(self.next_button, "check" if last else "chevron-right", "on_accent", 16)
         if index == 2:
             if not self._connection_name_touched and self._pending_connection is None:
                 self.connection_name_edit.setText(self.name_edit.text().strip())
@@ -368,12 +415,19 @@ class AddDroneWizard(QDialog):
     def next(self):
         error = self.validate_step(self.current_step())
         if error:
-            self.error_label.setText(error)
+            self._show_error(error)
             return
         if self.current_step() == len(STEPS) - 1:
             self.finish()
         else:
             self.go_to(self.current_step() + 1)
+
+    def _show_error(self, message):
+        was_visible = self.error_label.isVisible()
+        self.error_label.setText(message)
+        self.error_label.setVisible(bool(message))
+        if message and not was_visible:
+            animation.fade_in(self.error_label, animation.FAST)
 
     def back(self):
         if self.current_step() > 0:

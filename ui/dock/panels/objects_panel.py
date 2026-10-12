@@ -20,20 +20,11 @@ from models.gate_frame import GateFrame
 from models.rect_prism import RectPrism
 from models.sphere import Sphere
 from services.paths import data_dir
+from ui import animation, theme
 from ui.dock.panels.object_features import FEATURES, FeatureContext
+from ui.widgets.toast import toast
 
 TYPE_LABELS = {RectPrism: "Box", Sphere: "Sphere", CadMesh: "Mesh", GateFrame: "Gate"}
-
-_PANEL_STYLE = """
-QFrame#ObjectCard { background: #ffffff; border: 1px solid #d8d8d8; border-radius: 8px; }
-QFrame#ObjectCard[tracking="true"] { border-color: #1e7e34; }
-QFrame#FeatureBox { background: #f7f7f8; border: 1px solid #e2e2e2; border-radius: 6px; }
-QLabel#TypeTag { color: #555; background: #eeeeee; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
-QLabel#SectionTitle { font-weight: 600; color: #333; margin-top: 4px; }
-QToolButton#CardButton { border: none; padding: 2px 4px; }
-QToolButton#CardButton:hover { background: #ececec; border-radius: 4px; }
-"""
-
 
 def _spin(minimum, maximum, decimals, step, suffix=""):
     spin = QDoubleSpinBox()
@@ -43,14 +34,14 @@ def _spin(minimum, maximum, decimals, step, suffix=""):
     if suffix:
         spin.setSuffix(suffix)
     spin.setKeyboardTracking(False)  # apply when the value is committed, not per keystroke
-    spin.setMinimumWidth(70)
+    spin.setButtonSymbols(QDoubleSpinBox.NoButtons)   # scroll or type; arrows crowd the narrow card
+    spin.setProperty("compact", "true")
+    spin.setMinimumWidth(64)
     return spin
 
 
 def _section(text):
-    label = QLabel(text)
-    label.setObjectName("SectionTitle")
-    return label
+    return theme.section(text)
 
 
 def _discard(widget):
@@ -63,8 +54,8 @@ def _discard(widget):
 
 def _colour_button_style(colour):
     r, g, b = (int(round(c * 255)) for c in colour[:3])
-    return (f"QPushButton {{ background: rgb({r},{g},{b}); border: 1px solid #888;"
-            " border-radius: 4px; min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; }")
+    return (f"QPushButton {{ background: rgb({r},{g},{b}); border: 1px solid {theme.colour('border_strong')};"
+            " border-radius: 10px; padding: 0; min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; }")
 
 
 class ObjectCard(QFrame):
@@ -76,17 +67,18 @@ class ObjectCard(QFrame):
         super().__init__(parent)
         self.obj, self.ctx = obj, ctx
         self.setObjectName("ObjectCard")
+        self.setProperty("role", "card")
         self._updating = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
         layout.addLayout(self._build_header())
 
         self.body = QWidget()
         self.body_layout = QVBoxLayout(self.body)
-        self.body_layout.setContentsMargins(4, 0, 0, 0)
-        self.body_layout.setSpacing(4)
+        self.body_layout.setContentsMargins(4, 0, 2, 0)
+        self.body_layout.setSpacing(6)
         layout.addWidget(self.body)
         self._build_body()
         self.set_expanded(expanded)
@@ -97,8 +89,7 @@ class ObjectCard(QFrame):
     def _build_header(self):
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.expand_button = QToolButton()
-        self.expand_button.setObjectName("CardButton")
+        self.expand_button = theme.tool_button("chevron-right", "Show / hide details")
         self.expand_button.clicked.connect(lambda: self.set_expanded(not self.expanded))
         row.addWidget(self.expand_button)
 
@@ -109,31 +100,26 @@ class ObjectCard(QFrame):
 
         self.name_edit = QLineEdit(self.obj.name)
         self.name_edit.setFrame(False)
-        self.name_edit.setStyleSheet("font-weight: 600; background: transparent;")
+        self.name_edit.setProperty("frame", "false")
+        self.name_edit.setProperty("role", "card-title")
         self.name_edit.editingFinished.connect(self._on_name_edited)
         row.addWidget(self.name_edit, 1)
 
-        tag = QLabel(TYPE_LABELS.get(type(self.obj), type(self.obj).__name__))
-        tag.setObjectName("TypeTag")
+        tag = theme.label(TYPE_LABELS.get(type(self.obj), type(self.obj).__name__), "pill")
         row.addWidget(tag)
 
         self.visible_check = QCheckBox()
+        self.visible_check.setProperty("variant", "eye")
         self.visible_check.setToolTip("Visible in the viewport")
         self.visible_check.toggled.connect(self._on_visible_toggled)
         row.addWidget(self.visible_check)
 
-        focus = QToolButton()
-        focus.setObjectName("CardButton")
-        focus.setText("◎")
-        focus.setToolTip("Point the camera at this object (locks the view to it)")
+        focus = theme.tool_button("locate-fixed", "Point the camera at this object (locks the view to it)")
         focus.clicked.connect(lambda: self.focus_requested.emit(self.obj))
         row.addWidget(focus)
 
         if not self.obj.helper:
-            delete = QToolButton()
-            delete.setObjectName("CardButton")
-            delete.setText("✕")
-            delete.setToolTip("Delete object")
+            delete = theme.tool_button("trash", "Delete object")
             delete.clicked.connect(self._on_delete_clicked)
             row.addWidget(delete)
         return row
@@ -149,7 +135,7 @@ class ObjectCard(QFrame):
         self.position_spins = [_spin(-1000, 1000, 3, 0.05) for _ in range(3)]
         self.rotation_spins = [_spin(-180, 180, 1, 5.0) for _ in range(3)]
         for col, axis in enumerate("XYZ"):
-            grid.addWidget(QLabel(axis), 0, col + 1, Qt.AlignCenter)
+            grid.addWidget(theme.label(axis, "hint"), 0, col + 1, Qt.AlignCenter)
         grid.addWidget(QLabel("Position (m)"), 1, 0)
         grid.addWidget(QLabel("Rotation (°)"), 2, 0)
         for col in range(3):
@@ -160,7 +146,8 @@ class ObjectCard(QFrame):
         body.addLayout(grid)
         self.pose_note = QLabel()
         self.pose_note.setWordWrap(True)
-        self.pose_note.setStyleSheet("color: #1e7e34; font-size: 11px;")
+        self.pose_note.setProperty("role", "hint")
+        self.pose_note.setProperty("tone", "success")
         body.addWidget(self.pose_note)
 
         shape = self._build_shape_editor()
@@ -186,7 +173,11 @@ class ObjectCard(QFrame):
         self.features_container.setSpacing(4)
         body.addLayout(self.features_container)
         self.add_feature_button = QToolButton()
-        self.add_feature_button.setText("+ Add feature")
+        self.add_feature_button.setText("Add feature")
+        self.add_feature_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.add_feature_button.setProperty("variant", "outline")
+        self.add_feature_button.setCursor(Qt.PointingHandCursor)
+        theme.set_icon(self.add_feature_button, "plus", "accent", 14)
         self.add_feature_button.setPopupMode(QToolButton.InstantPopup)
         self.add_feature_button.setMenu(QMenu(self.add_feature_button))
         self.add_feature_button.menu().aboutToShow.connect(self._populate_feature_menu)
@@ -242,16 +233,13 @@ class ObjectCard(QFrame):
         for feature in present:
             box = QFrame()
             box.setObjectName("FeatureBox")
+            box.setProperty("role", "card-alt")
             box_layout = QVBoxLayout(box)
-            box_layout.setContentsMargins(8, 4, 8, 6)
+            box_layout.setContentsMargins(10, 6, 8, 8)
             header = QHBoxLayout()
-            title = QLabel(feature.title)
-            title.setStyleSheet("font-weight: 600;")
+            title = theme.label(feature.title, "option-title")
             header.addWidget(title, 1)
-            remove = QToolButton()
-            remove.setObjectName("CardButton")
-            remove.setText("✕")
-            remove.setToolTip(f"Remove {feature.title}")
+            remove = theme.tool_button("x", f"Remove {feature.title}", size=14)
             remove.clicked.connect(lambda _c=False, f=feature: f.remove(self.obj, self.ctx))
             header.addWidget(remove)
             box_layout.addLayout(header)
@@ -279,10 +267,13 @@ class ObjectCard(QFrame):
         return self.body.isVisibleTo(self)
 
     def set_expanded(self, expanded: bool):
+        was = self.body.isVisibleTo(self)
         self.body.setVisible(expanded)
-        self.expand_button.setText("▾" if expanded else "▸")
+        theme.set_icon(self.expand_button, "chevron-down" if expanded else "chevron-right", None, 16)
         if expanded:
             self.refresh_live()
+            if not was and self.isVisible():
+                animation.fade_in(self.body, animation.FAST)
 
     def reload(self):
         """Re-read every property of the object (after a property change)."""
@@ -298,9 +289,7 @@ class ObjectCard(QFrame):
             self.opacity_label.setText(f"{alpha}%")
         finally:
             self._updating = False
-        self.setProperty("tracking", "true" if self.obj.tracked else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        theme.set_props(self, selected="true" if self.obj.tracked else "false")
         self._rebuild_features()
         self.refresh_live()
 
@@ -428,7 +417,7 @@ class CreateObjectDialog(QDialog):
         self.mesh_label = QLabel("File:")
         mesh_row = QHBoxLayout()
         self.mesh_path_label = QLabel("No file chosen")
-        self.mesh_path_label.setStyleSheet("color: #666;")
+        self.mesh_path_label.setProperty("role", "hint")
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._choose_mesh)
         mesh_row.addWidget(self.mesh_path_label, 1)
@@ -519,24 +508,27 @@ class ObjectsPanel(QWidget):
         self.ctx = FeatureContext(object_service, mavlink_service, motion_capture_service)
         self._cards = {}          # id(obj) → ObjectCard
         self._expanded = set()    # id(obj) of expanded cards (kept across rebuilds)
-        self.setStyleSheet(_PANEL_STYLE)
-
         layout = QVBoxLayout(self)
-        title = QLabel("Objects")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 6px;")
-        layout.addWidget(title)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(theme.page_header("Objects", "Everything in the scene. Expand a card to edit it and "
+                                                      "attach features."))
 
         toolbar = QHBoxLayout()
-        self.add_drone_button = QPushButton("+ Add drone…")
-        self.add_drone_button.setToolTip("Step-by-step: model, motion capture tracking and flight controller")
-        self.add_drone_button.setStyleSheet("font-weight: 600;")
+        toolbar.setSpacing(6)
+        self.add_drone_button = theme.button("Add drone…", "primary", "plus",
+                                             tooltip="Step-by-step: model, motion capture tracking and "
+                                                     "flight controller")
         self.add_drone_button.clicked.connect(lambda: self.add_drone_requested.emit())
         toolbar.addWidget(self.add_drone_button)
-        self.add_button = QPushButton("+ Add object")
+        self.add_button = theme.button("Add object", None, "boxes")
         self.add_button.clicked.connect(self._on_add_clicked)
         toolbar.addWidget(self.add_button)
         self.scene_button = QToolButton()
-        self.scene_button.setText("Scene ▾")
+        self.scene_button.setText("Scene")
+        self.scene_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.scene_button.setProperty("variant", "outline")
+        self.scene_button.setCursor(Qt.PointingHandCursor)
+        theme.set_icon(self.scene_button, "layers", None, 16)
         self.scene_button.setPopupMode(QToolButton.InstantPopup)
         scene_menu = QMenu(self.scene_button)
         self.save_action = scene_menu.addAction("Save scene…", self._on_save_clicked)
@@ -591,10 +583,8 @@ class ObjectsPanel(QWidget):
         regular = [o for o in objects if not o.helper]
         helpers = [o for o in objects if o.helper]
         if not regular:
-            empty = QLabel("No objects yet — use “+ Add object”, or create one from a "
-                           "Motion Capture subject.")
-            empty.setWordWrap(True)
-            empty.setStyleSheet("color: #666; font-style: italic; padding: 8px;")
+            empty = theme.label("No objects yet — use “Add drone…” or “Add object”, or create one from a "
+                                "Motion Capture subject.", "hint", wrap=True)
             self.cards_layout.addWidget(empty)
         for obj in regular:
             self._add_card(obj)
@@ -684,6 +674,7 @@ class ObjectsPanel(QWidget):
             path += ".json"
         try:
             self.save_scene(path)
+            toast(f"Scene saved — {os.path.basename(path)}")
         except OSError as exc:
             QMessageBox.critical(self, "Save scene", f"Could not save the scene:\n{exc}")
 
@@ -701,5 +692,6 @@ class ObjectsPanel(QWidget):
             return
         try:
             self.load_scene(path, replace=box.clickedButton() is replace)
+            toast(f"Scene loaded — {os.path.basename(path)}")
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "Load scene", f"Could not load the scene:\n{exc}")

@@ -16,7 +16,7 @@ from OpenGL.GL import (GL_BLEND, GL_COLOR_BUFFER_BIT, GL_COLOR_MATERIAL, GL_CULL
                        GL_PROJECTION, GL_SMOOTH, GL_SPECULAR, GL_AMBIENT, GL_SRC_ALPHA,
                        GL_TRUE, GL_AMBIENT_AND_DIFFUSE, GL_FRONT_AND_BACK, glBlendFunc, glClear,
                        glClearColor, glColorMaterial, glDepthFunc, glDepthMask, glDisable, glEnable,
-                       glLightfv, glLoadMatrixf, glMatrixMode, glShadeModel, glViewport)
+                       glLightfv, glLoadIdentity, glLoadMatrixf, glMatrixMode, glShadeModel, glViewport)
 
 from models import gl_buffers
 
@@ -66,6 +66,8 @@ class Camera:
 @dataclass
 class SceneRenderer:
     background: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    # Optional (top RGBA, bottom RGBA) vertical gradient drawn behind the scene instead.
+    background_gradient: Optional[Tuple[Sequence[float], Sequence[float]]] = None
     # Directional light, deliberately off the default view diagonal so the
     # visible faces of a box get different shades.
     light_position: Tuple[float, float, float, float] = (4.0, 10.0, 2.0, 0.0)
@@ -109,6 +111,8 @@ class SceneRenderer:
             glViewport(*viewport)
         glClearColor(*self.background)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        if self.background_gradient is not None:
+            self._draw_background_gradient(*self.background_gradient)
 
         glMatrixMode(GL_PROJECTION)
         glLoadMatrixf(camera.projection_matrix(width / max(1, height)).T)
@@ -134,3 +138,15 @@ class SceneRenderer:
                 obj.draw()
             glDepthMask(GL_TRUE)
         self.last_draw_count = len(visible)
+
+    @staticmethod
+    def _draw_background_gradient(top, bottom):
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_LIGHTING)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        gl_buffers.draw_screen_gradient(top, bottom)
+        glEnable(GL_LIGHTING)
+        glEnable(GL_DEPTH_TEST)

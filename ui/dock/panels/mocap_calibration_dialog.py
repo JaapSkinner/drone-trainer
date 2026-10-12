@@ -11,11 +11,12 @@ from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, Q
 
 from models.mocap_calibration import (CalibrationError, MocapCalibration, solve_origin_direction,
                                       solve_reference_points)
+from ui import theme
 
 CAPTURE_SECONDS = 1.0
 STEADY_LIMIT_M = 0.005   # warn if the object moved more than this during a capture
 
-_GOOD, _WARN, _BAD, _MUTED = "#1e7e34", "#b36b00", "#c82333", "#666666"
+_GOOD, _WARN, _BAD, _MUTED = "success", "warning", "danger", "muted"   # label tones
 
 
 def _fmt(p):
@@ -33,10 +34,7 @@ def _spin(minimum, maximum, decimals, step):
 
 
 def _hint(text):
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setStyleSheet(f"color: {_MUTED};")
-    return label
+    return theme.hint(text)
 
 
 class MocapCalibrationDialog(QDialog):
@@ -78,19 +76,20 @@ class MocapCalibrationDialog(QDialog):
 
         self.summary_label = QLabel()
         self.summary_label.setWordWrap(True)
-        self.summary_label.setStyleSheet("font-weight: 600;")
+        self.summary_label.setProperty("role", "banner")
+        self.summary_label.setProperty("tone", "accent")
         layout.addWidget(self.summary_label)
 
         buttons = QHBoxLayout()
-        self.reset_button = QPushButton("Reset to none")
+        self.reset_button = theme.button("Reset to none", "ghost", "refresh-cw")
         self.reset_button.setToolTip("Use the mocap system's frame unchanged")
         self.reset_button.clicked.connect(lambda: self.set_preview(MocapCalibration()))
         buttons.addWidget(self.reset_button)
         buttons.addStretch()
-        cancel = QPushButton("Cancel")
+        cancel = theme.button("Cancel")
         cancel.clicked.connect(self.reject)
         buttons.addWidget(cancel)
-        self.apply_button = QPushButton("Apply")
+        self.apply_button = theme.button("Apply", "primary", "check")
         self.apply_button.setDefault(True)
         self.apply_button.clicked.connect(self.accept)
         buttons.addWidget(self.apply_button)
@@ -111,13 +110,13 @@ class MocapCalibrationDialog(QDialog):
         form.addRow(_hint("Quickest method. Keeps the mocap system's vertical axis and sets where the "
                           "origin is and which way +X (forward / North) points."))
 
-        self.origin_button = QPushButton("1. Capture origin")
+        self.origin_button = theme.button("1. Capture origin", "subtle", "crosshair")
         self.origin_button.setToolTip("Place the object where the scene origin should be, hold it still")
         self.origin_button.clicked.connect(lambda: self.start_capture("origin"))
         self.origin_status = QLabel("Place the object at the new origin.")
         form.addRow(self.origin_button, self.origin_status)
 
-        self.direction_button = QPushButton("2. Capture direction")
+        self.direction_button = theme.button("2. Capture direction", "subtle", "crosshair")
         self.direction_button.setToolTip("Move the object along the new +X axis (at least 20 cm)")
         self.direction_button.clicked.connect(lambda: self.start_capture("direction"))
         self.direction_status = QLabel("Then move it along the new +X axis.")
@@ -154,7 +153,7 @@ class MocapCalibrationDialog(QDialog):
         layout.addWidget(self.points_table, 1)
 
         row = QHBoxLayout()
-        self.point_button = QPushButton("Capture point")
+        self.point_button = theme.button("Capture point", "subtle", "crosshair")
         self.point_button.clicked.connect(lambda: self.start_capture("point"))
         row.addWidget(self.point_button)
         remove = QPushButton("Remove")
@@ -169,7 +168,7 @@ class MocapCalibrationDialog(QDialog):
                                             "that aren't in a line")
         layout.addWidget(self.keep_vertical_check)
 
-        self.solve_button = QPushButton("Solve from points")
+        self.solve_button = theme.button("Solve from points", None, "target")
         self.solve_button.clicked.connect(self.solve_points)
         layout.addWidget(self.solve_button)
         self.points_status = QLabel()
@@ -266,7 +265,7 @@ class MocapCalibrationDialog(QDialog):
 
     def _set_live(self, text, colour):
         self.live_label.setText(text)
-        self.live_label.setStyleSheet(f"color: {colour};")
+        theme.set_tone(self.live_label, colour)
 
     # ------------------------------------------------------------------
     # Capturing
@@ -280,7 +279,7 @@ class MocapCalibrationDialog(QDialog):
         status = {"origin": self.origin_status, "direction": self.direction_status,
                   "point": self.points_status}[purpose]
         status.setText("Capturing… hold the object still.")
-        status.setStyleSheet(f"color: {_WARN};")
+        theme.set_tone(status, _WARN)
         for button in (self.origin_button, self.direction_button, self.point_button):
             button.setEnabled(False)
         self.service.capture_subject(subject, CAPTURE_SECONDS)
@@ -294,7 +293,7 @@ class MocapCalibrationDialog(QDialog):
                   "point": self.points_status}[purpose]
         if not result.ok:
             status.setText("No data — is the object visible to the cameras?")
-            status.setStyleSheet(f"color: {_BAD};")
+            theme.set_tone(status, _BAD)
             return
         text = f"✓ {_fmt(result.mean)}"
         colour = _GOOD
@@ -302,7 +301,7 @@ class MocapCalibrationDialog(QDialog):
             text += f"  (moved ±{1000 * result.std_m:.0f} mm — recapture holding it still)"
             colour = _WARN
         status.setText(text)
-        status.setStyleSheet(f"color: {colour};")
+        theme.set_tone(status, colour)
         if purpose == "origin":
             self._origin = result.mean
         elif purpose == "direction":
@@ -381,14 +380,14 @@ class MocapCalibrationDialog(QDialog):
         colour = _GOOD if rms_mm < 10 else _WARN
         note = "" if rms_mm < 10 else " — check the targets, or untick “keep vertical axis”"
         self.points_status.setText(f"Fit error {rms_mm:.1f} mm RMS over {len(self._points)} point(s){note}")
-        self.points_status.setStyleSheet(f"color: {colour};")
+        theme.set_tone(self.points_status, colour)
         self.set_preview(fit.calibration)
         return fit
 
     @staticmethod
     def _show_error(label, text):
         label.setText(text)
-        label.setStyleSheet(f"color: {_BAD};")
+        theme.set_tone(label, _BAD)
 
     # ------------------------------------------------------------------
     # Close

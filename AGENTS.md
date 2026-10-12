@@ -42,6 +42,26 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
 - Don't swallow exceptions with bare `except: pass`. Log them (`logger.exception(...)`) or let them
   propagate.
 
+## Look and feel
+
+- **Styling lives in `ui/theme.py`**: light/dark palette tokens and one app-wide stylesheet. Don't put
+  colours or fonts in `setStyleSheet` calls in panels. Use the helpers and properties instead:
+  `theme.label(text, role, tone)` (roles `title`, `subtitle`, `section`, `hint`, `value`, `metric`,
+  `pill`, `banner`; tones `success`, `warning`, `danger`, `muted`, `accent`),
+  `theme.button(text, variant, icon, size)` (variants `primary`, `danger`, `success`, `subtle`, `ghost`;
+  size `lg`/`sm`), `theme.decorate(...)` for an existing button, `theme.set_tone(...)` to recolour, and
+  `QFrame` `role="card"`. A user-picked colour (a colour swatch) is the only inline style.
+- Readiness states (`ok`/`warn`/`bad`/`off`) show with `theme.StatusLine` or `theme.state_pixmap`.
+- **Icons** are Lucide SVGs in `ui/assets/lucide/` (add one by copying it from lucide.dev). Use
+  `theme.set_icon(widget, name, tone)` so it is re-coloured when the theme changes; anything you
+  paint yourself should listen to `theme.signals.changed`.
+- **Animations** (`ui/animation.py`) are short (≤ 250 ms) and decorative: the widget ends in its final
+  state even if the animation never runs.
+- Confirm finished actions with `ui.widgets.toast.toast("Scene saved")` rather than a message box;
+  keep message boxes for errors and questions.
+- The app is sponsored by DTRG: their logo appears only as a credit on the Home panel. App branding
+  (the drone mark, indigo accent) is Drone Trainer's own.
+
 ## Running headless
 
 The app and tests run without a display:

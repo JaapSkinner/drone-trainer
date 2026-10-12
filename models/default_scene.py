@@ -12,7 +12,7 @@ def build_default_scene():
     blue_cube = RectPrism(name="Blue Cube", colour=(0.0, 0.0, 1.0, 0.5), controllable=False)
     blue_cube.set_pose((0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0))
     return [
-        Grid(name="Grid", colour=(0.68, 0.68, 0.68, 1.0)),
+        Grid(name="Grid"),
         Axes(name="Axes"),
         RectPrism(name="Red Cube", colour=(1.0, 0.0, 0.0), controllable=False),
         green_cube,

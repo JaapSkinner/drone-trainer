@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from PyQt5.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QSpinBox, QWidget
 
+from ui import theme
+
 
 @dataclass
 class FeatureContext:
@@ -49,18 +51,13 @@ class ObjectFeature:
         editor = FeatureEditor()
         form = QFormLayout(editor)
         form.setContentsMargins(0, 0, 0, 0)
-        hint = QLabel(self.description)
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #666;")
+        hint = theme.hint(self.description)
         form.addRow(hint)
         return editor
 
 
 def _hint(text):
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setStyleSheet("color: #666;")
-    return label
+    return theme.hint(text)
 
 
 # ---------------------------------------------------------------------------
@@ -135,18 +132,18 @@ class _MotionCaptureEditor(FeatureEditor):
 
         age = self.obj.tracking_age()
         if not self.obj.tracked:
-            text, colour = "Not following", "#666"
+            text, colour = "Not following", "muted"
         elif age is None:
             from ui.widgets.drone_status import similar_subject
             similar = similar_subject(self.ctx.motion_capture_service, self.obj.tracking_id)
             text = f"Waiting — did you mean '{similar}'?" if similar else "Waiting for this subject"
-            colour = "#b36b00"
+            colour = "warning"
         elif age > 1.0:
-            text, colour = f"Lost ({age:.0f} s ago)", "#c82333"
+            text, colour = f"Lost ({age:.0f} s ago)", "danger"
         else:
-            text, colour = ("Receiving (pose locked)" if self.obj.pose_locked else "Receiving"), "#1e7e34"
+            text, colour = ("Receiving (pose locked)" if self.obj.pose_locked else "Receiving"), "success"
         self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {colour};")
+        theme.set_tone(self.status_label, colour)
 
     def _on_subject_edited(self):
         subject = self.subject_combo.currentText().strip()
@@ -214,7 +211,7 @@ class _MavlinkEditor(FeatureEditor):
         self.untracked_check = QCheckBox("Also when not tracked (simulation / SITL only)")
         self.untracked_check.setToolTip("Sends the object's pose even without fresh motion capture. "
                                         "Never use with a real vehicle: it would fly on a made-up position.")
-        self.untracked_check.setStyleSheet("color: #b36b00;")
+        self.untracked_check.setProperty("tone", "warning")
         self.untracked_check.toggled.connect(self._on_untracked_toggled)
         form.addRow(self.untracked_check)
 
@@ -254,16 +251,16 @@ class _MavlinkEditor(FeatureEditor):
         state = (service.mocap_stream_state(self.obj) if service is not None and
                  hasattr(service, "mocap_stream_state") else ("not_linked" if not name else "not_connected"))
         text, colour = {
-            "streaming": (f"Streaming mocap to {name}", "#1e7e34"),
-            "disabled": (f"Linked to {name} (mocap not sent)" if name else "Not linked to a connection", "#666"),
-            "not_linked": ("Not linked to a connection", "#666"),
-            "not_connected": (f"{name} is not connected", "#b36b00"),
-            "not_tracked": ("Not sending: object isn't tracked by motion capture", "#b36b00"),
-            "locked": ("Paused: the pose is locked", "#b36b00"),
-            "tracking_lost": ("Paused: motion capture lost", "#c82333"),
-        }.get(state, (state, "#666"))
+            "streaming": (f"Streaming mocap to {name}", "success"),
+            "disabled": (f"Linked to {name} (mocap not sent)" if name else "Not linked to a connection", "muted"),
+            "not_linked": ("Not linked to a connection", "muted"),
+            "not_connected": (f"{name} is not connected", "warning"),
+            "not_tracked": ("Not sending: object isn't tracked by motion capture", "warning"),
+            "locked": ("Paused: the pose is locked", "warning"),
+            "tracking_lost": ("Paused: motion capture lost", "danger"),
+        }.get(state, (state, "muted"))
         self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {colour};")
+        theme.set_tone(self.status_label, colour)
 
     def _on_connection_chosen(self, index):
         service = self.ctx.mavlink_service

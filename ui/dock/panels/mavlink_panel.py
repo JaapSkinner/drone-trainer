@@ -14,10 +14,10 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer, QThread
-from PyQt5.QtGui import QFont
 import math
 
 from models.structs import MavlinkConnectionConfig, MavlinkTelemetryData
+from ui import theme
 
 
 class DiscoveryWorker(QThread):
@@ -77,112 +77,93 @@ class ConnectionCard(QFrame):
     
     def _init_ui(self):
         """Initialize the connection card UI."""
-        self.setFrameStyle(QFrame.Box | QFrame.Raised)
-        self.setLineWidth(1)
-        
+        self.setProperty("role", "card")
+
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
+        layout.setSpacing(6)
+        layout.setContentsMargins(14, 12, 14, 12)
+
         # Header row with name and status
         header = QHBoxLayout()
-        
+        header.setSpacing(8)
+        icon = QLabel()
+        icon.setPixmap(theme.icon("radio-tower", "accent" if self.is_active else "muted", 18).pixmap(18, 18))
+        header.addWidget(icon)
+
         # Connection name - use the resolved name for display
-        self.name_label = QLabel(f"<b>{self.connection_name}</b>")
-        self.name_label.setStyleSheet("font-size: 12px;")
+        self.name_label = theme.label(self.connection_name, "option-title")
         header.addWidget(self.name_label)
-        
         header.addStretch()
-        
-        # Status indicator
+
+        # Status pill
         if self.is_active:
-            status_text, status_color = "● Connected", "green"
+            status_text, tone = "Connected", "success"
         elif getattr(self, "connecting", False):
-            status_text, status_color = "◌ Connecting…", "#b36b00"
+            status_text, tone = "Connecting…", "warning"
         elif getattr(self.config, "auto_connect", False):
-            status_text, status_color = "○ Waiting for vehicle", "gray"
+            status_text, tone = "Waiting for vehicle", "muted"
         else:
-            status_text, status_color = "○ Disconnected", "gray"
-        
-        self.status_label = QLabel(status_text)
-        self.status_label.setStyleSheet(f"color: {status_color}; font-size: 11px;")
+            status_text, tone = "Disconnected", "muted"
+        self.status_label = theme.label(status_text, "pill", tone)
         header.addWidget(self.status_label)
-        
         layout.addLayout(header)
-        
+
         # Connection details
         id_text = f"system ID {self.config.system_id}" if self.is_active else "system ID detected on connect"
-        details = QLabel(f"{self.config.connection_string} · {id_text}")
-        details.setStyleSheet("color: #666; font-size: 10px;")
+        details = theme.label(f"{self.config.connection_string} · {id_text}", "hint")
         layout.addWidget(details)
-        
+
         # Linked object
         linked = self.config.linked_object_name
-        if linked:
-            self.linked_label = QLabel(f"Linked: <b>{linked}</b>")
-        else:
-            self.linked_label = QLabel("Not linked to object")
-        self.linked_label.setStyleSheet("color: #888; font-size: 10px;")
+        self.linked_label = theme.label(f"Linked to <b>{linked}</b>" if linked else "Not linked to an object", "hint")
         layout.addWidget(self.linked_label)
-        
+
         # Button row
         buttons = QHBoxLayout()
-        buttons.setSpacing(4)
-        
+        buttons.setSpacing(6)
+        buttons.setContentsMargins(0, 4, 0, 0)
+
         # Link/Unlink object button - emit resolved connection_name
         link_text = "Change Object" if linked else "Link Object"
-        self.link_btn = QPushButton(link_text)
-        self.link_btn.setFixedHeight(24)
+        self.link_btn = theme.button(link_text, None, "link", "sm")
         self.link_btn.clicked.connect(lambda: self.link_object_clicked.emit(self.connection_name))
         buttons.addWidget(self.link_btn)
-        
+
         if self.is_active:
             # Test button - emit resolved connection_name
-            test_btn = QPushButton("Test")
-            test_btn.setFixedHeight(24)
+            test_btn = theme.button("Test", None, "activity", "sm")
             test_btn.clicked.connect(lambda: self.test_clicked.emit(self.connection_name))
             buttons.addWidget(test_btn)
-            
+            buttons.addStretch()
+
             # Disconnect button - emit resolved connection_name
-            disconnect_btn = QPushButton("Disconnect")
-            disconnect_btn.setFixedHeight(24)
-            disconnect_btn.setStyleSheet("color: #c00;")
+            disconnect_btn = theme.button("Disconnect", "ghost", "unplug", "sm")
             disconnect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
             buttons.addWidget(disconnect_btn)
         else:
             # Edit button for inactive connections only - emit resolved connection_name
-            edit_btn = QPushButton("Edit")
-            edit_btn.setFixedHeight(24)
+            edit_btn = theme.button("Edit", None, "sliders-horizontal", "sm")
             edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self.connection_name))
             buttons.addWidget(edit_btn)
+            buttons.addStretch()
 
             # Connect button for inactive connections - emit resolved connection_name
-            connect_btn = QPushButton("Connecting…" if getattr(self, "connecting", False) else "Connect")
-            connect_btn.setEnabled(not getattr(self, "connecting", False))
-            connect_btn.setFixedHeight(24)
-            connect_btn.setStyleSheet("color: #0a0;")
+            connecting = getattr(self, "connecting", False)
+            connect_btn = theme.button("Connecting…" if connecting else "Connect", "subtle", "plug", "sm")
+            connect_btn.setEnabled(not connecting)
             connect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
             buttons.addWidget(connect_btn)
-        
+
         layout.addLayout(buttons)
-        
-        # Style the frame
-        bg_color = "#f5f5f5" if self.is_active else "#e0e0e0"
-        self.setStyleSheet(f"""
-            ConnectionCard {{
-                background-color: {bg_color};
-                border-radius: 4px;
-            }}
-        """)
-    
+
     def update_linked_object(self, object_name: str):
         """Update the linked object display."""
         self.config.linked_object_name = object_name
         if object_name:
-            self.linked_label.setText(f"Linked: <b>{object_name}</b>")
+            self.linked_label.setText(f"Linked to <b>{object_name}</b>")
             self.link_btn.setText("Change Object")
         else:
-            self.linked_label.setText("Not linked to object")
+            self.linked_label.setText("Not linked to an object")
             self.link_btn.setText("Link Object")
 
 
@@ -246,10 +227,8 @@ class MavlinkPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Title
-        title = QLabel("MAVLink Control")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 8px 8px 4px 8px;")
-        layout.addWidget(title)
+        layout.addWidget(theme.page_header("MAVLink", "Connections to flight controllers, live telemetry and "
+                                                      "link health."))
 
         # Tab widget — fills all remaining space
         self._tabs = QTabWidget()
@@ -291,12 +270,13 @@ class MavlinkPanel(QWidget):
         btn_row = QHBoxLayout()
         
         # Discover devices button
-        self.discover_btn = QPushButton("Discover Devices")
+        self.discover_btn = theme.button("Discover", None, "search",
+                                         tooltip="Listen for MAVLink heartbeats on the network")
         self.discover_btn.clicked.connect(self.on_discover_clicked)
         btn_row.addWidget(self.discover_btn)
         
         # Connect button
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = theme.button("Connect", "primary", "plug")
         self.connect_btn.clicked.connect(self.on_connect_clicked)
         btn_row.addWidget(self.connect_btn)
         
@@ -308,8 +288,8 @@ class MavlinkPanel(QWidget):
         # === Discovered Devices Section (initially hidden) ===
         self.discovered_group = QGroupBox("Discovered Devices")
         self.discovered_layout = QVBoxLayout()
-        self.discovered_label = QLabel("Click 'Discover Devices' to scan network")
-        self.discovered_label.setStyleSheet("color: #666; font-style: italic;")
+        self.discovered_label = QLabel("Click 'Discover' to scan the network")
+        self.discovered_label.setProperty("role", "hint")
         self.discovered_layout.addWidget(self.discovered_label)
         self.discovered_group.setLayout(self.discovered_layout)
         self.discovered_group.setVisible(False)  # Hidden until discovery is run
@@ -328,7 +308,7 @@ class MavlinkPanel(QWidget):
         self.connections_layout.setContentsMargins(0, 0, 0, 0)
         
         self.no_connections_label = QLabel("No connections configured")
-        self.no_connections_label.setStyleSheet("color: #666; font-style: italic;")
+        self.no_connections_label.setProperty("role", "hint")
         self.connections_layout.addWidget(self.no_connections_label)
         self.connections_layout.addStretch()
         
@@ -344,7 +324,7 @@ class MavlinkPanel(QWidget):
         test_layout = QVBoxLayout()
         
         test_btn_row = QHBoxLayout()
-        self.test_connection_btn = QPushButton("Test All Connections")
+        self.test_connection_btn = theme.button("Test All Connections", None, "activity")
         self.test_connection_btn.clicked.connect(self.on_test_connection_clicked)
         self.test_connection_btn.setEnabled(False)
         test_btn_row.addWidget(self.test_connection_btn)
@@ -352,7 +332,7 @@ class MavlinkPanel(QWidget):
         
         self.test_results_label = QLabel("")
         self.test_results_label.setWordWrap(True)
-        self.test_results_label.setStyleSheet("font-size: 11px; padding: 5px;")
+        self.test_results_label.setProperty("role", "hint")
         test_layout.addWidget(self.test_results_label)
         
         test_group.setLayout(test_layout)
@@ -365,16 +345,17 @@ class MavlinkPanel(QWidget):
         """Handle discover devices button click."""
         self.discovered_group.setVisible(True)
         self.discover_btn.setEnabled(False)
-        self.discover_btn.setText("Discovering...")
+        self.discover_btn.setText("Discovering…")
         
         # Clear previous results
         while self.discovered_layout.count() > 0:
             child = self.discovered_layout.takeAt(0)
             if child.widget():
+                child.widget().hide()
                 child.widget().deleteLater()
         
         progress = QLabel("Scanning network for MAVLink devices...")
-        progress.setStyleSheet("color: #666;")
+        progress.setProperty("role", "hint")
         self.discovered_layout.addWidget(progress)
         
         # Run discovery in a worker thread to avoid blocking the UI thread
@@ -394,20 +375,20 @@ class MavlinkPanel(QWidget):
         while self.discovered_layout.count() > 0:
             child = self.discovered_layout.takeAt(0)
             if child.widget():
+                child.widget().hide()
                 child.widget().deleteLater()
 
         if not devices:
             no_devices = QLabel("No devices found. Make sure drones are powered on.")
-            no_devices.setStyleSheet("color: #888;")
+            no_devices.setProperty("role", "hint")
             self.discovered_layout.addWidget(no_devices)
         else:
             for device in devices:
                 card = QFrame()
-                card.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
-                card.setLineWidth(1)
+                card.setProperty("role", "card-alt")
                 card_layout = QHBoxLayout(card)
-                card_layout.setSpacing(8)
-                card_layout.setContentsMargins(10, 8, 10, 8)
+                card_layout.setSpacing(10)
+                card_layout.setContentsMargins(12, 10, 12, 10)
 
                 # --- Left: identification text block ---
                 text_block = QVBoxLayout()
@@ -416,30 +397,30 @@ class MavlinkPanel(QWidget):
                 # Row 1: Firmware · Vehicle type  (most important identity info)
                 firmware = device.autopilot_name if device.autopilot >= 0 else "Unknown firmware"
                 vtype    = device.vehicle_type_name if device.vehicle_type >= 0 else "Unknown type"
-                armed_tag = "  <span style='color:#c00;font-size:9px;'>● ARMED</span>" if device.armed else ""
-                title = QLabel(f"<b>{firmware} · {vtype}</b>{armed_tag}")
-                title.setStyleSheet("font-size: 12px;")
-                text_block.addWidget(title)
+                title_row = QHBoxLayout()
+                title_row.setSpacing(6)
+                title_row.addWidget(theme.label(f"{firmware} · {vtype}", "option-title"))
+                if device.armed:
+                    title_row.addWidget(theme.label("Armed", "pill", "danger"))
+                title_row.addStretch()
+                text_block.addLayout(title_row)
 
                 # Row 2: SysID · IP:port
                 sys_str  = f"SysID {device.system_id}" if device.system_id > 0 else "SysID ?"
                 addr_str = f"{device.address}:{device.port}"
                 subtitle = QLabel(f"{sys_str}  ·  {addr_str}")
-                subtitle.setStyleSheet("color: #555; font-size: 10px;")
+                subtitle.setProperty("role", "hint")
                 text_block.addWidget(subtitle)
 
                 # Row 3: MAVLink version (minor detail)
                 if device.mavlink_version:
-                    mv_label = QLabel(f"MAVLink v{device.mavlink_version}")
-                    mv_label.setStyleSheet("color: #999; font-size: 9px;")
+                    mv_label = theme.label(f"MAVLink v{device.mavlink_version}", "hint")
                     text_block.addWidget(mv_label)
 
                 card_layout.addLayout(text_block, stretch=1)
 
                 # --- Right: Use button ---
-                use_btn = QPushButton("Use")
-                use_btn.setFixedHeight(28)
-                use_btn.setFixedWidth(48)
+                use_btn = theme.button("Use", "subtle", None, "sm")
                 use_btn.clicked.connect(
                     lambda checked, d=device: self._use_discovered_device(d)
                 )
@@ -450,7 +431,7 @@ class MavlinkPanel(QWidget):
     def _on_discovery_finished(self):
         """Re-enable discovery UI after the worker thread has finished."""
         self.discover_btn.setEnabled(True)
-        self.discover_btn.setText("Discover Devices")
+        self.discover_btn.setText("Discover")
         # Drop the reference to allow the worker to be garbage collected
         self._discovery_worker = None
     
@@ -459,14 +440,15 @@ class MavlinkPanel(QWidget):
         while self.discovered_layout.count() > 0:
             child = self.discovered_layout.takeAt(0)
             if child.widget():
+                child.widget().hide()
                 child.widget().deleteLater()
         
         error = QLabel(f"Discovery failed: {message}")
-        error.setStyleSheet("color: red;")
+        error.setProperty("tone", "danger")
         self.discovered_layout.addWidget(error)
         
         self.discover_btn.setEnabled(True)
-        self.discover_btn.setText("Discover Devices")
+        self.discover_btn.setText("Discover")
     
     def _use_discovered_device(self, device):
         """Use a discovered device's connection string."""
@@ -483,10 +465,10 @@ class MavlinkPanel(QWidget):
         
         active_conns = self.mavlink_service.get_connection_count()
         if active_conns == 0:
-            self.test_results_label.setText("<span style='color: red;'>No active connections to test</span>")
+            self.test_results_label.setText(f"<span style='color: {theme.colour('danger')};'>No active connections to test</span>")
             return
         
-        self.test_results_label.setText("<span style='color: orange;'>Testing connection quality...</span>")
+        self.test_results_label.setText(f"<span style='color: {theme.colour('warning')};'>Testing connection quality…</span>")
         self.test_connection_btn.setEnabled(False)
         
         # Clear pending single-connection test marker (this is test all)
@@ -518,13 +500,13 @@ class MavlinkPanel(QWidget):
 
             # Color code based on quality thresholds
             if rate_hz >= self.GOOD_RATE_HZ and latency_ms < self.GOOD_LATENCY_MS and lost_packets == 0:
-                color = 'green'
+                color = theme.colour('success')
                 status = '✓ Good'
             elif rate_hz >= self.FAIR_RATE_HZ and latency_ms < self.FAIR_LATENCY_MS:
-                color = 'orange'
+                color = theme.colour('warning')
                 status = '◐ Fair'
             else:
-                color = 'red'
+                color = theme.colour('danger')
                 status = '✗ Poor'
             
             result_text += f"<span style='color: {color};'><b>ID {sys_id}:</b> {status}</span><br>"
@@ -560,7 +542,7 @@ class MavlinkPanel(QWidget):
         
         # Placeholder for telemetry display
         self.telemetry_placeholder = QLabel("Connect to a drone to view telemetry")
-        self.telemetry_placeholder.setStyleSheet("color: #666; font-style: italic;")
+        self.telemetry_placeholder.setProperty("role", "hint")
         self.telemetry_placeholder.setAlignment(Qt.AlignCenter)
         self.telemetry_layout.addWidget(self.telemetry_placeholder)
         
@@ -571,129 +553,57 @@ class MavlinkPanel(QWidget):
         
         return widget
     
+    # (key, caption, initial text) for the telemetry tiles, three per row
+    _TELEMETRY_TILES = (
+        ("roll", "Roll", "0°"), ("pitch", "Pitch", "0°"), ("yaw", "Yaw", "0°"),
+        ("x", "X", "0.0 m"), ("y", "Y", "0.0 m"), ("z", "Z", "0.0 m"),
+        ("vx", "VX", "0.0 m/s"), ("vy", "VY", "0.0 m/s"), ("vz", "VZ", "0.0 m/s"),
+        ("rollspeed", "Roll rate", "0°/s"), ("pitchspeed", "Pitch rate", "0°/s"), ("yawspeed", "Yaw rate", "0°/s"),
+    )
+
     def _create_telemetry_widget(self, system_id: int) -> QGroupBox:
         """Create a compact telemetry display widget for a drone."""
         group = QGroupBox(f"Drone {system_id}")
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(6)
+        main_layout.setSpacing(10)
 
         labels = {}
 
-        # === Attitude Section ===
-        att_layout = QGridLayout()
-        att_layout.setSpacing(4)
-
-        att_layout.addWidget(QLabel("Roll:"), 0, 0)
-        labels['roll'] = QLabel("0°")
-        labels['roll'].setStyleSheet("font-weight: bold;")
-        att_layout.addWidget(labels['roll'], 0, 1)
-
-        att_layout.addWidget(QLabel("Pitch:"), 0, 2)
-        labels['pitch'] = QLabel("0°")
-        labels['pitch'].setStyleSheet("font-weight: bold;")
-        att_layout.addWidget(labels['pitch'], 0, 3)
-
-        att_layout.addWidget(QLabel("Yaw:"), 0, 4)
-        labels['yaw'] = QLabel("0°")
-        labels['yaw'].setStyleSheet("font-weight: bold;")
-        att_layout.addWidget(labels['yaw'], 0, 5)
-
-        main_layout.addLayout(att_layout)
-
-        # === Position Section ===
-        pos_layout = QGridLayout()
-        pos_layout.setSpacing(4)
-
-        pos_layout.addWidget(QLabel("X:"), 0, 0)
-        labels['x'] = QLabel("0.0m")
-        labels['x'].setStyleSheet("font-weight: bold;")
-        pos_layout.addWidget(labels['x'], 0, 1)
-
-        pos_layout.addWidget(QLabel("Y:"), 0, 2)
-        labels['y'] = QLabel("0.0m")
-        labels['y'].setStyleSheet("font-weight: bold;")
-        pos_layout.addWidget(labels['y'], 0, 3)
-
-        pos_layout.addWidget(QLabel("Z:"), 0, 4)
-        labels['z'] = QLabel("0.0m")
-        labels['z'].setStyleSheet("font-weight: bold;")
-        pos_layout.addWidget(labels['z'], 0, 5)
-
-        main_layout.addLayout(pos_layout)
-        
-        # === Velocity Section ===
-        vel_layout = QGridLayout()
-        vel_layout.setSpacing(4)
-
-        vel_layout.addWidget(QLabel("VX:"), 0, 0)
-        labels['vx'] = QLabel("0.0 m/s")
-        labels['vx'].setStyleSheet("font-weight: bold;")
-        vel_layout.addWidget(labels['vx'], 0, 1)
-
-        vel_layout.addWidget(QLabel("VY:"), 0, 2)
-        labels['vy'] = QLabel("0.0 m/s")
-        labels['vy'].setStyleSheet("font-weight: bold;")
-        vel_layout.addWidget(labels['vy'], 0, 3)
-
-        vel_layout.addWidget(QLabel("VZ:"), 0, 4)
-        labels['vz'] = QLabel("0.0 m/s")
-        labels['vz'].setStyleSheet("font-weight: bold;")
-        vel_layout.addWidget(labels['vz'], 0, 5)
-
-        main_layout.addLayout(vel_layout)
-        
-        # === Angular Rates Section ===
-        rates_layout = QGridLayout()
-        rates_layout.setSpacing(4)
-
-        rates_layout.addWidget(QLabel("Roll Rate:"), 0, 0)
-        labels['rollspeed'] = QLabel("0°/s")
-        rates_layout.addWidget(labels['rollspeed'], 0, 1)
-
-        rates_layout.addWidget(QLabel("Pitch Rate:"), 0, 2)
-        labels['pitchspeed'] = QLabel("0°/s")
-        rates_layout.addWidget(labels['pitchspeed'], 0, 3)
-
-        rates_layout.addWidget(QLabel("Yaw Rate:"), 0, 4)
-        labels['yawspeed'] = QLabel("0°/s")
-        rates_layout.addWidget(labels['yawspeed'], 0, 5)
-
-        main_layout.addLayout(rates_layout)
-
-        # === Status Section ===
+        # Status pills: armed, battery, GPS, mode
         status_layout = QHBoxLayout()
-        status_layout.setSpacing(15)
-
-        # Armed status
-        labels['armed'] = QLabel("⬡ Disarmed")
-        labels['armed'].setStyleSheet("color: green; font-weight: bold;")
-        status_layout.addWidget(labels['armed'])
-        
-        # Battery
-        labels['battery'] = QLabel("🔋 --V")
-        status_layout.addWidget(labels['battery'])
-        
-        # GPS
-        labels['gps'] = QLabel("📡 --")
-        status_layout.addWidget(labels['gps'])
-        
-        # Mode
-        labels['mode'] = QLabel("Mode: --")
-        labels['mode'].setStyleSheet("color: #666;")
-        status_layout.addWidget(labels['mode'])
-        
+        status_layout.setSpacing(6)
+        labels['armed'] = theme.label("Disarmed", "pill", "muted")
+        labels['battery'] = theme.label("Battery --", "pill")
+        labels['gps'] = theme.label("GPS --", "pill")
+        labels['mode'] = theme.label("Mode --", "pill")
+        for key in ('armed', 'battery', 'gps', 'mode'):
+            status_layout.addWidget(labels[key])
         status_layout.addStretch()
-        
         main_layout.addLayout(status_layout)
-        
+
+        # Attitude, position, velocity and rates as small tiles
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        for index, (key, caption, initial) in enumerate(self._TELEMETRY_TILES):
+            tile = QFrame()
+            tile.setProperty("role", "card-alt")
+            tile_layout = QVBoxLayout(tile)
+            tile_layout.setContentsMargins(10, 6, 10, 6)
+            tile_layout.setSpacing(0)
+            tile_layout.addWidget(theme.label(caption, "hint"))
+            labels[key] = theme.label(initial, "value")
+            tile_layout.addWidget(labels[key])
+            grid.addWidget(tile, index // 3, index % 3)
+        main_layout.addLayout(grid)
+
         group.setLayout(main_layout)
-        
+
         # Store labels for updates
         labels['widget'] = group
         self._telemetry_labels[system_id] = labels
 
         return group
-    
+
     def _update_telemetry_display(self, system_id: int, telemetry: MavlinkTelemetryData):
         """Update the telemetry display for a specific drone."""
         if system_id not in self._telemetry_labels:
@@ -715,9 +625,9 @@ class MavlinkPanel(QWidget):
         labels['yaw'].setText(f"{yaw_deg:.1f}°")
         
         # Update position
-        labels['x'].setText(f"{telemetry.x:.1f}m")
-        labels['y'].setText(f"{telemetry.y:.1f}m")
-        labels['z'].setText(f"{telemetry.z:.1f}m")
+        labels['x'].setText(f"{telemetry.x:.1f} m")
+        labels['y'].setText(f"{telemetry.y:.1f} m")
+        labels['z'].setText(f"{telemetry.z:.1f} m")
         
         # Update velocity
         labels['vx'].setText(f"{telemetry.vx:.1f} m/s")
@@ -730,33 +640,23 @@ class MavlinkPanel(QWidget):
         labels['yawspeed'].setText(f"{math.degrees(telemetry.yawspeed):.1f}°/s")
 
         # Update status
-        if telemetry.armed:
-            labels['armed'].setText("⬢ ARMED")
-            labels['armed'].setStyleSheet("color: red; font-weight: bold;")
-        else:
-            labels['armed'].setText("⬡ Disarmed")
-            labels['armed'].setStyleSheet("color: green; font-weight: bold;")
+        labels['armed'].setText("Armed" if telemetry.armed else "Disarmed")
+        theme.set_tone(labels['armed'], "danger" if telemetry.armed else "muted")
 
         # Battery with color coding
         bat_pct = telemetry.battery_remaining
-        if bat_pct > 50:
-            bat_color = "green"
-        elif bat_pct > 20:
-            bat_color = "orange"
-        else:
-            bat_color = "red"
-        labels['battery'].setText(f"🔋 {telemetry.battery_voltage:.1f}V ({bat_pct}%)")
-        labels['battery'].setStyleSheet(f"color: {bat_color};")
-        
+        labels['battery'].setText(f"Battery {telemetry.battery_voltage:.1f} V · {bat_pct}%")
+        theme.set_tone(labels['battery'], "success" if bat_pct > 50 else "warning" if bat_pct > 20 else "danger")
+
         # GPS fix type
         gps_text = {0: "No GPS", 1: "No Fix", 2: "2D", 3: "3D"}.get(
             telemetry.gps_fix_type, "?"
         )
-        labels['gps'].setText(f"📡 {gps_text} ({telemetry.satellites_visible})")
-        
+        labels['gps'].setText(f"GPS {gps_text} · {telemetry.satellites_visible} sats")
+
         # Mode
-        labels['mode'].setText(f"Mode: {telemetry.mode}")
-    
+        labels['mode'].setText(f"Mode {telemetry.mode}")
+
     def _create_status_tab(self) -> QWidget:
         """Create the status monitoring tab."""
         widget = QWidget()
@@ -767,12 +667,12 @@ class MavlinkPanel(QWidget):
         health_layout = QFormLayout()
         
         self.rate_label = QLabel("0 Hz")
-        self.rate_label.setFont(QFont("NotoSans", 12, QFont.Bold))
+        self.rate_label.setProperty("role", "metric")
         self.rate_label.setToolTip("Messages per second (Hz = Hertz)\nHigher is better. Good: >50 Hz, Fair: >20 Hz")
         health_layout.addRow("Message Rate:", self.rate_label)
         
         self.connections_count_label = QLabel("0")
-        self.connections_count_label.setFont(QFont("NotoSans", 12, QFont.Bold))
+        self.connections_count_label.setProperty("role", "metric")
         health_layout.addRow("Active Connections:", self.connections_count_label)
         
         self.messages_sent_label = QLabel("0")
@@ -794,25 +694,25 @@ class MavlinkPanel(QWidget):
         
         self.dialect_label = QLabel(dialect_info['dialect_name'].upper())
         if dialect_info['using_dtrg']:
-            self.dialect_label.setStyleSheet("color: green; font-weight: bold;")
+            self.dialect_label.setProperty("tone", "success")
         else:
-            self.dialect_label.setStyleSheet("color: orange; font-weight: bold;")
+            self.dialect_label.setProperty("tone", "warning")
         dialect_layout.addRow("Active Dialect:", self.dialect_label)
         
         self.dtrg_status_label = QLabel("Available" if dialect_info['dtrg_available'] else "Not Found")
         if dialect_info['dtrg_available']:
-            self.dtrg_status_label.setStyleSheet("color: green;")
+            self.dtrg_status_label.setProperty("tone", "success")
         else:
-            self.dtrg_status_label.setStyleSheet("color: red;")
+            self.dtrg_status_label.setProperty("tone", "danger")
         dialect_layout.addRow("DTRG Submodule:", self.dtrg_status_label)
         
         # Show if dialect is built
         dtrg_built = dialect_info.get('dtrg_built', False)
         self.dtrg_built_label = QLabel("Built" if dtrg_built else "Not Built")
         if dtrg_built:
-            self.dtrg_built_label.setStyleSheet("color: green;")
+            self.dtrg_built_label.setProperty("tone", "success")
         else:
-            self.dtrg_built_label.setStyleSheet("color: orange;")
+            self.dtrg_built_label.setProperty("tone", "warning")
         dialect_layout.addRow("DTRG Dialect:", self.dtrg_built_label)
         
         dialect_group.setLayout(dialect_layout)
@@ -823,9 +723,9 @@ class MavlinkPanel(QWidget):
         info_layout = QVBoxLayout()
         
         info_text = QLabel("""<b>Message Priorities:</b><br>
-        • <span style='color: red;'>Critical</span>: Motion capture data<br>
-        • <span style='color: orange;'>High</span>: Setpoint commands<br>
-        • <span style='color: green;'>Normal</span>: Telemetry data<br>
+        • <span style='color: {danger};'>Critical</span>: Motion capture data<br>
+        • <span style='color: {warning};'>High</span>: Setpoint commands<br>
+        • <span style='color: {success};'>Normal</span>: Telemetry data<br>
         <br>
         <b>Rate Limits:</b><br>
         • Motion capture: 100 Hz<br>
@@ -833,9 +733,10 @@ class MavlinkPanel(QWidget):
         • Telemetry: 20 Hz<br>
         <br>
         <b>Build DTRG Dialect:</b><br>
-        <code>python scripts/build_mavlink.py --dialect dtrg</code>""")
+        <code>python scripts/build_mavlink.py --dialect dtrg</code>""".format(
+            danger=theme.colour("danger"), warning=theme.colour("warning"), success=theme.colour("success")))
         info_text.setWordWrap(True)
-        info_text.setStyleSheet("font-size: 11px; color: #555;")
+        info_text.setProperty("role", "hint")
         info_layout.addWidget(info_text)
         
         info_group.setLayout(info_layout)
@@ -876,13 +777,14 @@ class MavlinkPanel(QWidget):
         while self.connections_layout.count() > 0:
             child = self.connections_layout.takeAt(0)
             if child.widget():
+                child.widget().hide()
                 child.widget().deleteLater()
         
         self._connection_cards.clear()
         
         if self.mavlink_service is None:
             self.no_connections_label = QLabel("No connections configured")
-            self.no_connections_label.setStyleSheet("color: #666; font-style: italic;")
+            self.no_connections_label.setProperty("role", "hint")
             self.connections_layout.addWidget(self.no_connections_label)
             return
         
@@ -891,7 +793,7 @@ class MavlinkPanel(QWidget):
         
         if not all_connections:
             self.no_connections_label = QLabel("No connections configured")
-            self.no_connections_label.setStyleSheet("color: #666; font-style: italic;")
+            self.no_connections_label.setProperty("role", "hint")
             self.connections_layout.addWidget(self.no_connections_label)
             return
         
@@ -1105,7 +1007,7 @@ class MavlinkPanel(QWidget):
         if conn is not None:
             # Active connection - system ID is read-only
             system_id_widget = QLabel(str(config.system_id))
-            system_id_widget.setStyleSheet("color: #666;")
+            system_id_widget.setProperty("role", "hint")
         else:
             # Saved connection - system ID can be edited
             system_id_widget = QSpinBox()
@@ -1115,7 +1017,7 @@ class MavlinkPanel(QWidget):
 
         # Warning label
         warning = QLabel("⚠ Changing address requires reconnection" if conn else "⚠ Changes saved for next connection")
-        warning.setStyleSheet("color: orange; font-style: italic; font-size: 10px;")
+        warning.setProperty("tone", "warning")
 
         dialog_layout.addLayout(form_layout)
         dialog_layout.addWidget(warning)
@@ -1317,8 +1219,7 @@ class MavlinkPanel(QWidget):
         self._console_conn_combo.setMinimumWidth(160)
         top_row.addWidget(self._console_conn_combo, stretch=1)
 
-        clear_btn = QPushButton("Clear")
-        clear_btn.setFixedWidth(52)
+        clear_btn = theme.button("Clear", "ghost", None, "sm")
         clear_btn.clicked.connect(self._on_console_clear)
         top_row.addWidget(clear_btn)
 
@@ -1330,39 +1231,23 @@ class MavlinkPanel(QWidget):
         self._console_output.setReadOnly(True)
         self._console_output.setLineWrapMode(QPlainTextEdit.NoWrap)
         self._console_output.setMaximumBlockCount(2000)
-        self._console_output.setStyleSheet(
-            "QPlainTextEdit {"
-            "  background-color: #f5f5f5;"
-            "  color: #1a1a1a;"
-            "  font-family: 'Monospace', 'Courier New', monospace;"
-            "  font-size: 11px;"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 3px;"
-            "}"
-        )
+        self._console_output.setProperty("role", "console")
         layout.addWidget(self._console_output, stretch=1)
 
         # --- Input row ---
         input_row = QHBoxLayout()
         input_row.setSpacing(4)
 
-        prompt = QLabel("$")
-        prompt.setStyleSheet("font-family: monospace; font-weight: bold; color: #555;")
+        prompt = theme.label("$", "mono", "muted")
         input_row.addWidget(prompt)
 
         self._console_input = QLineEdit()
         self._console_input.setPlaceholderText("Enter shell command…")
-        self._console_input.setStyleSheet(
-            "QLineEdit {"
-            "  font-family: 'Monospace', 'Courier New', monospace;"
-            "  font-size: 11px;"
-            "}"
-        )
+        self._console_input.setProperty("role", "console")
         self._console_input.returnPressed.connect(self._on_console_send)
         input_row.addWidget(self._console_input, stretch=1)
 
-        send_btn = QPushButton("Send")
-        send_btn.setFixedWidth(52)
+        send_btn = theme.button("Send", "primary", None, "sm")
         send_btn.clicked.connect(self._on_console_send)
         input_row.addWidget(send_btn)
 
@@ -1447,7 +1332,7 @@ class MavlinkPanel(QWidget):
             return
 
         # Echo the command to the output
-        self._console_append(f"$ {text}", color="#1565c0")
+        self._console_append(f"$ {text}", color="accent")
 
         # History bookkeeping
         if not self._console_history or self._console_history[-1] != text:
@@ -1459,12 +1344,12 @@ class MavlinkPanel(QWidget):
         # Resolve selected system_id
         sys_id = self._console_conn_combo.currentData()
         if sys_id is None or self.mavlink_service is None:
-            self._console_append("[No active connection selected]", color="#c62828")
+            self._console_append("[No active connection selected]", color="danger")
             return
 
         ok = self.mavlink_service.send_console_command(sys_id, text)
         if not ok:
-            self._console_append("[Send failed — is the drone connected?]", color="#c62828")
+            self._console_append("[Send failed — is the drone connected?]", color="danger")
 
     def _on_console_clear(self):
         """Clear the console output area."""
@@ -1485,22 +1370,20 @@ class MavlinkPanel(QWidget):
         if selected_sid is not None and selected_sid != system_id:
             return  # Output is from a different drone — ignore
 
-        # STATUSTEXT lines get a distinct colour; raw shell output is near-black
+        # STATUSTEXT lines get a distinct colour; raw shell output is plain text
         if text.startswith("[STATUS]"):
-            self._console_append(text, color="#00695c")
+            self._console_append(text, color="success")
         else:
-            self._console_append(text, color="#1a1a1a")
+            self._console_append(text, color="text")
 
-    def _console_append(self, text: str, color: str = "#1a1a1a"):
+    def _console_append(self, text: str, color: str = "text"):
         """Append styled text to the console output, then scroll to bottom."""
         from PyQt5.QtGui import QTextCursor
         cursor = self._console_output.textCursor()
         cursor.movePosition(QTextCursor.End)
 
         fmt = cursor.charFormat()
-        fmt.setForeground(
-            __import__('PyQt5.QtGui', fromlist=['QColor']).QColor(color)
-        )
+        fmt.setForeground(theme.qcolour(color))   # a theme token: text | accent | success | danger
         cursor.setCharFormat(fmt)
         cursor.insertText(text if text.endswith('\n') else text + '\n')
 

@@ -3,73 +3,79 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSlider,
                              QDoubleSpinBox, QSpinBox, QCheckBox, QLineEdit,
                              QScrollArea, QHBoxLayout, QToolButton, QFrame, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QStyle, QApplication
+from PyQt5.QtWidgets import QButtonGroup
 from models.structs import MavlinkGlobalSettings
+from ui import animation, theme
 
 
-class CollapsibleBox(QWidget):
-    """A simple collapsible container with a header (box-like) and arrow.
+class CollapsibleBox(QFrame):
+    """A card with a clickable header that opens and closes its content.
 
-    Header acts as a toggle. Content is provided via setContentWidget.
+    Content is provided via setContentWidget.
     """
-    def __init__(self, title: str = "", parent=None):
+    def __init__(self, title: str = "", parent=None, icon_name: str = None, subtitle: str = ""):
         super().__init__(parent)
         self._title = title
+        self.setProperty("role", "card")
+
         self.toggle_button = QToolButton()
-        # Use text-only button and include a simple caret glyph as the indicator
-        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.toggle_button.setObjectName("SectionHeader")
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(False)
-        self.toggle_button.setAutoRaise(True)
-        self.toggle_button.setObjectName("SectionHeader")
-
-        # Make the header/button full-width and left-aligned
+        self.toggle_button.setCursor(Qt.PointingHandCursor)
         self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        # Ensure the text aligns to the left and give a bit of left padding so the caret isn't jammed
-        # Keep this minimal because the global QSS also styles SectionHeader
-        self.toggle_button.setStyleSheet("text-align: left; padding-left: 6px;")
+        self.toggle_button.clicked.connect(self._on_toggled)
+        self._icon_name = icon_name
 
-        # initial closed caret + title (with a small gap)
-        self._closed_caret = "▸"
-        self._open_caret = "▾"
-        self._update_button_text(False)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 8, 0)
+        header.addWidget(self.toggle_button, 1)
+        self.chevron = QLabel()
+        header.addWidget(self.chevron)
+        self.subtitle_label = theme.label(subtitle, "hint", wrap=True)
+        self.subtitle_label.setVisible(bool(subtitle))
 
         # Content area
         self.content_area = QWidget()
         self.content_area.setVisible(False)
         self._content_layout = QVBoxLayout(self.content_area)
-        self._content_layout.setContentsMargins(8, 4, 8, 8)
-        self._content_layout.setSpacing(6)
+        self._content_layout.setContentsMargins(14, 0, 14, 14)
+        self._content_layout.setSpacing(8)
 
-        # Layout for the whole widget
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.toggle_button)
+        main_layout.setSpacing(0)
+        main_layout.addLayout(header)
+        subtitle_row = QHBoxLayout()
+        subtitle_row.setContentsMargins(14, 0, 14, 10)
+        subtitle_row.addWidget(self.subtitle_label)
+        main_layout.addLayout(subtitle_row)
         main_layout.addWidget(self.content_area)
-
-        # Connect toggle
-        self.toggle_button.clicked.connect(self._on_toggled)
-
-        # Make header look like a box: wrap in a frame for styling if needed
-        self.header_frame = QFrame()
-        # ensure the header frame expands horizontally as well
-        self.header_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        header_layout = QHBoxLayout(self.header_frame)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.addWidget(self.toggle_button)
-        # replace toggle button in main layout with header frame for styling hook
-        main_layout.removeWidget(self.toggle_button)
-        main_layout.insertWidget(0, self.header_frame)
+        self._update_button_text(False)
+        theme.signals.changed.connect(self._on_theme_changed)
 
     def _update_button_text(self, opened: bool):
-        caret = self._open_caret if opened else self._closed_caret
-        # two-space separation for clear visual gap
-        self.toggle_button.setText(f"{caret}  {self._title}")
+        self.toggle_button.setText(self._title)
+        if self._icon_name:
+            theme.set_icon(self.toggle_button, self._icon_name, "accent" if opened else None, 18)
+        self._on_theme_changed()
+
+    def _on_theme_changed(self, *_):
+        opened = self.toggle_button.isChecked()
+        self.chevron.setPixmap(theme.icon("chevron-up" if opened else "chevron-down", "muted", 16).pixmap(16, 16))
 
     def _on_toggled(self, checked: bool):
-        self.content_area.setVisible(checked)
         self._update_button_text(checked)
+        if self.isVisible():
+            animation.expand(self.content_area, checked)
+        else:
+            self.content_area.setVisible(checked)
+
+    def set_open(self, opened: bool):
+        self.toggle_button.setChecked(opened)
+        self.content_area.setVisible(opened)
+        self._update_button_text(opened)
 
     def setContentWidget(self, widget: QWidget):
         # Clear existing
@@ -98,6 +104,8 @@ class SettingsPanel(QWidget):
     # Signals for import/export actions requested from the UI
     import_settings_requested = pyqtSignal()
     export_settings_requested = pyqtSignal()
+    # "light" | "dark"
+    theme_changed = pyqtSignal(str)
 
     def __init__(self, parent=None, object_service=None, mavlink_service=None):
         super().__init__(parent)
@@ -109,12 +117,10 @@ class SettingsPanel(QWidget):
     def init_ui(self):
         """Initialize the user interface."""
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setAlignment(Qt.AlignTop)
-        
-        # Title
-        title = QLabel("Settings")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
-        main_layout.addWidget(title)
+        main_layout.addWidget(theme.page_header("Settings", "Appearance, the 3-D view, MAVLink defaults and "
+                                                            "settings files."))
         
         # Scroll area for all settings
         scroll = QScrollArea()
@@ -123,24 +129,32 @@ class SettingsPanel(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 10, 0)
+        layout.setSpacing(10)
         layout.setAlignment(Qt.AlignTop)
 
-        # Create three collapsible boxes instead of a QToolBox
         self.settings_groups = []
 
-        viewport_box = CollapsibleBox("Viewport")
+        appearance_box = CollapsibleBox("Appearance", icon_name="sun", subtitle="Light or dark theme")
+        appearance_box.setContentWidget(self._create_appearance_group())
+        appearance_box.set_open(True)
+        layout.addWidget(appearance_box)
+        self.settings_groups.append(appearance_box)
+
+        viewport_box = CollapsibleBox("Viewport", icon_name="eye", subtitle="Camera, zoom and following an object")
         viewport_box.setContentWidget(self._create_section_widget(
             self._create_viewport_group(), self._create_info_group()
         ))
         layout.addWidget(viewport_box)
         self.settings_groups.append(viewport_box)
 
-        mavlink_box = CollapsibleBox("MAVLink")
+        mavlink_box = CollapsibleBox("MAVLink", icon_name="radio-tower",
+                                     subtitle="Default rates, heartbeat and reconnecting")
         mavlink_box.setContentWidget(self._create_section_widget(self._create_mavlink_settings_group()))
         layout.addWidget(mavlink_box)
         self.settings_groups.append(mavlink_box)
 
-        io_box = CollapsibleBox("Import / Export")
+        io_box = CollapsibleBox("Import / Export", icon_name="save", subtitle="Back up or share all settings")
         io_box.setContentWidget(self._create_section_widget(self._create_io_group()))
         layout.addWidget(io_box)
         self.settings_groups.append(io_box)
@@ -160,6 +174,37 @@ class SettingsPanel(QWidget):
         section_layout.addStretch(1)
         return section
     
+    def _create_appearance_group(self):
+        """Light / dark switch (a two-button segmented control)."""
+        widget = QWidget()
+        row = QHBoxLayout(widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.theme_buttons = {}
+        self._theme_group = QButtonGroup(widget)
+        self._theme_group.setExclusive(True)
+        for position, (name, text, icon_name) in enumerate((("light", "Light", "sun"), ("dark", "Dark", "moon"))):
+            button = theme.button(text, None, icon_name)
+            button.setCheckable(True)
+            button.setProperty("segment", "first" if position == 0 else "last")
+            button.clicked.connect(lambda _checked=False, n=name: self._on_theme_clicked(n))
+            self._theme_group.addButton(button)
+            self.theme_buttons[name] = button
+            row.addWidget(button)
+        row.addStretch()
+        self.set_theme_name(theme.current_name())
+        return widget
+
+    def set_theme_name(self, name: str):
+        """Show ``name`` as the selected theme (doesn't emit theme_changed)."""
+        button = self.theme_buttons.get(name)
+        if button is not None:
+            button.setChecked(True)
+
+    def _on_theme_clicked(self, name: str):
+        if name != theme.current_name():
+            self.theme_changed.emit(name)
+
     def _create_viewport_group(self):
         """Create the viewport settings group."""
         viewport_group = QGroupBox("Viewport Controls")
@@ -382,7 +427,7 @@ class SettingsPanel(QWidget):
         • Minimum distance: 2 units<br>
         • Maximum distance: 50 units""")
         info_text.setWordWrap(True)
-        info_text.setStyleSheet("font-size: 11px; color: #555;")
+        info_text.setProperty("role", "hint")
         info_layout.addWidget(info_text)
         
         info_group.setLayout(info_layout)

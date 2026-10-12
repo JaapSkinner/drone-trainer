@@ -1,8 +1,10 @@
 # Drone Trainer
 
-A PyQt5 + OpenGL ground-control and training app for the DTRG motion-capture lab. It shows a live 3D
+A PyQt5 + OpenGL ground-control and training app for motion-capture drone labs. It shows a live 3D
 scene of tracked objects and drones, streams motion-capture poses to PX4 over MAVLink, and lets an
 operator command vehicles with a gamepad, keyboard or setpoint tools.
+
+Sponsored by the [Drone Technology Research Group](https://dtrg.org) (DTRG).
 
 Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
 [INPUT_CONTROLS.md](INPUT_CONTROLS.md).
@@ -24,6 +26,9 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
   Position*. Objects not tracked by motion capture fly to their setpoint as simulated vehicles.
 - **Motion capture calibration**: align the mocap origin/axes with the lab by hand or by moving an
   object around (see below).
+
+- **Look and feel**: a native Qt desktop UI with light and dark themes (Settings → Appearance), the
+  Inter typeface, Lucide icons and short animations (wizard steps, panel switches, confirmations).
 
 - **Trainer**: pick a game, set it up and play, flying either a simulated drone (Command panel /
   gamepad) or a real mocap-tracked one. *Gate race* — fly numbered gates in order for N laps against
@@ -153,3 +158,9 @@ results (`results.json`) and logs are
 written to `storage_data/` (git-ignored). Set
 `DRONE_TRAINER_DATA_DIR` to use a different location. Press **F12** in the app for the live
 application console.
+
+## Credits
+
+- Fonts: [Inter](https://rsms.me/inter/) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/), both
+  under the SIL Open Font License (`ui/assets/fonts/`).
+- Icons: [Lucide](https://lucide.dev), ISC licence (`ui/assets/lucide/`).

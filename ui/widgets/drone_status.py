@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from PyQt5.QtCore import QTimer, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+from ui import theme
 
 OK, WARN, BAD, OFF = "ok", "warn", "bad", "off"
-COLOURS = {OK: "#1e7e34", WARN: "#b36b00", BAD: "#c82333", OFF: "#888888"}
 SYMBOLS = {OK: "●", WARN: "●", BAD: "●", OFF: "○"}
 
 
@@ -125,14 +126,15 @@ class DroneStatusWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.grid = QGridLayout()
-        self.grid.setHorizontalSpacing(6)
-        self.grid.setVerticalSpacing(2)
+        self.grid.setHorizontalSpacing(8)
+        self.grid.setVerticalSpacing(6)
         layout.addLayout(self.grid)
         self._rows = {}
         for row, key in enumerate(("tracking", "vehicle", "mocap")):
             dot, title, text = QLabel(), QLabel(), QLabel()
+            dot.setFixedWidth(16)
             text.setWordWrap(True)
-            title.setStyleSheet("color: #555;")
+            title.setProperty("role", "hint")
             for col, widget in enumerate((dot, title, text)):
                 self.grid.addWidget(widget, row, col)
             self._rows[key] = (dot, title, text)
@@ -140,7 +142,7 @@ class DroneStatusWidget(QWidget):
 
         buttons = QHBoxLayout()
         buttons.addStretch()
-        self.setup_button = QPushButton("Drone setup…")
+        self.setup_button = theme.button("Drone setup…", None, "sliders-horizontal")
         self.setup_button.clicked.connect(lambda: self.setup_requested.emit(self.obj))
         buttons.addWidget(self.setup_button)
         layout.addLayout(buttons)
@@ -153,6 +155,8 @@ class DroneStatusWidget(QWidget):
     def set_object(self, obj):
         self.obj = obj
         self.setup_button.setText("Drone setup…" if obj is not None else "Add a drone…")
+        theme.decorate(self.setup_button, None if obj is not None else "primary",
+                       "sliders-horizontal" if obj is not None else "plus")
         self.refresh()
 
     def checks(self) -> List[Check]:
@@ -170,17 +174,15 @@ class DroneStatusWidget(QWidget):
                 widget.setVisible(visible)
             if not visible:
                 continue
-            dot.setText(SYMBOLS[check.state])
-            dot.setStyleSheet(f"color: {COLOURS[check.state]};")
-            title.setText(check.title + ":")
+            dot.setPixmap(theme.state_pixmap(check.state))
+            title.setText(check.title)
             text.setText(check.text)
-            text.setStyleSheet(f"color: {COLOURS[check.state] if check.state != OK else '#222'};")
+            theme.set_tone(text, {BAD: "danger", OFF: "muted"}.get(check.state))
         if self.obj is None:
             dot, title, text = self._rows["tracking"]
             for widget in (dot, title, text):
                 widget.setVisible(True)
-            dot.setText(SYMBOLS[OFF])
-            dot.setStyleSheet(f"color: {COLOURS[OFF]};")
+            dot.setPixmap(theme.state_pixmap(OFF))
             title.setText("")
             text.setText("No drone selected. Choose one above, or add one.")
-            text.setStyleSheet("color: #666;")
+            theme.set_tone(text, "muted")

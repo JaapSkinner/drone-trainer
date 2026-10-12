@@ -27,6 +27,8 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from models import frames
 from services.control_service import ControlService
 from services.input_service import InputType
+from ui import theme
+from ui.widgets.compact_tabs import CompactTabWidget
 from ui.widgets.drone_status import DroneStatusWidget
 
 
@@ -112,7 +114,7 @@ class CommandPanel(QWidget):
         layout.addWidget(ghost_group)
         
         # === Mode Tabs (Home first as default offboard mode) ===
-        self.mode_tabs = QTabWidget()
+        self.mode_tabs = CompactTabWidget()
         self.mode_tabs.addTab(self._create_home_tab(), "Home")
         self.mode_tabs.addTab(self._create_jogging_tab(), "Jogging")
         self.mode_tabs.addTab(self._create_target_tab(), "Target")
@@ -140,47 +142,13 @@ class CommandPanel(QWidget):
         layout.setSpacing(8)
         
         # Emergency LAND button - RED and prominent
-        self.land_btn = QPushButton("LAND")
-        self.land_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #dc3545;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 12px 20px;
-                border: none;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #c82333;
-            }
-            QPushButton:pressed {
-                background-color: #bd2130;
-            }
-        """)
+        self.land_btn = theme.button("Land", "danger", "plane-landing", "lg")
         self.land_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.land_btn.clicked.connect(self._on_land_clicked)
         layout.addWidget(self.land_btn)
         
         # Home button
-        self.home_btn = QPushButton("HOME")
-        self.home_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 12px 20px;
-                border: none;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:pressed {
-                background-color: #1e7e34;
-            }
-        """)
+        self.home_btn = theme.button("Home", "success", "house", "lg")
         self.home_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.home_btn.clicked.connect(self._on_home_clicked)
         layout.addWidget(self.home_btn)
@@ -243,7 +211,7 @@ class CommandPanel(QWidget):
         # Ghost mode description
         desc = QLabel("Ghost mode shows 'Next Setpoint' for previewing movements before applying.")
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #666; font-size: 11px;")
+        desc.setProperty("role", "hint")
         layout.addWidget(desc)
         
         # Ghost mode checkbox and send button row
@@ -255,28 +223,8 @@ class CommandPanel(QWidget):
         
         row.addStretch()
         
-        self.send_position_btn = QPushButton("Send Position")
+        self.send_position_btn = theme.button("Send Position", "primary", "play")
         self.send_position_btn.setEnabled(False)  # Disabled until there's a difference
-        self.send_position_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #0069d9;
-            }
-            QPushButton:pressed {
-                background-color: #0062cc;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
         self.send_position_btn.clicked.connect(self._on_send_position_clicked)
         row.addWidget(self.send_position_btn)
         
@@ -368,43 +316,21 @@ class CommandPanel(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(4)
         
-        minus_btn = QPushButton("-")
-        minus_btn.setFixedSize(28, 28)
-        minus_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
-            }
-        """)
+        minus_btn = theme.tool_button("minus", "Step down")
+        minus_btn.setProperty("variant", "outline")
+        minus_btn.setFixedSize(30, 30)
         minus_btn.clicked.connect(lambda: self._jog_axis(axis, -1))
         row.addWidget(minus_btn)
         
         value_label = QLabel("0.0000")
         value_label.setAlignment(Qt.AlignCenter)
         value_label.setFixedWidth(70)
-        value_label.setStyleSheet("font-family: monospace;")
+        value_label.setProperty("role", "value")
         row.addWidget(value_label)
         
-        plus_btn = QPushButton("+")
-        plus_btn.setFixedSize(28, 28)
-        plus_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
-            }
-        """)
+        plus_btn = theme.tool_button("plus", "Step up")
+        plus_btn.setProperty("variant", "outline")
+        plus_btn.setFixedSize(30, 30)
         plus_btn.clicked.connect(lambda: self._jog_axis(axis, 1))
         row.addWidget(plus_btn)
         
@@ -490,20 +416,7 @@ class CommandPanel(QWidget):
         layout.addWidget(offset_group)
         
         # Go to target button
-        self.go_to_target_btn = QPushButton("Go to Target")
-        self.go_to_target_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #17a2b8;
-                color: white;
-                font-weight: bold;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #138496;
-            }
-        """)
+        self.go_to_target_btn = theme.button("Go to Target", "primary", "target", "lg")
         self.go_to_target_btn.clicked.connect(self._on_go_to_target_clicked)
         layout.addWidget(self.go_to_target_btn)
         
@@ -520,11 +433,11 @@ class CommandPanel(QWidget):
         home_layout = QFormLayout(home_group)
         
         self.home_x_label = QLabel("0.000")
-        self.home_x_label.setStyleSheet("font-family: monospace;")
+        self.home_x_label.setProperty("role", "value")
         home_layout.addRow("X:", self.home_x_label)
         
         self.home_z_label = QLabel("0.000")
-        self.home_z_label.setStyleSheet("font-family: monospace;")
+        self.home_z_label.setProperty("role", "value")
         home_layout.addRow("Z:", self.home_z_label)
         
         self.hover_height_spin = QDoubleSpinBox()
@@ -538,38 +451,12 @@ class CommandPanel(QWidget):
         layout.addWidget(home_group)
         
         # Set Home button
-        self.set_home_btn = QPushButton("Set Current Position as Home")
-        self.set_home_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ffc107;
-                color: #212529;
-                font-weight: bold;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-        """)
+        self.set_home_btn = theme.button("Set Current Position as Home", None, "locate-fixed")
         self.set_home_btn.clicked.connect(self._on_set_home_clicked)
         layout.addWidget(self.set_home_btn)
         
         # Go Home button
-        self.go_home_btn = QPushButton("Go to Home")
-        self.go_home_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-        """)
+        self.go_home_btn = theme.button("Go to Home", "success", "house", "lg")
         self.go_home_btn.clicked.connect(self._on_go_home_tab_clicked)
         layout.addWidget(self.go_home_btn)
         
@@ -588,7 +475,7 @@ class CommandPanel(QWidget):
         In Ghost Mode, movements update "Next Setpoint" until you click "Send Position".
         """)
         info.setWordWrap(True)
-        info.setStyleSheet("color: #555; padding: 10px;")
+        info.setProperty("role", "hint")
         layout.addWidget(info)
         
         # Input Device Settings Group (moved from Config panel)
@@ -629,7 +516,7 @@ class CommandPanel(QWidget):
         
         self.mapping_info = QLabel()
         self.mapping_info.setWordWrap(True)
-        self.mapping_info.setStyleSheet("font-size: 11px; color: #555;")
+        self.mapping_info.setProperty("role", "hint")
         mapping_layout.addWidget(self.mapping_info)
         
         layout.addWidget(mapping_group)
@@ -694,14 +581,11 @@ class CommandPanel(QWidget):
         header_layout.addWidget(QLabel("<b>Setpoint</b>"))
         
         self.next_setpoint_header = QLabel("<b>Next</b>")
-        self.next_setpoint_header.setStyleSheet("color: #17a2b8;")
+        self.next_setpoint_header.setProperty("tone", "accent")
         self.next_setpoint_header.hide()  # Hidden by default, shown in ghost mode
         header_layout.addWidget(self.next_setpoint_header)
         main_layout.addWidget(header)
         
-        # Style for labels
-        mono_style = "font-family: monospace;"
-        next_style = "font-family: monospace; color: #17a2b8;"
         
         # Create position rows with all three columns
         self.next_setpoint_labels = []  # Store references to hide/show
@@ -712,13 +596,14 @@ class CommandPanel(QWidget):
         x_layout.setContentsMargins(0, 0, 0, 0)
         x_layout.addWidget(QLabel("X:"))
         self.pos_x_label = QLabel("0.0000")
-        self.pos_x_label.setStyleSheet(mono_style)
+        self.pos_x_label.setProperty("role", "value")
         x_layout.addWidget(self.pos_x_label)
         self.setpoint_x_label = QLabel("0.0000")
-        self.setpoint_x_label.setStyleSheet(mono_style)
+        self.setpoint_x_label.setProperty("role", "value")
         x_layout.addWidget(self.setpoint_x_label)
         self.next_x_label = QLabel("0.0000")
-        self.next_x_label.setStyleSheet(next_style)
+        self.next_x_label.setProperty("role", "value")
+        self.next_x_label.setProperty("tone", "accent")
         self.next_x_label.hide()
         self.next_setpoint_labels.append(self.next_x_label)
         x_layout.addWidget(self.next_x_label)
@@ -730,13 +615,14 @@ class CommandPanel(QWidget):
         y_layout.setContentsMargins(0, 0, 0, 0)
         y_layout.addWidget(QLabel("Y:"))
         self.pos_y_label = QLabel("0.0000")
-        self.pos_y_label.setStyleSheet(mono_style)
+        self.pos_y_label.setProperty("role", "value")
         y_layout.addWidget(self.pos_y_label)
         self.setpoint_y_label = QLabel("0.0000")
-        self.setpoint_y_label.setStyleSheet(mono_style)
+        self.setpoint_y_label.setProperty("role", "value")
         y_layout.addWidget(self.setpoint_y_label)
         self.next_y_label = QLabel("0.0000")
-        self.next_y_label.setStyleSheet(next_style)
+        self.next_y_label.setProperty("role", "value")
+        self.next_y_label.setProperty("tone", "accent")
         self.next_y_label.hide()
         self.next_setpoint_labels.append(self.next_y_label)
         y_layout.addWidget(self.next_y_label)
@@ -748,13 +634,14 @@ class CommandPanel(QWidget):
         z_layout.setContentsMargins(0, 0, 0, 0)
         z_layout.addWidget(QLabel("Z:"))
         self.pos_z_label = QLabel("0.0000")
-        self.pos_z_label.setStyleSheet(mono_style)
+        self.pos_z_label.setProperty("role", "value")
         z_layout.addWidget(self.pos_z_label)
         self.setpoint_z_label = QLabel("0.0000")
-        self.setpoint_z_label.setStyleSheet(mono_style)
+        self.setpoint_z_label.setProperty("role", "value")
         z_layout.addWidget(self.setpoint_z_label)
         self.next_z_label = QLabel("0.0000")
-        self.next_z_label.setStyleSheet(next_style)
+        self.next_z_label.setProperty("role", "value")
+        self.next_z_label.setProperty("tone", "accent")
         self.next_z_label.hide()
         self.next_setpoint_labels.append(self.next_z_label)
         z_layout.addWidget(self.next_z_label)
@@ -766,13 +653,14 @@ class CommandPanel(QWidget):
         qx_layout.setContentsMargins(0, 0, 0, 0)
         qx_layout.addWidget(QLabel("qX:"))
         self.rot_qx_label = QLabel("0.0000")
-        self.rot_qx_label.setStyleSheet(mono_style)
+        self.rot_qx_label.setProperty("role", "value")
         qx_layout.addWidget(self.rot_qx_label)
         self.setpoint_qx_label = QLabel("0.0000")
-        self.setpoint_qx_label.setStyleSheet(mono_style)
+        self.setpoint_qx_label.setProperty("role", "value")
         qx_layout.addWidget(self.setpoint_qx_label)
         self.next_qx_label = QLabel("0.0000")
-        self.next_qx_label.setStyleSheet(next_style)
+        self.next_qx_label.setProperty("role", "value")
+        self.next_qx_label.setProperty("tone", "accent")
         self.next_qx_label.hide()
         self.next_setpoint_labels.append(self.next_qx_label)
         qx_layout.addWidget(self.next_qx_label)
@@ -784,13 +672,14 @@ class CommandPanel(QWidget):
         qy_layout.setContentsMargins(0, 0, 0, 0)
         qy_layout.addWidget(QLabel("qY:"))
         self.rot_qy_label = QLabel("0.0000")
-        self.rot_qy_label.setStyleSheet(mono_style)
+        self.rot_qy_label.setProperty("role", "value")
         qy_layout.addWidget(self.rot_qy_label)
         self.setpoint_qy_label = QLabel("0.0000")
-        self.setpoint_qy_label.setStyleSheet(mono_style)
+        self.setpoint_qy_label.setProperty("role", "value")
         qy_layout.addWidget(self.setpoint_qy_label)
         self.next_qy_label = QLabel("0.0000")
-        self.next_qy_label.setStyleSheet(next_style)
+        self.next_qy_label.setProperty("role", "value")
+        self.next_qy_label.setProperty("tone", "accent")
         self.next_qy_label.hide()
         self.next_setpoint_labels.append(self.next_qy_label)
         qy_layout.addWidget(self.next_qy_label)
@@ -802,13 +691,14 @@ class CommandPanel(QWidget):
         qz_layout.setContentsMargins(0, 0, 0, 0)
         qz_layout.addWidget(QLabel("qZ:"))
         self.rot_qz_label = QLabel("0.0000")
-        self.rot_qz_label.setStyleSheet(mono_style)
+        self.rot_qz_label.setProperty("role", "value")
         qz_layout.addWidget(self.rot_qz_label)
         self.setpoint_qz_label = QLabel("0.0000")
-        self.setpoint_qz_label.setStyleSheet(mono_style)
+        self.setpoint_qz_label.setProperty("role", "value")
         qz_layout.addWidget(self.setpoint_qz_label)
         self.next_qz_label = QLabel("0.0000")
-        self.next_qz_label.setStyleSheet(next_style)
+        self.next_qz_label.setProperty("role", "value")
+        self.next_qz_label.setProperty("tone", "accent")
         self.next_qz_label.hide()
         self.next_setpoint_labels.append(self.next_qz_label)
         qz_layout.addWidget(self.next_qz_label)

@@ -5,15 +5,21 @@ from models.gl_buffers import draw_lines
 from models.scene_object import SceneObject
 
 
+DEFAULT_COLOUR = (0.68, 0.68, 0.68, 1.0)
+
+
 class Grid(SceneObject):
-    """Ground grid on the scene's XZ plane (Y up)."""
+    """Ground grid on the scene's XZ plane (Y up).
+
+    Left at ``DEFAULT_COLOUR`` the viewport draws it in the theme's grid colour.
+    """
 
     helper = True
 
     def __init__(self, pose=None, name=None, colour=None, controllable=False,
                  half_extent=10, spacing=1.0):
         super().__init__(pose, name or "Unnamed Grid", shaded=False, controllable=False,
-                         colour=colour if colour is not None else (0.68, 0.68, 0.68, 1.0))
+                         colour=colour if colour is not None else DEFAULT_COLOUR)
         self.half_extent = int(half_extent)
         self.spacing = float(spacing)
         self._lines = self._build_lines()

@@ -5,6 +5,10 @@ from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel,
                              QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from ui import theme
+
+MEDALS = ("#D4A017", "#9CA3AF", "#B87333")   # gold, silver, bronze trophies for the top three
+
 
 class LeaderboardPanel(QWidget):
     NavTag = "leaderboard"
@@ -15,9 +19,9 @@ class LeaderboardPanel(QWidget):
         self.trainer = trainer_service
 
         layout = QVBoxLayout(self)
-        title = QLabel("Leaderboard")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 6px;")
-        layout.addWidget(title)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        layout.addWidget(theme.page_header("Leaderboard", "Best results for each game."))
 
         row = QHBoxLayout()
         self.game_combo = QComboBox()
@@ -34,6 +38,10 @@ class LeaderboardPanel(QWidget):
         self.table = QTableWidget(0, len(self.COLUMNS))
         self.table.setHorizontalHeaderLabels(self.COLUMNS)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setFocusPolicy(Qt.NoFocus)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         header = self.table.horizontalHeader()
@@ -41,13 +49,12 @@ class LeaderboardPanel(QWidget):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         layout.addWidget(self.table, 1)
 
-        self.empty_label = QLabel("No results yet — play a game in the Trainer panel.")
-        self.empty_label.setStyleSheet("color: #666; font-style: italic;")
+        self.empty_label = theme.label("No results yet — play a game in the Trainer panel.", "hint", wrap=True)
         layout.addWidget(self.empty_label)
 
         clear_row = QHBoxLayout()
         clear_row.addStretch()
-        self.clear_button = QPushButton("Clear results…")
+        self.clear_button = theme.button("Clear results…", "ghost", "trash")
         self.clear_button.clicked.connect(self._on_clear_clicked)
         clear_row.addWidget(self.clear_button)
         layout.addLayout(clear_row)
@@ -69,6 +76,10 @@ class LeaderboardPanel(QWidget):
                 item = QTableWidgetItem(text)
                 if col in (0, 2):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if col == 0 and row < len(MEDALS):
+                    item.setIcon(theme.icon("trophy", MEDALS[row], 16))
+                if col == 2:
+                    item.setFont(theme.mono_font(10))
                 self.table.setItem(row, col, item)
         self.empty_label.setVisible(not results)
         self.clear_button.setEnabled(bool(results))

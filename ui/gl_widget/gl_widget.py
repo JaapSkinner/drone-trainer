@@ -1,7 +1,11 @@
 import time
 
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import QLabel, QOpenGLWidget
+
+from models import grid
+from models.grid import Grid
+from ui import theme
 
 from ui.gl_widget.scene_renderer import Camera, SceneRenderer
 
@@ -22,6 +26,8 @@ class GLWidget(QOpenGLWidget):
         self.object_service = object_service
         self.input_service = None  # Will be set by MainWindow
         self.renderer = SceneRenderer()
+        self._apply_theme()
+        theme.signals.changed.connect(self._apply_theme)
         # Overlays (SetpointOverlay, TrainerService…) provide drawables() and may provide
         # alpha_for(obj) and colour_for(obj).
         self.overlays = []
@@ -54,16 +60,10 @@ class GLWidget(QOpenGLWidget):
         self.hud_label = QLabel(self)
         self.hud_label.setObjectName("ViewportHud")
         self.hud_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.hud_label.setStyleSheet(
-            "QLabel#ViewportHud { background: rgba(255, 255, 255, 170); color: #222;"
-            " border-radius: 6px; padding: 4px 8px; font-family: monospace; }")
         self.hud_label.move(10, 10)
         self.game_hud = QLabel(self)
         self.game_hud.setObjectName("GameHud")
         self.game_hud.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.game_hud.setStyleSheet(
-            "QLabel#GameHud { background: rgba(20, 20, 20, 190); color: white; border-radius: 10px;"
-            " padding: 8px 16px; font-size: 18px; font-weight: 600; }")
         self.game_hud.hide()
 
         self._hud_timer = QTimer(self)
@@ -82,6 +82,13 @@ class GLWidget(QOpenGLWidget):
     def initializeGL(self):
         self.renderer.initialize()
 
+    @pyqtSlot(object)
+    def _apply_theme(self, _palette=None):
+        """Viewport background follows the light/dark palette."""
+        self.renderer.background = theme.rgba("viewport_bottom")
+        self.renderer.background_gradient = (theme.rgba("viewport_top"), theme.rgba("viewport_bottom"))
+        self.update()
+
     def paintGL(self):
         now = time.perf_counter()
         delta = now - self.prev_time
@@ -97,7 +104,7 @@ class GLWidget(QOpenGLWidget):
         """Renderer keyword arguments combining every overlay."""
         overlays = list(self.overlays)
         alpha_sources = [o.alpha_for for o in overlays if hasattr(o, "alpha_for")]
-        colour_sources = [o.colour_for for o in overlays if hasattr(o, "colour_for")]
+        colour_sources = [o.colour_for for o in overlays if hasattr(o, "colour_for")] + [self._theme_colour_for]
 
         def alpha_for(obj):
             return min((f(obj) for f in alpha_sources), default=1.0)
@@ -107,7 +114,14 @@ class GLWidget(QOpenGLWidget):
 
         return {"overlays": [d for o in overlays for d in o.drawables()],
                 "alpha_for": alpha_for if alpha_sources else None,
-                "colour_for": colour_for if colour_sources else None}
+                "colour_for": colour_for}
+
+    @staticmethod
+    def _theme_colour_for(obj):
+        """A grid left at its default colour follows the light/dark theme."""
+        if isinstance(obj, Grid) and tuple(obj.colour) == grid.DEFAULT_COLOUR:
+            return theme.rgba("grid")
+        return None
 
     def set_game_hud(self, text: str):
         """Large status line at the top of the viewport (empty hides it)."""

@@ -1,10 +1,12 @@
 """Trainer panel (issue #6): pick a training game, configure it and play."""
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                              QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox,
                              QVBoxLayout, QWidget)
 
 from services.trainer.games import GameState
+from ui import animation, theme
+from ui.widgets.toast import toast
 
 FOLLOW_COMMAND_PANEL = "__command_panel__"
 
@@ -30,15 +32,17 @@ class TrainerPanel(QWidget):
         self._setting_widgets = {}
 
         outer = QVBoxLayout(self)
-        title = QLabel("Trainer")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 6px;")
-        outer.addWidget(title)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(theme.page_header("Trainer", "Pick a game, set it up and fly. Results go to the "
+                                                     "leaderboard."))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 10, 0)
+        layout.setSpacing(10)
         layout.setAlignment(Qt.AlignTop)
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
@@ -64,7 +68,7 @@ class TrainerPanel(QWidget):
         game_layout.addWidget(self.game_combo)
         self.description_label = QLabel()
         self.description_label.setWordWrap(True)
-        self.description_label.setStyleSheet("color: #555;")
+        self.description_label.setProperty("role", "hint")
         game_layout.addWidget(self.description_label)
         self.settings_form_holder = QVBoxLayout()
         game_layout.addLayout(self.settings_form_holder)
@@ -72,25 +76,27 @@ class TrainerPanel(QWidget):
         game_layout.addLayout(self.actions_row)
         self.action_message = QLabel()
         self.action_message.setWordWrap(True)
-        self.action_message.setStyleSheet("color: #1e7e34;")
+        self.action_message.setProperty("role", "hint")
+        self.action_message.setProperty("tone", "success")
         game_layout.addWidget(self.action_message)
         layout.addWidget(game_group)
 
         # -- play ----------------------------------------------------------------
-        self.start_button = QPushButton("Start")
-        self.start_button.setStyleSheet(
-            "QPushButton { background-color: #28a745; color: white; font-weight: bold; font-size: 15px;"
-            " padding: 10px; border: none; border-radius: 6px; }"
-            "QPushButton:hover { background-color: #218838; }")
+        self.start_button = theme.button("Start", "success", "play", "lg")
         self.start_button.clicked.connect(self._on_start_stop_clicked)
         layout.addWidget(self.start_button)
-        self.status_label = QLabel("Ready")
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("font-size: 15px; font-weight: 600; padding: 6px 0;")
-        layout.addWidget(self.status_label)
+        status_card = QFrame()
+        status_card.setProperty("role", "card")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(16, 12, 16, 12)
+        status_layout.setSpacing(4)
+        status_layout.addWidget(theme.section("Status"))
+        self.status_label = theme.label("Ready", "metric", wrap=True)
+        status_layout.addWidget(self.status_label)
         self.result_label = QLabel()
         self.result_label.setWordWrap(True)
-        layout.addWidget(self.result_label)
+        status_layout.addWidget(self.result_label)
+        layout.addWidget(status_card)
         layout.addStretch()
 
         self.game_combo.currentIndexChanged.connect(self._on_game_changed)
@@ -252,7 +258,7 @@ class TrainerPanel(QWidget):
         error = self.trainer.start(game, self.pilot_object(), self.pilot_name())
         if error:
             self.status_label.setText(error)
-            self.status_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #c82333;")
+            theme.set_tone(self.status_label, "danger")
         return error
 
     def _on_start_stop_clicked(self):
@@ -265,15 +271,13 @@ class TrainerPanel(QWidget):
     def on_hud_changed(self, text):
         if text:
             self.status_label.setText(text)
-            self.status_label.setStyleSheet("font-size: 15px; font-weight: 600; padding: 6px 0;")
+            theme.set_tone(self.status_label, None)
 
     @pyqtSlot(object)
     def on_state_changed(self, state):
         running = state.active
         self.start_button.setText("Stop" if running else "Start")
-        self.start_button.setStyleSheet(
-            "QPushButton { background-color: %s; color: white; font-weight: bold; font-size: 15px;"
-            " padding: 10px; border: none; border-radius: 6px; }" % ("#dc3545" if running else "#28a745"))
+        theme.decorate(self.start_button, "danger" if running else "success", "square" if running else "play", "lg")
         for widget in (self.game_combo, self.object_combo, *self._setting_widgets.values()):
             widget.setEnabled(not running)
         if state == GameState.STOPPED:
@@ -288,6 +292,10 @@ class TrainerPanel(QWidget):
         text = f"<b>{result.pilot}</b>: {result.score_text()}"
         if best is not None and best.timestamp == result.timestamp:
             text += " — personal best!"
-        elif best is not None:
-            text += f" (personal best {best.score_text()})"
+            toast(f"New personal best: {result.score_text()}")
+        else:
+            if best is not None:
+                text += f" (personal best {best.score_text()})"
+            toast(f"Result recorded: {result.score_text()}")
         self.result_label.setText(text)
+        animation.fade_in(self.result_label)

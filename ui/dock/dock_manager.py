@@ -3,6 +3,8 @@ import logging
 from PyQt5.QtWidgets import QDockWidget
 from PyQt5.QtCore import Qt
 
+from ui import animation
+
 from ui.dock.panels.objects_panel import ObjectsPanel
 from ui.dock.panels.home_panel import HomePanel
 from ui.dock.panels.trainer_panel import TrainerPanel
@@ -115,7 +117,10 @@ class DockManager(QDockWidget):
         if panel is None:
             logger.warning("No dock panel for navigation tag %r", tag)
             return False
+        changed = panel is not self.current_widget
         self.set_content(panel)
+        if changed and self.isVisible():
+            animation.fade_in(panel, duration=160)
         return True
 
     def set_mavlink_service(self, mavlink_service):

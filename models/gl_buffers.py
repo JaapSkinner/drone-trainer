@@ -14,7 +14,7 @@ import threading
 
 import numpy as np
 from OpenGL.GL import (GL_ARRAY_BUFFER, GL_FLOAT, GL_LINES, GL_NORMAL_ARRAY,
-                       GL_STATIC_DRAW, GL_TRIANGLES, GL_VERTEX_ARRAY,
+                       GL_STATIC_DRAW, GL_TRIANGLE_STRIP, GL_TRIANGLES, GL_VERTEX_ARRAY,
                        GL_COLOR_ARRAY, glBindBuffer, glBufferData,
                        glColorPointer, glDeleteBuffers, glDisableClientState,
                        glDrawArrays, glEnableClientState, glGenBuffers,
@@ -137,4 +137,21 @@ def draw_lines(points: np.ndarray, colours: np.ndarray = None):
     finally:
         if colours is not None:
             glDisableClientState(GL_COLOR_ARRAY)
+        glDisableClientState(GL_VERTEX_ARRAY)
+
+
+_SCREEN_QUAD = np.array([(-1, -1, 0), (1, -1, 0), (-1, 1, 0), (1, 1, 0)], dtype=np.float32)
+
+
+def draw_screen_gradient(top, bottom):
+    """Fill the viewport with a vertical gradient. Expects identity matrices and depth/lighting off."""
+    colours = np.array([bottom, bottom, top, top], dtype=np.float32)
+    glEnableClientState(GL_VERTEX_ARRAY)
+    glEnableClientState(GL_COLOR_ARRAY)
+    try:
+        glVertexPointer(3, GL_FLOAT, 0, _SCREEN_QUAD)
+        glColorPointer(4, GL_FLOAT, 0, colours)
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+    finally:
+        glDisableClientState(GL_COLOR_ARRAY)
         glDisableClientState(GL_VERTEX_ARRAY)

@@ -8,8 +8,15 @@ This panel shows the current status of:
 """
 from PyQt5.QtWidgets import QFrame, QLabel, QLayout, QVBoxLayout
 from PyQt5.QtCore import Qt, pyqtSlot
-from ui.style import load_stylesheet
 from services.service_base import ServiceLevel
+from ui import theme
+
+_TOKENS = {
+    ServiceLevel.RUNNING: "success",
+    ServiceLevel.WARNING: "warning",
+    ServiceLevel.ERROR: "danger",
+    ServiceLevel.STOPPED: "text_muted",
+}
 
 
 class StatusPanel(QFrame):
@@ -30,23 +37,37 @@ class StatusPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("StatusPanel")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(load_stylesheet('ui/status_panel/status_panel.qss'))
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(5)
         # Grow/shrink with the status text; stays anchored to the top-right.
         layout.setSizeConstraint(QLayout.SetFixedSize)
-        self.setMinimumWidth(270)
+        self.setMinimumWidth(250)
 
+        self.motion_capture_label = QLabel()
+        self.mavlink_label = QLabel()
+        self.input_label = QLabel()
+        self._states = {}   # label → (prefix, level, text)
+        for widget, prefix, text in ((self.motion_capture_label, "Motion Capture", "Not connected"),
+                                     (self.mavlink_label, "MAVLink", "Not Connected"),
+                                     (self.input_label, "Input Device", "Unknown")):
+            widget.setTextFormat(Qt.RichText)
+            layout.addWidget(widget)
+            self._set_row(widget, prefix, ServiceLevel.STOPPED, text)
+        theme.signals.changed.connect(self._on_theme_changed)
 
-        self.motion_capture_label = QLabel("Motion Capture: Not connected")
-        self.mavlink_label = QLabel("MAVLink: Not Connected")
-        self.input_label = QLabel("Input Device: Unknown")
+    def _set_row(self, widget, prefix, level, text):
+        self._states[widget] = (prefix, level, text)
+        dot = theme.colour(_TOKENS.get(level, "text_muted"))
+        widget.setText(f'<span style="color:{dot}; font-size:15px;">●</span>&nbsp; '
+                       f'<span style="color:{theme.colour("text_secondary")};">{prefix}</span>&nbsp; '
+                       f'<span style="color:{theme.colour("text")}; font-weight:600;">{text}</span>')
+        widget.setToolTip(f"{prefix}: {text}")
 
-        layout.addWidget(self.motion_capture_label)
-        layout.addWidget(self.mavlink_label)
-        layout.addWidget(self.input_label)
+    def _on_theme_changed(self, *_):
+        for widget, (prefix, level, text) in self._states.items():
+            self._set_row(widget, prefix, level, text)
 
     MARGIN = 20
 
@@ -69,15 +90,6 @@ class StatusPanel(QFrame):
         level_enum = ServiceLevel(level)
         text = label if label else level_enum.name.capitalize()
 
-        color_map = {
-            ServiceLevel.RUNNING: "green",
-            ServiceLevel.WARNING: "orange",
-            ServiceLevel.ERROR: "red",
-            ServiceLevel.STOPPED: "gray",
-        }
-
-        color = color_map.get(level_enum, "gray")
-
         label_map = {
             "motion_capture": (self.motion_capture_label, "Motion Capture"),
             "vicon": (self.motion_capture_label, "Motion Capture"),  # Legacy compatibility
@@ -94,6 +106,5 @@ class StatusPanel(QFrame):
                 label_widget.setVisible(False)
             else:
                 label_widget.setVisible(True)
-                label_widget.setText(f"{prefix}: {text}")
-                label_widget.setStyleSheet(f"color: {color};")
+                self._set_row(label_widget, prefix, level_enum, text)
             self.anchor_top_right()
