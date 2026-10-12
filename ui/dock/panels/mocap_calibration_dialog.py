@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, Q
 from models.mocap_calibration import (CalibrationError, MocapCalibration, solve_origin_direction,
                                       solve_reference_points)
 from ui import theme
+from ui.dialogs.shell import DialogShell
 
 CAPTURE_SECONDS = 1.0
 STEADY_LIMIT_M = 0.005   # warn if the object moved more than this during a capture
@@ -37,12 +38,14 @@ def _hint(text):
     return theme.hint(text)
 
 
-class MocapCalibrationDialog(QDialog):
+class MocapCalibrationDialog(DialogShell):
     calibration_applied = pyqtSignal(object)   # MocapCalibration that should be saved
 
     def __init__(self, motion_capture_service, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Calibrate motion capture")
+        super().__init__("Calibrate motion capture",
+                         "Align the motion capture frame with the lab. Changes preview live in the viewport; "
+                         "Apply keeps them, Cancel puts the old calibration back.",
+                         accept_text="Apply", parent=parent)
         # No explicit minimum size: Qt then derives it from the layout, so
         # nothing can overlap when the window is made small.
         self.resize(580, 620)
@@ -55,9 +58,7 @@ class MocapCalibrationDialog(QDialog):
         self._points = []                  # [{"measured": (x,y,z), "target": [x,y,z]}]
         self._updating_manual = False
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(_hint("Align the motion capture frame with the lab. Changes preview live in "
-                               "the viewport; Apply keeps them, Cancel puts the old calibration back."))
+        layout = self.body
 
         subject_row = QHBoxLayout()
         subject_row.addWidget(QLabel("Calibration object:"))
@@ -65,7 +66,7 @@ class MocapCalibrationDialog(QDialog):
         self.subject_combo.setMinimumWidth(160)
         subject_row.addWidget(self.subject_combo, 1)
         layout.addLayout(subject_row)
-        self.live_label = QLabel()
+        self.live_label = theme.label("", "hint", wrap=True)
         layout.addWidget(self.live_label)
 
         self.tabs = QTabWidget()
@@ -80,20 +81,11 @@ class MocapCalibrationDialog(QDialog):
         self.summary_label.setProperty("tone", "accent")
         layout.addWidget(self.summary_label)
 
-        buttons = QHBoxLayout()
         self.reset_button = theme.button("Reset to none", "ghost", "refresh-cw")
         self.reset_button.setToolTip("Use the mocap system's frame unchanged")
         self.reset_button.clicked.connect(lambda: self.set_preview(MocapCalibration()))
-        buttons.addWidget(self.reset_button)
-        buttons.addStretch()
-        cancel = theme.button("Cancel")
-        cancel.clicked.connect(self.reject)
-        buttons.addWidget(cancel)
-        self.apply_button = theme.button("Apply", "primary", "check")
-        self.apply_button.setDefault(True)
-        self.apply_button.clicked.connect(self.accept)
-        buttons.addWidget(self.apply_button)
-        layout.addLayout(buttons)
+        self.footer_left.addWidget(self.reset_button)
+        self.apply_button = self.accept_button
 
         self.service.subjects_updated.connect(self.on_subjects_updated)
         self.service.capture_finished.connect(self.on_capture_finished)
@@ -128,9 +120,12 @@ class MocapCalibrationDialog(QDialog):
                                            "origin (0 if its origin is at its base)")
         form.addRow("Object height at origin:", self.origin_height_spin)
 
-        self.origin_compute_button = QPushButton("Use origin && direction")
+        self.origin_compute_button = theme.button("Use origin && direction", "primary", "check")
         self.origin_compute_button.clicked.connect(self.compute_origin_direction)
-        form.addRow(self.origin_compute_button)
+        compute_row = QHBoxLayout()
+        compute_row.addStretch()
+        compute_row.addWidget(self.origin_compute_button)
+        form.addRow(compute_row)
         self.origin_error = QLabel()
         self.origin_error.setWordWrap(True)
         form.addRow(self.origin_error)
@@ -156,7 +151,7 @@ class MocapCalibrationDialog(QDialog):
         self.point_button = theme.button("Capture point", "subtle", "crosshair")
         self.point_button.clicked.connect(lambda: self.start_capture("point"))
         row.addWidget(self.point_button)
-        remove = QPushButton("Remove")
+        remove = theme.button("Remove", "ghost", "trash", "sm")
         remove.clicked.connect(self._remove_selected_points)
         row.addWidget(remove)
         row.addStretch()
@@ -168,9 +163,9 @@ class MocapCalibrationDialog(QDialog):
                                             "that aren't in a line")
         layout.addWidget(self.keep_vertical_check)
 
-        self.solve_button = theme.button("Solve from points", None, "target")
+        self.solve_button = theme.button("Solve from points", "primary", "target")
         self.solve_button.clicked.connect(self.solve_points)
-        layout.addWidget(self.solve_button)
+        layout.addWidget(self.solve_button, 0, Qt.AlignRight)
         self.points_status = QLabel()
         self.points_status.setWordWrap(True)
         layout.addWidget(self.points_status)
@@ -183,7 +178,7 @@ class MocapCalibrationDialog(QDialog):
                                "show up here too, so you can fine-tune them."))
         grid = QGridLayout()
         for col, axis in enumerate(("X", "Y (up)", "Z")):
-            grid.addWidget(QLabel(axis), 0, col + 1, Qt.AlignCenter)
+            grid.addWidget(theme.label(axis, "hint"), 0, col + 1, Qt.AlignCenter)
         grid.addWidget(QLabel("Rotate (°)"), 1, 0)
         grid.addWidget(QLabel("Offset (m)"), 2, 0)
         self.rotation_spins = [_spin(-180.0, 180.0, 2, 1.0) for _ in range(3)]

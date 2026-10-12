@@ -1,6 +1,6 @@
-"""The start-up splash, drawn in code from the theme (no image asset to keep in sync)."""
+"""The start-up splash and the window icon, drawn in code from the theme (no image assets to keep in sync)."""
 from PyQt5.QtCore import QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPixmap
+from PyQt5.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPixmap
 
 from ui import theme
 
@@ -60,3 +60,23 @@ def splash_pixmap(scale: float = 1.0) -> QPixmap:
     painter.drawText(QRectF(40, HEIGHT - 44, WIDTH - 80, 20), Qt.AlignRight | Qt.AlignVCenter, "Starting…")
     painter.end()
     return pixmap
+
+
+def app_icon() -> QIcon:
+    """The drone mark on an indigo rounded square, at the usual icon sizes."""
+    result = QIcon()
+    for size in (16, 24, 32, 48, 64, 128, 256):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        tile = QPainterPath()
+        tile.addRoundedRect(QRectF(0, 0, size, size), size * 0.26, size * 0.26)
+        painter.fillPath(tile, QColor(theme.LIGHT.accent))
+        glyph = int(size * 0.66)
+        offset = (size - glyph) / 2
+        painter.drawPixmap(QRectF(offset, offset, glyph, glyph),
+                           theme.icon("drone", "#FFFFFF", glyph).pixmap(glyph, glyph), QRectF(0, 0, glyph, glyph))
+        painter.end()
+        result.addPixmap(pixmap)
+    return result

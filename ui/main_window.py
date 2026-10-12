@@ -38,6 +38,7 @@ from models.storage_models import AppSettings, ConnectionEntry
 from models.default_scene import build_default_scene
 from ui.navbar.navbar import SideNavbar
 from ui import theme
+from ui.splash import app_icon
 from ui.widgets.toast import Toast, notifier as toast_notifier, toast
 from ui.status_panel.status_panel import StatusPanel
 from services.app_logging import get_log_file_path
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
 
         # Look and feel (fonts, colours, icons) before any widget is built.
         theme.apply(saved.ui_theme if saved.ui_theme in theme.PALETTES else "light")
+        self.setWindowIcon(app_icon())
 
         # Create object service early (before StorageService) to preserve
         # the previous construction order and avoid moveToThread races.

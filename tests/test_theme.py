@@ -5,11 +5,14 @@ import unittest
 
 from qt_test_utils import QtMessageCapture, get_app, process_events_for
 from PyQt5.QtGui import QFontDatabase
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGroupBox, QLabel, QLineEdit,
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFrame, QGroupBox, QLabel, QLineEdit,
                              QPushButton, QRadioButton, QTabWidget, QVBoxLayout, QWidget)
 
 from ui import theme
+from ui.dialogs.shell import DialogShell
+from ui.splash import app_icon, splash_pixmap
 from ui.widgets.compact_tabs import CompactTabWidget
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.step_indicator import StepIndicator
 from ui.widgets.toast import Toast, notifier, toast
 
@@ -142,6 +145,31 @@ class ThemeTests(unittest.TestCase):
         finally:
             notifier.requested.disconnect(widget.show_message)
             parent.close()
+
+
+    def test_dialog_shell_has_cancel_then_primary(self):
+        dialog = DialogShell("Add object", "Explanation", accept_text="Add", accept_icon="plus")
+        self.assertEqual(dialog.accept_button.text(), "Add")
+        self.assertTrue(dialog.accept_button.isDefault())
+        self.assertEqual(dialog.accept_button.property("variant"), "primary")
+        footer = dialog.accept_button.parentWidget().layout()
+        self.assertLess(footer.indexOf(dialog.cancel_button), footer.indexOf(dialog.accept_button))
+        dialog.cancel_button.click()
+        self.assertEqual(dialog.result(), QDialog.Rejected)
+        dialog.accept_button.click()
+        self.assertEqual(dialog.result(), QDialog.Accepted)
+
+    def test_empty_state_updates_its_text(self):
+        empty = EmptyState("radar", "Not connected", "Connect first.")
+        empty.set_content("No subjects yet", "Nothing received.")
+        self.assertEqual(empty.text(), "No subjects yet Nothing received.")
+        self.assertFalse(empty.icon_label.pixmap().isNull())
+
+    def test_app_icon_and_splash_are_drawn(self):
+        icon = app_icon()
+        self.assertGreaterEqual(len(icon.availableSizes()), 5)
+        self.assertFalse(icon.pixmap(64, 64).isNull())
+        self.assertEqual(splash_pixmap().width(), 520)
 
 
 if __name__ == "__main__":

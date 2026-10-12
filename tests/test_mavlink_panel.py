@@ -7,6 +7,7 @@ from services import mavlink_service
 from services.mavlink_service import MavlinkService
 from services.object_service import ObjectService
 from test_mavlink_service import _fake_connect
+from models.structs import MavlinkTelemetryData
 from ui.dock.panels.mavlink_panel import MavlinkPanel
 
 
@@ -42,6 +43,26 @@ class MavlinkPanelConnectTests(unittest.TestCase):
             panel.connect_btn.click()
             self.assertTrue(wait_until(lambda: warning.called, timeout_s=3.0))
         self.assertIn("No heartbeat", warning.call_args[0][2])
+
+
+
+class TelemetryDisplayTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = get_app()
+
+    def test_battery_without_data_is_shown_as_unknown_not_empty(self):
+        panel = MavlinkPanel()
+        self.addCleanup(panel.deleteLater)
+        panel._update_telemetry_display(1, MavlinkTelemetryData())    # e.g. SITL: no battery reported
+        battery = panel._telemetry_labels[1]["battery"]
+        self.assertEqual(battery.text(), "Battery —")
+        self.assertEqual(battery.property("tone"), "muted")
+        self.assertFalse(panel.telemetry_placeholder.isVisibleTo(panel))
+
+        panel._update_telemetry_display(1, MavlinkTelemetryData(battery_voltage=12.3, battery_remaining=15))
+        self.assertIn("12.3 V", battery.text())
+        self.assertEqual(battery.property("tone"), "danger")
 
 
 if __name__ == "__main__":

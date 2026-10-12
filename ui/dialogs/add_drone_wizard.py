@@ -22,6 +22,7 @@ from models.cad_mesh import CadMesh
 from models.sphere import Sphere
 from models.structs import MavlinkConnectionConfig
 from ui import animation, theme
+from ui.dialogs.shell import fade_in_window
 from ui.widgets.drone_status import OK, OFF, WARN, BAD
 from ui.widgets.step_indicator import StepIndicator
 
@@ -764,6 +765,10 @@ class AddDroneWizard(QDialog):
         self.drone_ready.emit(obj, {"control": self.control_check.isChecked(),
                                     "follow": self.follow_check.isChecked()})
         self.accept()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        fade_in_window(self)
 
     def done(self, result):
         for signal, slot in (

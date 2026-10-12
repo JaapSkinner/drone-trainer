@@ -11,6 +11,7 @@ from models.structs import MotionCaptureConfig
 from services.service_base import ServiceLevel
 from ui import theme
 from ui.dock.panels.mocap_calibration_dialog import MocapCalibrationDialog
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.toast import toast
 
 _STATUS_TONES = {
@@ -169,8 +170,8 @@ class MotionCapturePanel(QWidget):
         self.subjects_table.itemSelectionChanged.connect(self._update_action_buttons)
         layout.addWidget(self.subjects_table)
 
-        self.empty_label = theme.label("Connect to see tracked subjects.", "hint", wrap=True)
-        layout.addWidget(self.empty_label)
+        self.empty_label = EmptyState("radar", "No subjects", "Connect to see what the cameras are tracking.")
+        layout.addWidget(self.empty_label, 1)
 
         buttons = QHBoxLayout()
         self.assign_button = theme.button("Assign…", None, "link", "sm",
@@ -317,8 +318,12 @@ class MotionCapturePanel(QWidget):
             x, y, z = info.pose[:3]
             table.item(row, 2).setText(f"{x:+.2f}, {y:+.2f}, {z:+.2f}")
         self.empty_label.setVisible(not subjects)
-        self.empty_label.setText("Connect to see tracked subjects." if not self._connected
-                                 else "Connected — no subjects received yet.")
+        self.subjects_table.setVisible(bool(subjects))
+        if not self._connected:
+            self.empty_label.set_content("Not connected", "Connect to see what the cameras are tracking.")
+        else:
+            self.empty_label.set_content("No subjects yet", "Connected, but nothing is being received. Check "
+                                                            "that streaming is on and objects are visible.")
         self._refresh_tracked_by()
 
     @pyqtSlot(object)

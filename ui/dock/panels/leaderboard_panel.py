@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QHBoxLayou
                              QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ui import theme
+from ui.widgets.empty_state import EmptyState
 
 MEDALS = ("#D4A017", "#9CA3AF", "#B87333")   # gold, silver, bronze trophies for the top three
 
@@ -49,8 +50,9 @@ class LeaderboardPanel(QWidget):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         layout.addWidget(self.table, 1)
 
-        self.empty_label = theme.label("No results yet — play a game in the Trainer panel.", "hint", wrap=True)
-        layout.addWidget(self.empty_label)
+        self.empty_label = EmptyState("trophy", "No results yet", "Play a game in the Trainer panel and the best "
+                                                                  "times show up here.")
+        layout.addWidget(self.empty_label, 1)
 
         clear_row = QHBoxLayout()
         clear_row.addStretch()
@@ -82,6 +84,7 @@ class LeaderboardPanel(QWidget):
                     item.setFont(theme.mono_font(10))
                 self.table.setItem(row, col, item)
         self.empty_label.setVisible(not results)
+        self.table.setVisible(bool(results))
         self.clear_button.setEnabled(bool(results))
 
     def _on_clear_clicked(self):

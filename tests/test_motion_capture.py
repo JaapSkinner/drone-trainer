@@ -180,6 +180,8 @@ class MotionCaptureServiceTests(unittest.TestCase):
                 service.disconnect_source()
                 self.assertTrue(wait_until(lambda: not service.is_connected()))
                 self.assertEqual(service.status, ServiceLevel.STOPPED)
+                # connection_changed is queued from the service thread, so it can land a moment later.
+                wait_until(lambda: connection_events == [True, False])
                 self.assertEqual(connection_events, [True, False])
             finally:
                 service.stop()

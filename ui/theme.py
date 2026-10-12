@@ -247,12 +247,21 @@ def stylesheet(p: Palette = None) -> str:
     down_muted = _qss_image("chevron-down", p.text_muted)
     up_muted = _qss_image("chevron-up", p.text_muted)
     eye = _qss_image("eye", p.text_secondary, 2)
+    dock_close = _qss_image("x", p.text_secondary, 2)
+    dock_float = _qss_image("layers", p.text_secondary, 2)
     eye_off = _qss_image("eye-off", p.text_muted, 2)
     return f"""
 * {{ font-family: "{UI_FONT}"; font-size: 13px; }}
 QMainWindow, QDialog {{ background: {p.bg}; }}
 QWidget {{ color: {p.text}; }}
 QDockWidget {{ background: {p.bg}; border: none; }}
+QDockWidget#applicationConsoleDock {{ titlebar-close-icon: url({dock_close}); titlebar-normal-icon: url({dock_float}); }}
+QDockWidget#applicationConsoleDock::title {{ background: {p.surface}; border-top: 1px solid {p.border};
+    padding: 7px 12px; text-align: left; }}
+QDockWidget#applicationConsoleDock::close-button, QDockWidget#applicationConsoleDock::float-button {{
+    border: none; background: transparent; padding: 2px; border-radius: 5px; }}
+QDockWidget#applicationConsoleDock::close-button:hover, QDockWidget#applicationConsoleDock::float-button:hover {{
+    background: {p.surface_hover}; }}
 QDockWidget > QWidget {{ background: {p.bg}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QStackedWidget {{ background: transparent; }}
@@ -324,6 +333,7 @@ QPushButton[variant="subtle"] {{ background: {p.accent_subtle}; color: {p.accent
 QPushButton[variant="subtle"]:hover {{ border-color: {p.accent}; }}
 QPushButton[variant="ghost"] {{ background: transparent; border: 1px solid transparent; color: {p.text_secondary}; }}
 QPushButton[variant="ghost"]:hover {{ background: {p.surface_hover}; color: {p.text}; }}
+QPushButton[variant="ghost"]:disabled {{ color: {p.text_muted}; background: transparent; }}
 QPushButton[variant="primary"]:disabled, QPushButton[variant="danger"]:disabled,
 QPushButton[variant="success"]:disabled, QPushButton[variant="subtle"]:disabled {{
     background: {p.surface_alt}; color: {p.text_muted}; border-color: {p.border}; }}
@@ -338,6 +348,10 @@ QToolButton {{ background: transparent; border: 1px solid transparent; border-ra
 QToolButton:hover {{ background: {p.surface_hover}; color: {p.text}; }}
 QToolButton:pressed {{ background: {p.surface_pressed}; }}
 QToolButton[variant="outline"] {{ border: 1px solid {p.border_strong}; padding: 5px 10px; background: {p.surface}; }}
+QToolButton[variant="square"] {{ border: 1px solid {p.border_strong}; padding: 0; background: {p.surface};
+    border-radius: 8px; }}
+QToolButton[variant="outline"]:hover, QToolButton[variant="square"]:hover {{ border-color: {p.accent};
+    background: {p.surface}; }}
 QToolButton::menu-indicator {{ image: none; width: 0; }}
 QToolButton#SectionHeader {{ border: none; border-radius: 12px; padding: 12px 14px 4px 14px; text-align: left;
     font-size: 14px; font-weight: 600; color: {p.text}; background: transparent; }}
@@ -489,11 +503,14 @@ QPushButton[variant="tile-primary"] {{ border-color: {p.accent}; background: {p.
 QLabel#TileIcon {{ background: {p.accent_subtle}; border-radius: 10px; }}
 QLabel#TileIconPrimary, QLabel#HomeMark {{ background: {p.accent}; border-radius: 10px; }}
 QLabel#HomeMark {{ border-radius: 14px; }}
+QLabel#EmptyIcon {{ background: {p.accent_subtle}; border-radius: 22px; }}
 QLabel#AppMark {{ background: {p.accent}; border-radius: 9px; }}
 
 /* ---- wizard ------------------------------------------------------------ */
-QFrame#WizardHeader {{ background: {p.surface}; border: none; border-bottom: 1px solid {p.border}; }}
-QFrame#WizardFooter {{ background: {p.surface}; border: none; border-top: 1px solid {p.border}; }}
+QFrame#WizardHeader, QFrame#DialogHeader {{ background: {p.surface}; border: none;
+    border-bottom: 1px solid {p.border}; }}
+QFrame#WizardFooter, QFrame#DialogFooter {{ background: {p.surface}; border: none;
+    border-top: 1px solid {p.border}; }}
 QLabel[role="step"] {{ color: {p.text_muted}; font-weight: 500; font-size: 12px; }}
 QLabel[role="step"][state="current"] {{ color: {p.accent}; font-weight: 700; }}
 QLabel[role="step"][state="done"] {{ color: {p.text_secondary}; }}

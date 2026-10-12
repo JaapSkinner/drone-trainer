@@ -317,7 +317,7 @@ class CommandPanel(QWidget):
         row.setSpacing(4)
         
         minus_btn = theme.tool_button("minus", "Step down")
-        minus_btn.setProperty("variant", "outline")
+        minus_btn.setProperty("variant", "square")
         minus_btn.setFixedSize(30, 30)
         minus_btn.clicked.connect(lambda: self._jog_axis(axis, -1))
         row.addWidget(minus_btn)
@@ -329,7 +329,7 @@ class CommandPanel(QWidget):
         row.addWidget(value_label)
         
         plus_btn = theme.tool_button("plus", "Step up")
-        plus_btn.setProperty("variant", "outline")
+        plus_btn.setProperty("variant", "square")
         plus_btn.setFixedSize(30, 30)
         plus_btn.clicked.connect(lambda: self._jog_axis(axis, 1))
         row.addWidget(plus_btn)

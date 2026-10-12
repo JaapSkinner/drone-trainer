@@ -18,6 +18,8 @@ import math
 
 from models.structs import MavlinkConnectionConfig, MavlinkTelemetryData
 from ui import theme
+from ui.dialogs.shell import DialogShell
+from ui.widgets.empty_state import EmptyState
 
 
 class DiscoveryWorker(QThread):
@@ -110,12 +112,13 @@ class ConnectionCard(QFrame):
 
         # Connection details
         id_text = f"system ID {self.config.system_id}" if self.is_active else "system ID detected on connect"
-        details = theme.label(f"{self.config.connection_string} · {id_text}", "hint")
+        details = theme.label(f"{self.config.connection_string} · {id_text}", "hint", wrap=True)
         layout.addWidget(details)
 
         # Linked object
         linked = self.config.linked_object_name
-        self.linked_label = theme.label(f"Linked to <b>{linked}</b>" if linked else "Not linked to an object", "hint")
+        self.linked_label = theme.label(f"Linked to <b>{linked}</b>" if linked else "Not linked to an object", "hint",
+                                        wrap=True)
         layout.addWidget(self.linked_label)
 
         # Button row
@@ -125,24 +128,30 @@ class ConnectionCard(QFrame):
 
         # Link/Unlink object button - emit resolved connection_name
         link_text = "Change Object" if linked else "Link Object"
-        self.link_btn = theme.button(link_text, None, "link", "sm")
+        self.link_btn = theme.button(link_text, None, "link", "sm",
+                                     tooltip="Choose the object this vehicle is (its motion capture is sent here)")
         self.link_btn.clicked.connect(lambda: self.link_object_clicked.emit(self.connection_name))
         buttons.addWidget(self.link_btn)
 
         if self.is_active:
             # Test button - emit resolved connection_name
-            test_btn = theme.button("Test", None, "activity", "sm")
+            test_btn = theme.tool_button("activity", "Test this link's rate and latency")
+            test_btn.setProperty("variant", "square")
+            test_btn.setFixedSize(28, 28)
             test_btn.clicked.connect(lambda: self.test_clicked.emit(self.connection_name))
             buttons.addWidget(test_btn)
             buttons.addStretch()
 
             # Disconnect button - emit resolved connection_name
-            disconnect_btn = theme.button("Disconnect", "ghost", "unplug", "sm")
+            disconnect_btn = theme.button("Disconnect", "ghost", "unplug", "sm",
+                                          tooltip="Stays disconnected until you connect again")
             disconnect_btn.clicked.connect(lambda: self.action_clicked.emit(self.connection_name))
             buttons.addWidget(disconnect_btn)
         else:
             # Edit button for inactive connections only - emit resolved connection_name
-            edit_btn = theme.button("Edit", None, "sliders-horizontal", "sm")
+            edit_btn = theme.tool_button("sliders-horizontal", "Edit this connection")
+            edit_btn.setProperty("variant", "square")
+            edit_btn.setFixedSize(28, 28)
             edit_btn.clicked.connect(lambda: self.edit_clicked.emit(self.connection_name))
             buttons.addWidget(edit_btn)
             buttons.addStretch()
@@ -300,6 +309,7 @@ class MavlinkPanel(QWidget):
         connections_scroll = QScrollArea()
         connections_scroll.setWidgetResizable(True)
         connections_scroll.setFrameShape(QFrame.NoFrame)
+        connections_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         connections_scroll.setMaximumHeight(250)
         
         self.connections_container = QWidget()
@@ -307,8 +317,7 @@ class MavlinkPanel(QWidget):
         self.connections_layout.setSpacing(6)
         self.connections_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.no_connections_label = QLabel("No connections configured")
-        self.no_connections_label.setProperty("role", "hint")
+        self.no_connections_label = self._no_connections_state()
         self.connections_layout.addWidget(self.no_connections_label)
         self.connections_layout.addStretch()
         
@@ -541,9 +550,8 @@ class MavlinkPanel(QWidget):
         self.telemetry_layout.setSpacing(8)
         
         # Placeholder for telemetry display
-        self.telemetry_placeholder = QLabel("Connect to a drone to view telemetry")
-        self.telemetry_placeholder.setProperty("role", "hint")
-        self.telemetry_placeholder.setAlignment(Qt.AlignCenter)
+        self.telemetry_placeholder = EmptyState("activity", "No telemetry yet",
+                                                "Connect to a drone to see its attitude, position and battery.")
         self.telemetry_layout.addWidget(self.telemetry_placeholder)
         
         self.telemetry_layout.addStretch()
@@ -569,16 +577,17 @@ class MavlinkPanel(QWidget):
 
         labels = {}
 
-        # Status pills: armed, battery, GPS, mode
-        status_layout = QHBoxLayout()
-        status_layout.setSpacing(6)
+        # Status pills: armed, mode / battery, GPS (two rows so the panel stays narrow)
+        status_layout = QGridLayout()
+        status_layout.setHorizontalSpacing(6)
+        status_layout.setVerticalSpacing(6)
         labels['armed'] = theme.label("Disarmed", "pill", "muted")
-        labels['battery'] = theme.label("Battery --", "pill")
-        labels['gps'] = theme.label("GPS --", "pill")
-        labels['mode'] = theme.label("Mode --", "pill")
-        for key in ('armed', 'battery', 'gps', 'mode'):
-            status_layout.addWidget(labels[key])
-        status_layout.addStretch()
+        labels['mode'] = theme.label("Mode —", "pill")
+        labels['battery'] = theme.label("Battery —", "pill", "muted")
+        labels['gps'] = theme.label("GPS —", "pill", "muted")
+        for index, key in enumerate(('armed', 'mode', 'battery', 'gps')):
+            status_layout.addWidget(labels[key], index // 2, index % 2, Qt.AlignLeft)
+        status_layout.setColumnStretch(2, 1)
         main_layout.addLayout(status_layout)
 
         # Attitude, position, velocity and rates as small tiles
@@ -643,16 +652,22 @@ class MavlinkPanel(QWidget):
         labels['armed'].setText("Armed" if telemetry.armed else "Disarmed")
         theme.set_tone(labels['armed'], "danger" if telemetry.armed else "muted")
 
-        # Battery with color coding
+        # Battery with color coding (no voltage reported = no battery data, e.g. SITL)
         bat_pct = telemetry.battery_remaining
-        labels['battery'].setText(f"Battery {telemetry.battery_voltage:.1f} V · {bat_pct}%")
-        theme.set_tone(labels['battery'], "success" if bat_pct > 50 else "warning" if bat_pct > 20 else "danger")
+        if telemetry.battery_voltage <= 0:
+            labels['battery'].setText("Battery —")
+            theme.set_tone(labels['battery'], "muted")
+        else:
+            labels['battery'].setText(f"Battery {telemetry.battery_voltage:.1f} V · {bat_pct}%")
+            theme.set_tone(labels['battery'], "success" if bat_pct > 50 else "warning" if bat_pct > 20 else "danger")
 
-        # GPS fix type
+        # GPS fix type (indoors under motion capture there usually is none)
         gps_text = {0: "No GPS", 1: "No Fix", 2: "2D", 3: "3D"}.get(
             telemetry.gps_fix_type, "?"
         )
-        labels['gps'].setText(f"GPS {gps_text} · {telemetry.satellites_visible} sats")
+        labels['gps'].setText(f"GPS {gps_text}" + (f" · {telemetry.satellites_visible} sats"
+                                                    if telemetry.gps_fix_type >= 2 else ""))
+        theme.set_tone(labels['gps'], "success" if telemetry.gps_fix_type >= 3 else "muted")
 
         # Mode
         labels['mode'].setText(f"Mode {telemetry.mode}")
@@ -771,6 +786,11 @@ class MavlinkPanel(QWidget):
         if not success and kind is not None:
             QMessageBox.warning(self, "Connection failed", f"Couldn't connect '{name}'.\n\n{message}")
 
+    @staticmethod
+    def _no_connections_state():
+        return EmptyState("radio-tower", "No connections yet",
+                          "Add one above, or use “Add a drone…” to set up a drone and its connection together.")
+
     def _refresh_connections_list(self):
         """Refresh the connections list showing all active and inactive connections."""
         # Clear current connections
@@ -783,8 +803,7 @@ class MavlinkPanel(QWidget):
         self._connection_cards.clear()
         
         if self.mavlink_service is None:
-            self.no_connections_label = QLabel("No connections configured")
-            self.no_connections_label.setProperty("role", "hint")
+            self.no_connections_label = self._no_connections_state()
             self.connections_layout.addWidget(self.no_connections_label)
             return
         
@@ -792,8 +811,7 @@ class MavlinkPanel(QWidget):
         all_connections = self.mavlink_service.get_all_connections()
         
         if not all_connections:
-            self.no_connections_label = QLabel("No connections configured")
-            self.no_connections_label.setProperty("role", "hint")
+            self.no_connections_label = self._no_connections_state()
             self.connections_layout.addWidget(self.no_connections_label)
             return
         
@@ -848,13 +866,13 @@ class MavlinkPanel(QWidget):
             return
         
         # Create a simple selection dialog using combo box
-        from PyQt5.QtWidgets import QDialog, QDialogButtonBox
+        from PyQt5.QtWidgets import QDialog
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Link Object to Connection")
-        dialog_layout = QVBoxLayout(dialog)
-        
-        dialog_layout.addWidget(QLabel(f"Select object to link to '{connection_name}':"))
+        dialog = DialogShell("Link an object", f"The object whose motion capture is sent to "
+                                               f"'{connection_name}', and which it commands.",
+                             accept_text="Link", accept_icon="link", parent=self)
+        dialog.resize(420, 0)
+        dialog_layout = dialog.body
         
         combo = QComboBox()
         combo.addItem("(None - Unlink)", "")
@@ -869,11 +887,6 @@ class MavlinkPanel(QWidget):
                 combo.setCurrentIndex(idx)
         
         dialog_layout.addWidget(combo)
-        
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
         
         if dialog.exec_() == QDialog.Accepted:
             selected_name = combo.currentData()
@@ -984,14 +997,16 @@ class MavlinkPanel(QWidget):
             return
 
         # Create edit dialog
-        from PyQt5.QtWidgets import QDialog, QDialogButtonBox
+        from PyQt5.QtWidgets import QDialog
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Edit Connection - {connection_name}")
-        dialog_layout = QVBoxLayout(dialog)
+        dialog = DialogShell(f"Edit {connection_name}", "Where the vehicle's MAVLink arrives.", accept_text="Save",
+                             accept_icon="save", parent=self)
+        dialog.resize(440, 0)
+        dialog_layout = dialog.body
 
         # Form for editing
         form_layout = QFormLayout()
+        form_layout.setVerticalSpacing(10)
 
         # Name field
         name_edit = QLineEdit(config.name or "")
@@ -1016,17 +1031,11 @@ class MavlinkPanel(QWidget):
         form_layout.addRow("System ID:", system_id_widget)
 
         # Warning label
-        warning = QLabel("⚠ Changing address requires reconnection" if conn else "⚠ Changes saved for next connection")
-        warning.setProperty("tone", "warning")
+        warning = theme.label("Changing the address needs a reconnect." if conn else
+                              "Changes are used the next time it connects.", "banner", "warning", wrap=True)
 
         dialog_layout.addLayout(form_layout)
         dialog_layout.addWidget(warning)
-
-        # Buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
 
         if dialog.exec_() == QDialog.Accepted:
             new_name = name_edit.text().strip()

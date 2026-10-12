@@ -52,6 +52,10 @@ Read `README.md` for what the app is and `docs/ROADMAP.md` for the plan and work
   size `lg`/`sm`), `theme.decorate(...)` for an existing button, `theme.set_tone(...)` to recolour, and
   `QFrame` `role="card"`. A user-picked colour (a colour swatch) is the only inline style.
 - Readiness states (`ok`/`warn`/`bad`/`off`) show with `theme.StatusLine` or `theme.state_pixmap`.
+- New dialogs subclass `ui/dialogs/shell.DialogShell` (header, body, Cancel + one primary button), and an
+  empty list shows a `ui/widgets/empty_state.EmptyState` (icon, title, what to do next).
+- Panels are narrow (the dock is ~380 px): keep button rows short, use icon buttons with tooltips for
+  secondary actions, and let labels wrap.
 - **Icons** are Lucide SVGs in `ui/assets/lucide/` (add one by copying it from lucide.dev). Use
   `theme.set_icon(widget, name, tone)` so it is re-coloured when the theme changes; anything you
   paint yourself should listen to `theme.signals.changed`.

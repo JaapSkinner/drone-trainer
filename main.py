@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt
 from services.app_logging import configure_logging
 from services.paths import APP_ROOT
 from ui.main_window import MainWindow
-from ui.splash import splash_pixmap
+from ui.splash import app_icon, splash_pixmap
 
 def main():
     # Asset paths (icons, stylesheets, meshes) are relative to the app root.
@@ -17,6 +17,7 @@ def main():
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setApplicationName("Drone Trainer")
+    app.setWindowIcon(app_icon())
 
     # Show splash screen
     splash = QSplashScreen(splash_pixmap(app.devicePixelRatio()), Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)

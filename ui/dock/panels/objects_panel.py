@@ -9,7 +9,7 @@ import os
 
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
+from PyQt5.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                              QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
                              QScrollArea, QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
@@ -21,6 +21,7 @@ from models.rect_prism import RectPrism
 from models.sphere import Sphere
 from services.paths import data_dir
 from ui import animation, theme
+from ui.dialogs.shell import DialogShell
 from ui.dock.panels.object_features import FEATURES, FeatureContext
 from ui.widgets.toast import toast
 
@@ -371,91 +372,104 @@ class ObjectCard(QFrame):
             self.ctx.object_service.remove_object(obj=self.obj)
 
 
-class CreateObjectDialog(QDialog):
+class CreateObjectDialog(DialogShell):
     """Pick a type and initial properties for a new object."""
 
     def __init__(self, parent=None, start_dir="cad_files"):
-        super().__init__(parent)
-        self.setWindowTitle("Add object")
+        super().__init__("Add object", "A box, sphere, mesh or race gate. Drones are easier with "
+                                       "“Add drone…”.", accept_text="Add", accept_icon="plus", parent=parent)
+        self.resize(460, 0)
         self._mesh_path = ""
         self._start_dir = start_dir
         self._colour = (1.0, 0.55, 0.0, 1.0)
 
-        form = QFormLayout(self)
+        # A grid rather than a QFormLayout: rows whose widgets are hidden take no space at all.
+        grid = QGridLayout()
+        grid.setVerticalSpacing(10)
+        grid.setHorizontalSpacing(14)
+        grid.setColumnStretch(1, 1)
+        self.body.addLayout(grid)
+
+        def add_row(label, field):
+            row = grid.rowCount()
+            if isinstance(label, str):
+                label = QLabel(label)
+            if label is not None:
+                grid.addWidget(label, row, 0, Qt.AlignRight | Qt.AlignVCenter)
+            if isinstance(field, QHBoxLayout):
+                grid.addLayout(field, row, 1)
+            else:
+                grid.addWidget(field, row, 1)
+            return label
+
         self.type_combo = QComboBox()
         for label in ("Box", "Sphere", "Mesh (STL / OBJ)", "Race gate"):
             self.type_combo.addItem(label)
         self.type_combo.currentIndexChanged.connect(self._update_fields)
-        form.addRow("Type:", self.type_combo)
+        add_row("Type", self.type_combo)
 
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("e.g. Gate 1")
-        form.addRow("Name:", self.name_edit)
+        add_row("Name", self.name_edit)
 
         position_row = QHBoxLayout()
         self.position_spins = [_spin(-1000, 1000, 3, 0.1, " m") for _ in range(3)]
         for spin in self.position_spins:
             position_row.addWidget(spin)
         self.position_spins[1].setValue(0.5)
-        form.addRow("Position X/Y/Z:", position_row)
+        add_row("Position X/Y/Z", position_row)
 
         size_row = QHBoxLayout()
+        size_row.setContentsMargins(0, 0, 0, 0)
         self.size_spins = [_spin(0.01, 100, 3, 0.05, " m") for _ in range(3)]
         for spin in self.size_spins:
             spin.setValue(0.5)
             size_row.addWidget(spin)
-        self.size_row_label = QLabel("Size X/Y/Z:")
         self.size_widget = QWidget()
         self.size_widget.setLayout(size_row)
-        form.addRow(self.size_row_label, self.size_widget)
+        self.size_row_label = add_row("Size X/Y/Z", self.size_widget)
 
-        self.radius_label = QLabel("Radius:")
         self.radius_spin = _spin(0.005, 50, 3, 0.01, " m")
         self.radius_spin.setValue(0.1)
-        form.addRow(self.radius_label, self.radius_spin)
+        self.radius_label = add_row("Radius", self.radius_spin)
 
-        self.mesh_label = QLabel("File:")
         mesh_row = QHBoxLayout()
+        mesh_row.setContentsMargins(0, 0, 0, 0)
         self.mesh_path_label = QLabel("No file chosen")
         self.mesh_path_label.setProperty("role", "hint")
-        browse = QPushButton("Browse…")
+        browse = theme.button("Browse…", None, "folder-open")
         browse.clicked.connect(self._choose_mesh)
         mesh_row.addWidget(self.mesh_path_label, 1)
         mesh_row.addWidget(browse)
         self.mesh_widget = QWidget()
         self.mesh_widget.setLayout(mesh_row)
-        form.addRow(self.mesh_label, self.mesh_widget)
-        self.scale_label = QLabel("Scale:")
+        self.mesh_label = add_row("File", self.mesh_widget)
         self.scale_spin = _spin(0.0001, 1000, 4, 0.01)
         self.scale_spin.setValue(0.001)
         self.scale_spin.setToolTip("Mesh units → metres (0.001 for millimetre CAD exports)")
-        form.addRow(self.scale_label, self.scale_spin)
+        self.scale_label = add_row("Scale", self.scale_spin)
 
         self.colour_button = QPushButton()
         self.colour_button.setStyleSheet(_colour_button_style(self._colour))
         self.colour_button.clicked.connect(self._choose_colour)
-        form.addRow("Colour:", self.colour_button)
+        add_row("Colour", self.colour_button)
+        grid.itemAtPosition(grid.rowCount() - 1, 1).setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         self.controllable_check = QCheckBox("Can be driven from the Command panel")
         self.controllable_check.setChecked(True)
-        form.addRow("", self.controllable_check)
-
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        form.addRow(self.buttons)
+        add_row(None, self.controllable_check)
         self._update_fields()
 
     def _update_fields(self):
         kind = self.type_combo.currentIndex()
-        self.size_row_label.setText("Opening W/H:" if kind == 3 else "Size X/Y/Z:")
+        self.size_row_label.setText("Opening W/H" if kind == 3 else "Size X/Y/Z")
         self.size_spins[2].setVisible(kind != 3)
         for widgets, shown in (((self.size_row_label, self.size_widget), kind in (0, 3)),
                                ((self.radius_label, self.radius_spin), kind == 1),
                                ((self.mesh_label, self.mesh_widget, self.scale_label, self.scale_spin), kind == 2)):
             for w in widgets:
                 w.setVisible(shown)
-        self.buttons.button(QDialogButtonBox.Ok).setEnabled(kind != 2 or bool(self._mesh_path))
+        self.accept_button.setEnabled(kind != 2 or bool(self._mesh_path))
 
     def _choose_mesh(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose mesh", self._start_dir,

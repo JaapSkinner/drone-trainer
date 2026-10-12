@@ -4,7 +4,7 @@ import unittest
 
 from qt_test_utils import get_app
 
-from PyQt5.QtWidgets import QDialogButtonBox, QToolButton
+from PyQt5.QtWidgets import QToolButton
 
 from models import frames
 from models.grid import Grid
@@ -154,7 +154,7 @@ class ObjectsPanelTests(unittest.TestCase):
         self.assertIsInstance(dialog.build_object(), Sphere)
 
         dialog.type_combo.setCurrentIndex(2)
-        ok = dialog.buttons.button(QDialogButtonBox.Ok)
+        ok = dialog.accept_button
         self.assertFalse(ok.isEnabled())  # a mesh needs a file
         dialog.set_mesh_path("cad_files/basic_quadcopter.stl")
         self.assertTrue(ok.isEnabled())
