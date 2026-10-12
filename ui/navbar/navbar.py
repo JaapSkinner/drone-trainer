@@ -37,7 +37,7 @@ class SideNavbar(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 16, 12, 12)
-        layout.setSpacing(2)
+        layout.setSpacing(4)
 
         # App mark: a drone glyph on an accent tile + the name.
         title = QHBoxLayout()

@@ -469,12 +469,12 @@ QSplitter::handle:hover {{ background: {p.accent}; }}
 
 /* ---- navigation sidebar ---------------------------------------------- */
 QWidget#SideNavbar {{ background: {p.sidebar}; border-right: 1px solid {p.border}; }}
-QWidget#SideNavbar QPushButton {{ background: transparent; border: none; border-radius: 9px; text-align: left;
-    padding: 9px 12px; color: {p.text_secondary}; font-size: 14px; font-weight: 500; }}
+QWidget#SideNavbar QPushButton {{ background: transparent; border: none; border-radius: 10px; text-align: left;
+    padding: 13px 12px; color: {p.text_secondary}; font-size: 14px; font-weight: 500; }}
 QWidget#SideNavbar QPushButton:hover {{ color: {p.text}; background: {p.surface_hover}; }}
 QWidget#SideNavbar QPushButton:checked {{ color: {p.text}; background: transparent; font-weight: 600; }}
 QWidget#SideNavbar QPushButton:focus {{ border: none; }}
-QFrame#NavIndicator {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 9px; }}
+QFrame#NavIndicator {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 10px; }}
 QLabel#NavbarTitleText {{ font-size: 13px; font-weight: 700; letter-spacing: 1.2px; color: {p.text}; }}
 QFrame#ProfileBlock {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 12px; }}
 QFrame#ProfileBlock:hover {{ border-color: {p.accent}; }}
