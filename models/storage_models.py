@@ -59,8 +59,8 @@ class AppSettings:
     max_position_magnitude: float = 100.0
     max_velocity_magnitude: float = 10.0
     max_yaw_rate: float = 3.14159
-    source_system_id: int = 255
-    source_component_id: int = 0
+    source_system_id: int = 245      # not 255: that is QGroundControl's default
+    source_component_id: int = 190   # MAV_COMP_ID_MISSIONPLANNER
     auto_reconnect: bool = True
     reconnect_interval: float = 5.0
     auto_connect_discovered: bool = False
@@ -137,6 +137,24 @@ class ConnectionEntry:
     mocap_rate_hz: float = 100.0
     linked_object_name: str = ""
     auto_connect: bool = True
+    forward_to: str = ""
+
+    @classmethod
+    def from_config(cls, name: str, config) -> "ConnectionEntry":
+        """The stored form of a MavlinkConnectionConfig (every persisted field, in one place)."""
+        return cls(name=name, connection_string=config.connection_string, system_id=config.system_id,
+                   component_id=config.component_id, source_system=config.source_system,
+                   source_component=config.source_component, heartbeat_interval=config.heartbeat_interval,
+                   mocap_rate_hz=config.mocap_rate_hz, linked_object_name=config.linked_object_name,
+                   auto_connect=getattr(config, "auto_connect", True), forward_to=getattr(config, "forward_to", ""))
+
+    def to_config(self):
+        from models.structs import MavlinkConnectionConfig
+        return MavlinkConnectionConfig(
+            connection_string=self.connection_string, system_id=self.system_id, component_id=self.component_id,
+            source_system=self.source_system, source_component=self.source_component,
+            heartbeat_interval=self.heartbeat_interval, mocap_rate_hz=self.mocap_rate_hz, name=self.name,
+            linked_object_name=self.linked_object_name, auto_connect=self.auto_connect, forward_to=self.forward_to)
 
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""

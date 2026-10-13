@@ -15,7 +15,8 @@ from PyQt5.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QButtonGroup, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
                              QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                             QListWidgetItem, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout,
+                             QListWidgetItem, QPushButton, QRadioButton, QScrollArea, QStackedWidget,
+                             QVBoxLayout,
                              QWidget)
 
 from models.cad_mesh import CadMesh
@@ -24,6 +25,7 @@ from models.structs import MavlinkConnectionConfig
 from ui import animation, theme
 from ui.dialogs.shell import fade_in_window
 from ui.widgets.drone_status import OK, OFF, WARN, BAD
+from ui.widgets.link_editor import LinkEditor
 from ui.widgets.step_indicator import StepIndicator
 
 QUAD_MESH = "cad_files/basic_quadcopter.stl"
@@ -89,7 +91,7 @@ class AddDroneWizard(QDialog):
         self._mesh_path = ""
         self._pending_connection = None   # name of a connection this wizard started
         self.setWindowTitle(f"Drone setup — {edit_object.name}" if edit_object else "Add a drone")
-        self.resize(600, 640)
+        self.resize(620, 720)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -110,7 +112,7 @@ class AddDroneWizard(QDialog):
         self.pages = QStackedWidget()
         for build in (self._build_drone_page, self._build_tracking_page,
                       self._build_vehicle_page, self._build_review_page):
-            self.pages.addWidget(build())
+            self.pages.addWidget(self._scrollable(build()))
         body.addWidget(self.pages, 1)
 
         self.error_label = theme.label("", "banner", "danger", wrap=True)
@@ -151,6 +153,16 @@ class AddDroneWizard(QDialog):
     # ------------------------------------------------------------------
     # Pages
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _scrollable(page):
+        """A page that scrolls if it's taller than the dialog (rather than being squeezed)."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(page)
+        return scroll
 
     def _build_drone_page(self):
         page = QWidget()
@@ -272,21 +284,22 @@ class AddDroneWizard(QDialog):
         self._connection_name_touched = False
         self.connection_name_edit.textEdited.connect(lambda _t: setattr(self, "_connection_name_touched", True))
         new_form.addRow("Name:", self.connection_name_edit)
-        address_row = QHBoxLayout()
-        self.address_edit = QLineEdit()
-        self.address_edit.setToolTip("udpin:0.0.0.0:<port> listens for the drone on that UDP port")
-        address_row.addWidget(self.address_edit, 1)
-        self.find_button = theme.button("Find vehicles", None, "search")
+        # Network (WiFi / SITL) or USB / serial (telemetry radio, ExpressLRS, Pixhawk USB)
+        self.link_editor = LinkEditor()
+        self.address_edit = self.link_editor     # text()/setText() give the connection string
+        self.link_editor.changed.connect(self._on_link_edited)
+        new_form.addRow(self.link_editor)
+        self.find_button = theme.button("Find vehicles", None, "search",
+                                        tooltip="Listen for vehicles sending MAVLink to this PC over UDP")
         self.find_button.clicked.connect(self._find_vehicles)
-        address_row.addWidget(self.find_button)
-        new_form.addRow("Address:", address_row)
+        new_form.addRow("", self.find_button)
         self.found_list = QListWidget()
         self.found_list.setMaximumHeight(80)
         self.found_list.itemClicked.connect(lambda item: self.address_edit.setText(item.data(Qt.UserRole)))
         self.found_list.hide()
         new_form.addRow("", self.found_list)
-        new_form.addRow(_hint("Each drone needs its own port: it must send MAVLink to this PC on that port, "
-                              "and each needs a different MAV_SYS_ID."))
+        new_form.addRow(_hint("Each drone needs its own link (a port, or a radio / USB cable) and a different "
+                              "MAV_SYS_ID."))
         box.addRow(self.new_connection_box)
 
         connect_row = QHBoxLayout()
@@ -446,6 +459,9 @@ class AddDroneWizard(QDialog):
             if self.connection_combo.currentData() == NEW_CONNECTION:
                 if not self.address_edit.text().strip():
                     return "Enter the connection address (e.g. udpin:0.0.0.0:14550)."
+                problem = self.link_editor.problem()
+                if problem:
+                    return problem
                 name = self.connection_name_edit.text().strip()
                 if not name:
                     return "Give the connection a name."
@@ -577,6 +593,12 @@ class AddDroneWizard(QDialog):
                 self.send_mocap_check.setChecked(True)
         self._refresh_live()
 
+    def _on_link_edited(self):
+        # Finding vehicles listens for UDP heartbeats, so it only applies to network links.
+        self.find_button.setVisible(self.link_editor.link().kind != "serial")
+        if self.link_editor.link().kind == "serial":
+            self.found_list.hide()
+
     def _find_vehicles(self):
         if self.mavlink is None:
             return
@@ -606,7 +628,8 @@ class AddDroneWizard(QDialog):
             return
         if self.connection_combo.currentData() == NEW_CONNECTION:
             config = MavlinkConnectionConfig(self.address_edit.text().strip(),
-                                             name=self.connection_name_edit.text().strip())
+                                             name=self.connection_name_edit.text().strip(),
+                                             forward_to=self.link_editor.forward_to())
             self._pending_connection = self.mavlink.add_connection_async(config)
         else:
             name = self.connection_combo.currentData()
@@ -749,7 +772,8 @@ class AddDroneWizard(QDialog):
                 if self.connection_combo.currentData() == NEW_CONNECTION and \
                         connection not in self.mavlink.get_all_connections() and \
                         not self.mavlink.is_connecting(connection):
-                    config = MavlinkConnectionConfig(self.address_edit.text().strip(), name=connection)
+                    config = MavlinkConnectionConfig(self.address_edit.text().strip(), name=connection,
+                                                     forward_to=self.link_editor.forward_to())
                     self.mavlink.save_connection_config(config)
                     connection = config.name
                     self.mavlink.add_connection_async(config)

@@ -43,6 +43,9 @@ class MavlinkConnectionConfig:
         mocap_rate_hz: Target rate for motion capture data in Hz
         name: User-friendly name for this connection (must be unique)
         linked_object_name: Name of the scene object linked to this connection
+        forward_to: "host:port" to relay this link to over UDP (e.g. QGroundControl at
+            127.0.0.1:14550), both ways, so another ground station can use the same vehicle.
+            Empty = no forwarding.
     """
     connection_string: str
     system_id: int = 1
@@ -56,6 +59,7 @@ class MavlinkConnectionConfig:
     name: str = ""  # User-friendly name, auto-generated if empty
     linked_object_name: str = ""  # Name of linked scene object
     auto_connect: bool = True  # reconnect automatically (cleared when the user disconnects)
+    forward_to: str = ""       # relay to another GCS ("host:port"), see above
 
 
 @dataclass
@@ -259,8 +263,10 @@ class MavlinkGlobalSettings:
     max_position_magnitude: float = 100.0
     max_velocity_magnitude: float = 10.0
     max_yaw_rate: float = 3.14159
-    source_system_id: int = 255
-    source_component_id: int = 0
+    # Our own MAVLink identity. Not 255 (QGroundControl's default) so both can talk to the same
+    # vehicle; 190 = MAV_COMP_ID_MISSIONPLANNER (0 isn't a valid sender component).
+    source_system_id: int = 245
+    source_component_id: int = 190
     auto_reconnect: bool = True
     reconnect_interval: float = 5.0
     auto_connect_discovered: bool = False  # Auto-connect to discovered devices

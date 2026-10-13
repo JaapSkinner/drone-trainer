@@ -19,6 +19,34 @@ steps, prefilled. Everything can also still be done by hand: the object's card i
 panel (features: Motion capture, MAVLink vehicle, Controllable, Race gate), the **Motion Capture**
 panel (subjects → objects, calibration) and the **MAVLink** panel (connections).
 
+## Links: WiFi, USB / serial, and QGroundControl at the same time
+
+On the Vehicle step (and in the MAVLink panel) pick the **Link**:
+
+- **Network (UDP, listen)** — the vehicle (WiFi bridge, ExpressLRS TX Backpack, PX4 SITL) sends
+  MAVLink to this PC on a port. PX4 SITL sends its offboard stream to **14540**; most WiFi bridges and
+  the ExpressLRS Backpack send to **14550**.
+- **USB / serial** — a telemetry radio, an ExpressLRS TX module in MAVLink mode, or the flight
+  controller's own USB. Pick the port (Refresh if you just plugged it in) and the baud:
+  **57600** SiK radio · **460800** ExpressLRS (fixed by ELRS) · anything for a Pixhawk's own USB.
+- **Network (UDP, send to)** / **TCP** — for vehicles that wait for the ground station to connect.
+
+**Using QGroundControl too.** Only one program can open a serial port, and if two programs listen on
+the same UDP port only one of them gets the vehicle's packets. So let Drone Trainer hold the link and
+tick **Share with QGroundControl**: it relays everything both ways to QGC's auto-connect port
+(`127.0.0.1:14550`), and QGC sees the vehicle as usual. Drone Trainer talks as MAVLink system **245**
+(component 190), so it doesn't clash with QGC's 255.
+
+- USB / serial: share to `127.0.0.1:14550` (on by default for serial links). Leave QGC's own serial
+  auto-connect off for that port.
+- WiFi vehicle on UDP 14550: either point the vehicle at another port (e.g. 14540) and share to
+  14550, or keep 14550 here and in QGC add a UDP link on another port (e.g. 14551) and share to that.
+- PX4 SITL: use 14540 here; QGC keeps 14550. No sharing needed.
+
+**Several drones.** Give each its own link (its own UDP port, or its own radio / USB cable) and a
+unique `MAV_SYS_ID`. Each connection follows only its own vehicle: QGC, gimbals and other vehicles
+heard on the same link are ignored (the connection card warns if another vehicle is on its link).
+
 ## The readiness checklist
 
 The Command panel shows, for the selected drone:
@@ -58,6 +86,9 @@ and use a new connection `udpin:0.0.0.0:14550`. The fake PX4 prints the motion c
 - **No subjects** — check the Motion Capture source/port, and that Vicon Tracker / Motive streams to
   this PC's IP. For OptiTrack also check the up axis.
 - **No heartbeat** — the vehicle must send MAVLink to this PC on the connection's port
-  (`udpin:0.0.0.0:<port>` listens on all interfaces). Firewalls can block UDP.
+  (`udpin:0.0.0.0:<port>` listens on all interfaces). Firewalls can block UDP. If QGroundControl is open
+  on the same port, only one of them gets the data (see above). On serial, check the baud rate.
+- **"COM3 is in use"** — another program (QGC, Mission Planner) has the port. Close it there and use
+  *Share with QGroundControl* instead.
 - **Drone in the wrong place / rotated** — Motion Capture → *Calibrate…* aligns the mocap frame
   with the lab.

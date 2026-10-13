@@ -14,11 +14,14 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSlot, pyqtSignal, QTimer, QThread
+import dataclasses
 import math
 
 from models.structs import MavlinkConnectionConfig, MavlinkTelemetryData
+from models.mavlink_links import parse_link
 from ui import theme
 from ui.dialogs.shell import DialogShell
+from ui.widgets.link_editor import LinkEditor
 from ui.widgets.empty_state import EmptyState
 
 
@@ -60,7 +63,7 @@ class ConnectionCard(QFrame):
     edit_clicked = pyqtSignal(str)  # connection_name
 
     def __init__(self, config: MavlinkConnectionConfig, connection_name: str, is_active: bool = True,
-                 parent=None, connecting: bool = False):
+                 parent=None, connecting: bool = False, connection=None):
         """Initialize a connection card.
         
         Args:
@@ -75,6 +78,7 @@ class ConnectionCard(QFrame):
         self.connection_name = connection_name
         self.is_active = is_active
         self.connecting = connecting
+        self.connection = connection   # the live MavlinkConnection, if connected
         self._init_ui()
     
     def _init_ui(self):
@@ -112,8 +116,26 @@ class ConnectionCard(QFrame):
 
         # Connection details
         id_text = f"system ID {self.config.system_id}" if self.is_active else "system ID detected on connect"
-        details = theme.label(f"{self.config.connection_string} · {id_text}", "hint", wrap=True)
+        link = parse_link(self.config.connection_string)
+        details = theme.label(f"{link.describe().capitalize()} · {id_text}", "hint", wrap=True)
+        details.setToolTip(self.config.connection_string)
         layout.addWidget(details)
+
+        # Shared with another ground station (QGroundControl)?
+        connection = self.connection
+        forward = getattr(self.config, "forward_to", "")
+        if forward:
+            relayed = ""
+            if connection is not None and connection.forwarding:
+                relayed = f" · {connection.forwarded_out} out / {connection.forwarded_in} in"
+            layout.addWidget(theme.label(f"Shared with QGroundControl at {forward}{relayed}", "hint", "accent",
+                                         wrap=True))
+        others = sorted(connection.other_systems()) if connection is not None else []
+        if others:
+            names = ", ".join(str(s) for s in others)
+            layout.addWidget(theme.label(f"Also hearing vehicle {names} on this link — ignored. Give each "
+                                         "vehicle its own link (port or radio) and a unique MAV_SYS_ID.",
+                                         "banner", "warning", wrap=True))
 
         # Linked object
         linked = self.config.linked_object_name
@@ -266,11 +288,11 @@ class MavlinkPanel(QWidget):
         self.name_input.setPlaceholderText("Auto-generated if empty")
         form_layout.addRow("Name:", self.name_input)
         
-        # Connection string input (updated default)
-        self.connection_input = QLineEdit()
-        self.connection_input.setPlaceholderText("udpin:0.0.0.0:14550")
+        # How to reach the vehicle: network (UDP/TCP) or USB/serial, and sharing with QGC.
+        self.connection_input = LinkEditor()      # text()/setText(): the connection string
         self.connection_input.setText("udpin:0.0.0.0:14550")
-        form_layout.addRow("Address:", self.connection_input)
+        self.connection_input.changed.connect(self._on_link_edited)
+        form_layout.addRow(self.connection_input)
         
         # System ID input
         # No System ID field: it is read from the vehicle's heartbeat when it connects.
@@ -760,6 +782,10 @@ class MavlinkPanel(QWidget):
         layout.addStretch()
         return widget
     
+    def _on_link_edited(self):
+        # Discover listens for UDP heartbeats: not for a serial port.
+        self.discover_btn.setVisible(self.connection_input.link().kind != "serial")
+
     def on_connect_clicked(self):
         """Connect in the background; the result arrives in _on_attempt_finished."""
         if self.mavlink_service is None:
@@ -767,8 +793,13 @@ class MavlinkPanel(QWidget):
         connection_string = self.connection_input.text().strip()
         if not connection_string:
             return
+        problem = self.connection_input.problem()
+        if problem:
+            QMessageBox.warning(self, "Connection", problem)
+            return
         config = MavlinkConnectionConfig(connection_string=connection_string,
-                                         name=self.name_input.text().strip())  # name auto-generated if empty
+                                         name=self.name_input.text().strip(),  # name auto-generated if empty
+                                         forward_to=self.connection_input.forward_to())
         self.connect_btn.setEnabled(False)
         self.connect_btn.setText("Connecting…")
         name = self.mavlink_service.add_connection_async(config)
@@ -823,7 +854,7 @@ class MavlinkPanel(QWidget):
             
             # Pass the resolved name to ensure consistent signal emission
             card = ConnectionCard(config, connection_name=name, is_active=is_active,
-                                  connecting=self.mavlink_service.is_connecting(name))
+                                  connecting=self.mavlink_service.is_connecting(name), connection=conn)
             card.action_clicked.connect(self._on_connection_action)
             card.link_object_clicked.connect(self._on_link_object_clicked)
             card.test_clicked.connect(self._on_test_single_connection)
@@ -1013,10 +1044,11 @@ class MavlinkPanel(QWidget):
         name_edit.setPlaceholderText("Connection name")
         form_layout.addRow("Name:", name_edit)
 
-        # Connection string field
-        address_edit = QLineEdit(config.connection_string)
-        address_edit.setPlaceholderText("e.g., udpin:0.0.0.0:14550")
-        form_layout.addRow("Address:", address_edit)
+        # How to reach the vehicle (and whether to share it with QGC)
+        address_edit = LinkEditor()
+        address_edit.setText(config.connection_string)
+        address_edit.set_forward_to(getattr(config, "forward_to", ""))
+        form_layout.addRow(address_edit)
 
         # System ID field (editable for saved connections, read-only for active)
         if conn is not None:
@@ -1045,6 +1077,11 @@ class MavlinkPanel(QWidget):
             if not new_address:
                 QMessageBox.warning(self, "Invalid Input", "Connection address cannot be empty.")
                 return
+            problem = address_edit.problem()
+            if problem:
+                QMessageBox.warning(self, "Invalid Input", problem)
+                return
+            new_forward = address_edit.forward_to()
 
             # Check what changed
             address_changed = new_address != config.connection_string
@@ -1063,13 +1100,14 @@ class MavlinkPanel(QWidget):
                 # Saved connection - update the saved config
                 old_linked_object = config.linked_object_name
 
-                # Create updated config
-                updated_config = MavlinkConnectionConfig(
+                # Updated copy: fields this dialog doesn't show (rates, intervals …) are kept.
+                updated_config = dataclasses.replace(
+                    config,
                     connection_string=new_address,
                     system_id=new_system_id,
                     name=new_name if new_name else connection_name,
                     linked_object_name=old_linked_object,
-                    auto_connect=getattr(config, "auto_connect", True),
+                    forward_to=new_forward,
                 )
 
                 # Remove old saved connection (by old name) using public API
@@ -1087,18 +1125,8 @@ class MavlinkPanel(QWidget):
                     # Remove old entry if name changed
                     if connection_name != updated_config.name:
                         self._storage_service.delete_connection(connection_name)
-                    self._storage_service.upsert_connection(ConnectionEntry(
-                        name=updated_config.name,
-                        connection_string=updated_config.connection_string,
-                        system_id=updated_config.system_id,
-                        component_id=updated_config.component_id,
-                        source_system=updated_config.source_system,
-                        source_component=updated_config.source_component,
-                        heartbeat_interval=updated_config.heartbeat_interval,
-                        mocap_rate_hz=updated_config.mocap_rate_hz,
-                        linked_object_name=updated_config.linked_object_name,
-                        auto_connect=updated_config.auto_connect,
-                    ))
+                    self._storage_service.upsert_connection(ConnectionEntry.from_config(updated_config.name,
+                                                                                        updated_config))
 
             # Refresh the connections list
             self._refresh_connections_list()

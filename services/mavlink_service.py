@@ -16,10 +16,12 @@ The DTRG dialect includes all standard PX4 messages plus custom DTRG messages
 defined in libs/dtrg-mavlink/message_definitions/v1.0/dtrg.xml
 """
 import os
+import socket
 import sys
 import time
 import threading
 import logging
+from collections import deque
 from queue import PriorityQueue
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Callable
@@ -29,6 +31,7 @@ from PyQt5.QtCore import pyqtSignal, QTimer, QThread
 
 from services.service_base import ServiceBase, DebugLevel, ServiceLevel
 from models import frames
+from models.mavlink_links import is_serial, parse_endpoint, parse_link
 from models.structs import (
     MavlinkConnectionConfig,
     MavlinkTelemetryData,
@@ -188,13 +191,24 @@ class MavlinkConnection:
         self._connection = None
         self._state = ConnectionState.DISCONNECTED
         self._last_heartbeat_sent = 0.0
-        self._message_count_window: List[float] = []
+        self._message_times = deque()   # receive times in the last second (for the rate)
         self._lock = threading.Lock()
         self._console_output_callback = None  # set via set_console_output_callback()
 
-        # Packet loss tracking
-        self._last_seq_num = None  # Last received sequence number
+        # Packet loss tracking: each sender (system, component) numbers its own packets.
+        self._last_seq = {}        # (system, component) → last sequence number
         self._packets_dropped = 0  # Total dropped packets
+        # The vehicle's autopilot is (status.system_id, _vehicle_component); anything else on the
+        # link (QGC, a gimbal, another vehicle) must not update this vehicle's state.
+        self._vehicle_component = 1
+        self._other_systems = set()
+        self.last_error = ""        # why the last connect() failed, for the UI
+
+        # Relay to another ground station (config.forward_to), e.g. QGroundControl.
+        self._forward_sock = None
+        self._forward_addr = None
+        self.forwarded_out = 0      # packets relayed vehicle → other GCS
+        self.forwarded_in = 0       # packets relayed other GCS → vehicle
 
         # Round-trip time tracking
         self._ping_start_time = None
@@ -231,6 +245,7 @@ class MavlinkConnection:
             self._state = ConnectionState.ERROR
             return False
         
+        self.last_error = ""
         try:
             self._state = ConnectionState.CONNECTING
             self._connection = mavutil.mavlink_connection(
@@ -246,14 +261,17 @@ class MavlinkConnection:
             # manually add a UDP comm link and hit Connect.
             self._prime_connection()
 
-            # Wait for heartbeat with timeout
-            msg = self._connection.wait_heartbeat(timeout=5.0)
+            # Wait for a heartbeat from an autopilot. A GCS (QGC on the same network) or a
+            # component such as a gimbal also sends heartbeats; those aren't the vehicle.
+            msg = self._wait_vehicle_heartbeat(timeout=5.0)
             if msg is None:
                 print(f"[MavlinkConnection] ERROR: No heartbeat received (timeout)")
+                self.last_error = "no heartbeat"
                 self._state = ConnectionState.DISCONNECTED
                 return False
             
             self.status.system_id = msg.get_srcSystem()
+            self._vehicle_component = msg.get_srcComponent()
             # Align config.system_id with the actual system ID from the first heartbeat
             # to ensure all subsequent operations target the correct drone.
             try:
@@ -264,14 +282,98 @@ class MavlinkConnection:
             self.status.connected = True
             self.status.last_heartbeat = time.time()
             self._state = ConnectionState.CONNECTED
+            self._open_forward()
             return True
             
         except Exception as e:
             print(f"[MavlinkConnection] ERROR: Connection failed: {e}")
+            self.last_error = str(e) or type(e).__name__
             self._state = ConnectionState.ERROR
             self.status.connected = False
             return False
+
+    # -- relaying to another ground station ------------------------------------------
+
+    def _open_forward(self):
+        """Start relaying to config.forward_to ("host:port"), if set."""
+        self._close_forward()
+        endpoint = parse_endpoint(getattr(self.config, "forward_to", ""))
+        if endpoint is None:
+            return
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setblocking(False)
+            sock.bind(("0.0.0.0", 0))   # the other GCS replies to this address
+        except OSError as exc:
+            logger.warning("Can't open the forwarding socket for %s: %s", self.config.name, exc)
+            return
+        self._forward_sock, self._forward_addr = sock, endpoint
+        logger.info("Relaying %s to %s:%d", self.config.name, *endpoint)
+
+    def _close_forward(self):
+        if self._forward_sock is not None:
+            self._forward_sock.close()
+        self._forward_sock = self._forward_addr = None
+
+    @property
+    def forwarding(self) -> bool:
+        return self._forward_sock is not None
+
+    def _forward_out(self, msg):
+        if self._forward_sock is None:
+            return
+        try:
+            self._forward_sock.sendto(bytes(msg.get_msgbuf()), self._forward_addr)
+            self.forwarded_out += 1
+        except OSError:
+            pass   # the other GCS isn't running; keep trying with the next packet
+
+    def pump_forward(self, max_packets: int = 200) -> int:
+        """Pass packets from the other GCS on to the vehicle. Returns how many."""
+        if self._forward_sock is None or self._connection is None:
+            return 0
+        count = 0
+        for _ in range(max_packets):
+            try:
+                data, _ = self._forward_sock.recvfrom(65535)
+            except (BlockingIOError, InterruptedError):
+                break
+            except OSError:   # e.g. Windows reports "port unreachable" this way when QGC is closed
+                break
+            with self._lock:
+                if self._connection is None:
+                    break
+                self._connection.write(data)
+            count += 1
+        self.forwarded_in += count
+        return count
     
+    # Messages only a flight controller sends; applied only from the vehicle's autopilot.
+    _VEHICLE_TELEMETRY = ('ATTITUDE', 'LOCAL_POSITION_NED', 'SYS_STATUS', 'GPS_RAW_INT', 'ESTIMATOR_STATUS')
+
+    @staticmethod
+    def is_vehicle_heartbeat(msg) -> bool:
+        """A heartbeat from a flight controller (not a GCS, gimbal, camera …)."""
+        return (msg.get_type() == 'HEARTBEAT' and msg.type != mavutil.mavlink.MAV_TYPE_GCS
+                and msg.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID)
+
+    def _wait_vehicle_heartbeat(self, timeout: float):
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            # Blocking with a timeout: None only once the time is up.
+            msg = self._connection.recv_match(type='HEARTBEAT', blocking=True, timeout=remaining)
+            if msg is None:
+                return None
+            if self.is_vehicle_heartbeat(msg):
+                return msg
+
+    def other_systems(self) -> set:
+        """System IDs of other vehicles heard on this link (they are ignored)."""
+        return set(self._other_systems)
+
     def _prime_connection(self, num_heartbeats: int = 3, interval: float = 0.5):
         """Send GCS heartbeats to prime the drone's MAVLink router.
 
@@ -302,6 +404,7 @@ class MavlinkConnection:
 
     def disconnect(self):
         """Close the MAVLink connection."""
+        self._close_forward()
         with self._lock:
             if self._connection is not None:
                 try:
@@ -464,23 +567,19 @@ class MavlinkConnection:
                 messages.append(msg)
                 self.status.messages_received += 1
                 self._update_message_rate()
+                if msg.get_type() != 'BAD_DATA':
+                    self._forward_out(msg)
 
-                # Track packet loss using sequence numbers
-                # MAVLink v1 and v2 both have sequence numbers in the header
-                seq = msg.get_seq()
-                if self._last_seq_num is not None:
-                    # Calculate expected sequence (wraps at 256)
-                    expected_seq = (self._last_seq_num + 1) % 256
-                    if seq != expected_seq:
-                        # Packets were dropped
-                        if seq > expected_seq:
-                            dropped = seq - expected_seq
-                        else:
-                            # Wrapped around
-                            dropped = (256 - expected_seq) + seq
-                        self._packets_dropped += dropped
-
-                self._last_seq_num = seq
+                # Track packet loss using sequence numbers (per sender: each counts its own,
+                # wrapping at 256). MAVLink v1 and v2 both have them in the header.
+                if msg.get_type() != 'BAD_DATA':
+                    sender = (msg.get_srcSystem(), msg.get_srcComponent())
+                    seq = msg.get_seq()
+                    last = self._last_seq.get(sender)
+                    if last is not None:
+                        gap = (seq - last) % 256   # 1 = next packet, 0 = the same one heard twice
+                        self._packets_dropped += max(0, gap - 1)
+                    self._last_seq[sender] = seq
 
             except Exception:
                 break
@@ -491,12 +590,11 @@ class MavlinkConnection:
         """Update the message rate calculation."""
         now = time.time()
         # Keep messages from last second
-        self._message_count_window = [
-            t for t in self._message_count_window 
-            if now - t < 1.0
-        ]
-        self._message_count_window.append(now)
-        self.status.message_rate_hz = len(self._message_count_window)
+        times = self._message_times
+        times.append(now)
+        while times and now - times[0] >= 1.0:
+            times.popleft()
+        self.status.message_rate_hz = len(times)
     
     def process_message(self, msg) -> bool:
         """Process a received MAVLink message and update telemetry.
@@ -508,14 +606,33 @@ class MavlinkConnection:
             True if message was processed, False if message type is not handled
         """
         msg_type = msg.get_type()
-        
+        if msg_type == 'BAD_DATA':
+            return False
+        system, component = msg.get_srcSystem(), msg.get_srcComponent()
+        vehicle = self.status.system_id or self.config.system_id
+        if system != vehicle:
+            # QGC, another vehicle on a shared link … never this vehicle's state.
+            if self.is_vehicle_heartbeat(msg) or msg_type in self._VEHICLE_TELEMETRY:
+                self._other_systems.add(system)
+            return False
+        from_autopilot = component == self._vehicle_component
+
         if msg_type == 'HEARTBEAT':
+            if not (from_autopilot and self.is_vehicle_heartbeat(msg)):
+                return False   # a gimbal, camera or companion computer on the vehicle
             self.status.last_heartbeat = time.time()
             self.status.connected = True
             self._state = ConnectionState.CONNECTED
             # Parse mode and armed state from heartbeat
             self.telemetry.armed = (msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED) != 0
+            try:
+                self.telemetry.mode = mavutil.mode_string_v10(msg)
+            except (KeyError, AttributeError, TypeError):
+                pass
             return True
+
+        if msg_type in self._VEHICLE_TELEMETRY and not from_autopilot:
+            return False
         
         elif msg_type == 'PING':
             # Respond to PING with same timestamp to measure RTT
@@ -693,6 +810,8 @@ class MavlinkService(ServiceBase):
 
     # Service update rates
     TELEMETRY_UPDATE_INTERVAL_MS = 50   # 20Hz for telemetry (low priority)
+    LINK_PUMP_INTERVAL_MS = 5           # read/relay links at 200 Hz
+    MAX_MESSAGES_PER_PUMP = 1000        # per link per pump (bounded, so one link can't stall others)
     SETPOINT_UPDATE_INTERVAL_MS = 20    # 50Hz for setpoints (medium priority)
     MOCAP_UPDATE_INTERVAL_MS = 10       # 100Hz for mocap (high priority)
     HEARTBEAT_CHECK_INTERVAL_MS = 100   # 10Hz for heartbeat checks
@@ -724,6 +843,7 @@ class MavlinkService(ServiceBase):
         # Timers for different priority tasks
         self._heartbeat_timer: Optional[QTimer] = None
         self._telemetry_timer: Optional[QTimer] = None
+        self._pump_timer: Optional[QTimer] = None
         self._mocap_timer: Optional[QTimer] = None
         self._setpoint_timer: Optional[QTimer] = None
         
@@ -923,6 +1043,14 @@ class MavlinkService(ServiceBase):
         self._heartbeat_timer.start()
         
         # Telemetry timer - lowest priority, 20Hz
+        # Link pump - read everything waiting on every link and relay to other GCSs. Fast, so
+        # nothing backs up (a Pixhawk on USB sends 1000+ messages/s) and relayed QGC traffic
+        # isn't delayed; the UI is only told at the telemetry rate.
+        self._pump_timer = QTimer(self)
+        self._pump_timer.setInterval(self.LINK_PUMP_INTERVAL_MS)
+        self._pump_timer.timeout.connect(self.safe(self._pump_links))
+        self._pump_timer.start()
+
         self._telemetry_timer = QTimer(self)
         self._telemetry_timer.setInterval(self.TELEMETRY_UPDATE_INTERVAL_MS)
         self._telemetry_timer.timeout.connect(self.safe(self._process_telemetry))
@@ -955,7 +1083,7 @@ class MavlinkService(ServiceBase):
     def on_stop(self):
         """Stop all timers and disconnect all connections."""
         # Stop timers
-        for timer in [self._heartbeat_timer, self._telemetry_timer, 
+        for timer in [self._heartbeat_timer, self._telemetry_timer, getattr(self, "_pump_timer", None),
                       self._mocap_timer, self._setpoint_timer, self._reconnect_timer]:
             if timer is not None:
                 timer.stop()
@@ -963,6 +1091,7 @@ class MavlinkService(ServiceBase):
         
         self._heartbeat_timer = None
         self._telemetry_timer = None
+        self._pump_timer = None
         self._mocap_timer = None
         self._setpoint_timer = None
         self._reconnect_timer = None
@@ -1003,6 +1132,7 @@ class MavlinkService(ServiceBase):
             True if connection was established successfully
         """
         self._prepare_name(config)
+        self._apply_identity(config)
         connection = MavlinkConnection(config)
         return self._finish_connect(connection, connection.connect())[0]
 
@@ -1020,11 +1150,45 @@ class MavlinkService(ServiceBase):
                          name=f"mavlink-connect-{config.name}").start()
         return config.name
 
+    @staticmethod
+    def explain_connect_failure(connection_string: str, error: str = "") -> str:
+        """What to tell the user when a connection didn't come up."""
+        link = parse_link(connection_string)
+        text = (error or "").lower()
+        if link.kind == "serial":
+            if "no module named 'serial'" in text:
+                return "USB/serial links need pyserial: pip install pyserial (it's in requirements.txt)."
+            if any(k in text for k in ("access is denied", "permission denied", "busy", "in use",
+                                       "resource temporarily unavailable")):
+                return (f"{link.device} is in use by another program (QGroundControl or Mission Planner?). "
+                        "Only one program can open a serial port: close it there, or connect here and turn "
+                        "on \"Share with QGroundControl\".")
+            if any(k in text for k in ("could not open", "no such file", "cannot find", "filenotfound",
+                                       "does not exist")):
+                return f"{link.device} isn't there. Is the radio / USB cable plugged in? Try Refresh."
+            if not text or text == "no heartbeat":
+                return (f"No heartbeat on {link.device} at {link.baud} baud. Check the baud rate "
+                        "(57600 SiK radio, 460800 ExpressLRS, any for a Pixhawk's own USB) and that the "
+                        "vehicle is powered.")
+            return f"Couldn't open {link.device}: {error}"
+        if text and text != "no heartbeat":
+            return f"Couldn't open {connection_string}: {error}"
+        return (f"No heartbeat from {connection_string}. Check the vehicle is on and sending MAVLink to this "
+                "PC, and that the address/port is right (if QGroundControl is open on the same port, only one "
+                "of them gets the data).")
+
     def is_connecting(self, name: str) -> bool:
         with self._attempt_lock:
             return name in self._attempting
 
+    def _apply_identity(self, config: MavlinkConnectionConfig):
+        """Send as the MAVLink system/component set in Settings (not each connection's old default)."""
+        settings = self._global_settings
+        config.source_system = int(getattr(settings, "source_system_id", 245))
+        config.source_component = int(getattr(settings, "source_component_id", 190))
+
     def _connect_worker(self, config: MavlinkConnectionConfig):
+        self._apply_identity(config)
         connection = MavlinkConnection(config)
         try:
             ok = connection.connect()
@@ -1045,9 +1209,10 @@ class MavlinkService(ServiceBase):
         config = connection.config
         if not ok:
             connection.disconnect()  # free the socket so a retry can bind it again
-            logger.warning("No heartbeat from %s (%s)", config.name, config.connection_string)
-            return False, (f"No heartbeat from {config.connection_string}. Check the vehicle is on and "
-                           "sending MAVLink to this PC, and that the address/port is right.")
+            message = self.explain_connect_failure(config.connection_string, getattr(connection, "last_error", ""))
+            logger.warning("Couldn't connect %s (%s): %s", config.name, config.connection_string,
+                           getattr(connection, "last_error", "") or "no heartbeat")
+            return False, message
 
         sys_id = connection.status.system_id
         existing = self._connections.get(sys_id)
@@ -1879,18 +2044,23 @@ class MavlinkService(ServiceBase):
                     self.connection_changed.emit(conn.status.system_id, False)
                     self._update_status_label()
     
+    def _pump_links(self):
+        """Read every waiting message on every link, update its vehicle, relay to other GCSs."""
+        for conn in list(self._connections.values()):
+            messages = conn.receive_messages(max_messages=self.MAX_MESSAGES_PER_PUMP)
+            for msg in messages:
+                conn.process_message(msg)
+            if messages:
+                conn.telemetry_changed = True
+            conn.pump_forward()
+
     def _process_telemetry(self):
-        """Process incoming telemetry messages (lowest priority)."""
+        """Tell the UI about new telemetry (at the telemetry rate)."""
         total_rate = 0.0
         
         for conn in self._connections.values():
-            # Receive and process messages
-            messages = conn.receive_messages(max_messages=20)
-            for msg in messages:
-                conn.process_message(msg)
-            
-            # Emit telemetry update
-            if messages:
+            if getattr(conn, "telemetry_changed", False):
+                conn.telemetry_changed = False
                 self.telemetry_updated.emit(conn.status.system_id, conn.telemetry)
             
             total_rate += conn.status.message_rate_hz

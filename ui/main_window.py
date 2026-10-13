@@ -157,18 +157,7 @@ class MainWindow(QMainWindow):
 
         # Restore saved connections into the mavlink service (loaded from disk)
         for entry in initial_connections:
-            config = MavlinkConnectionConfig(
-                connection_string=entry.connection_string,
-                system_id=entry.system_id,
-                component_id=entry.component_id,
-                source_system=entry.source_system,
-                source_component=entry.source_component,
-                heartbeat_interval=entry.heartbeat_interval,
-                mocap_rate_hz=entry.mocap_rate_hz,
-                name=entry.name,
-                linked_object_name=entry.linked_object_name,
-                auto_connect=entry.auto_connect,
-            )
+            config = entry.to_config()
             self.mavlink_service.save_connection_config(config)
         
         # Connect mavlink service to dock panel
@@ -740,8 +729,11 @@ class MainWindow(QMainWindow):
             max_position_magnitude=saved.max_position_magnitude,
             max_velocity_magnitude=saved.max_velocity_magnitude,
             max_yaw_rate=saved.max_yaw_rate,
-            source_system_id=saved.source_system_id,
-            source_component_id=saved.source_component_id,
+            # Older settings used 255/0: QGroundControl's ID and an invalid sender component.
+            source_system_id=245 if (saved.source_system_id, saved.source_component_id) == (255, 0)
+            else saved.source_system_id,
+            source_component_id=190 if (saved.source_system_id, saved.source_component_id) == (255, 0)
+            else saved.source_component_id,
             auto_reconnect=saved.auto_reconnect,
             reconnect_interval=saved.reconnect_interval,
             auto_connect_discovered=saved.auto_connect_discovered,
@@ -864,18 +856,7 @@ class MainWindow(QMainWindow):
         # Build the set of connection names we want to keep
         current_names = set()
         for name, config in all_conns.items():
-            entry = ConnectionEntry(
-                name=name,
-                connection_string=config.connection_string,
-                system_id=config.system_id,
-                component_id=config.component_id,
-                source_system=config.source_system,
-                source_component=config.source_component,
-                heartbeat_interval=config.heartbeat_interval,
-                mocap_rate_hz=config.mocap_rate_hz,
-                linked_object_name=config.linked_object_name,
-                auto_connect=getattr(config, "auto_connect", True),
-            )
+            entry = ConnectionEntry.from_config(name, config)
             self.storage_service.upsert_connection(entry)
             current_names.add(name)
 
@@ -1194,18 +1175,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'mavlink_service') and self.mavlink_service:
                 for entry in self.storage_service.list_connections():
                     try:
-                        config = MavlinkConnectionConfig(
-                            connection_string=entry.connection_string,
-                            system_id=entry.system_id,
-                            component_id=entry.component_id,
-                            source_system=entry.source_system,
-                            source_component=entry.source_component,
-                            heartbeat_interval=entry.heartbeat_interval,
-                            mocap_rate_hz=entry.mocap_rate_hz,
-                            name=entry.name,
-                            linked_object_name=entry.linked_object_name,
-                            auto_connect=entry.auto_connect,
-                        )
+                        config = entry.to_config()
                         self.mavlink_service.save_connection_config(config)
                     except Exception:
                         continue

@@ -22,7 +22,9 @@ Project plan and status: [docs/ROADMAP.md](docs/ROADMAP.md). Input bindings:
   Scenes are kept between sessions and can be saved/loaded as JSON.
 - **Motion capture**: Vicon Tracker UDP object stream or OptiTrack Motive (NatNet), with live
   subject list, rates and status.
-- **MAVLink**: multiple PX4 connections, discovery, telemetry, console, mocap streaming.
+- **MAVLink**: multiple PX4 connections over WiFi/UDP, TCP or **USB / serial** (telemetry radio,
+  ExpressLRS, Pixhawk USB), discovery, telemetry, console, mocap streaming. **Share with
+  QGroundControl** relays a link to QGC so both can use the same vehicle.
 - **Command panel**: jog / target / home / gamepad & keyboard control of the selected object's
   *setpoint*, drawn as a red ball in the viewport (a dashed line joins the object to it while it
   travels). **Ghost mode** previews the next move as a translucent ball until you press *Send
